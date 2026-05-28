@@ -62,6 +62,34 @@ using MorkSupercompiler
         @test length(nodes) == 2
     end
 
+    @testset "grammar conformance (was: ':' whitelist bug)" begin
+        # Regression: previously the inclusion-based whitelist rejected ':' and
+        # the bracket family, breaking on stdlib atoms like
+        #   (: + (-> Number Number Number))
+        # Reference: docs/specs/metta_grammar.ebnf; audit:
+        # docs/specs/metta_grammar_audit.md.
+
+        n = parse_sexpr("(: foo (-> Number Number))")
+        @test n isa SList
+        items = (n::SList).items
+        @test (items[1]::SAtom).name == ":"
+        @test (items[2]::SAtom).name == "foo"
+
+        # bare ':' as a symbol
+        n = parse_sexpr(":")
+        @test n isa SAtom && (n::SAtom).name == ":"
+
+        # bracket family chars admitted as symbol body
+        for s in ("[", "]", "{", "}", "[x]", "{a,b}")
+            n = parse_sexpr(s)
+            @test n isa SAtom && (n::SAtom).name == s
+        end
+
+        # roundtrip a stdlib-style typing atom
+        e = "(: + (-> Number Number Number))"
+        @test sprint_sexpr(parse_sexpr(e)) == e
+    end
+
     @testset "roundtrip" begin
         exprs = [
             "(parity \$i \$p)",

@@ -28,10 +28,14 @@ end
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+# Exclusion-based per the canonical MeTTa EBNF (docs/specs/metta_grammar.ebnf):
+# a WORD body is any non-whitespace char except the structural delimiters
+# '(', ')', ';'.  This admits ':' (e.g. `(: foo (-> Number Number))`),
+# `[`/`]`/`{`/`}`, and other punctuation the prior whitelist silently rejected.
+# `"` and `#` remain symbol-chars to preserve existing behavior (this parser
+# does not split strings as a separate token — see the module docstring).
 _is_symbol_char(c::Char) =
-    isletter(c) || isdigit(c) ||
-    c in ('_','-','+','*','/','\\','=','<','>','!','?','@','#','%','^','~','.',
-          '|','&','\'','`',',', '"')
+    !isspace(c) && c ∉ ('(', ')', ';')
 
 # ── Parser ────────────────────────────────────────────────────────────────────
 
