@@ -341,15 +341,68 @@ function mg_compile(region          :: AbstractString,
     end
     timings[:backend_select] = t7
 
-    # Step 8: Lower to executable code
+    # Step 8: Lower to residual executable code AND runtime metadata
+    #
+    # Spec §12.1 Algorithm 5 step 8 says lower to "residual executable code
+    # and runtime metadata". The previous implementation discarded
+    # optimized_templates + coercions and routed through plain MM2 compile_program
+    # — geometry-blind at the lowering boundary (audit 2026-05-30 Bug 1).
+    #
+    # Fix: each optimized template is given the chance to emit its own residual
+    # via a registered lowering function (TEMPLATE_LOWERINGS map). The pieces
+    # are concatenated, and templates without a registered lowering fall back
+    # to the generic MM2 codegen path. Runtime metadata (which templates fired,
+    # which coercions composed) is recorded as `;; mgfw:` comment annotations
+    # at the top of the residual so the supercompiler / runtime can inspect it.
     t8 = @elapsed begin
-        g      = MCoreGraph()
-        root_ids = _sexpr_to_mcore!(g, parse_sexpr("(dummy)")) |> x -> [x]
-        for node in parse_program(region_to_compile)
-            push!(root_ids, _sexpr_to_mcore!(g, node))
+        residual_pieces  = String[]
+        templates_used   = Symbol[]
+        coercions_used   = Symbol[]
+        used_fallback    = false
+        obligs           = nothing
+
+        for t in optimized_templates
+            fn = get_lowering(t.name)
+            if fn !== nothing
+                piece = fn(t, region_to_compile)
+                push!(residual_pieces, piece)
+                push!(templates_used, t.name)
+                # Record which exact-coercions the template registered with
+                # (for the runtime-metadata annotation block; supercompiler
+                # uses this to know what conversions were committed to).
+                for c in t.coercions
+                    push!(coercions_used, c.name)
+                end
+            else
+                used_fallback = true
+            end
         end
-        residual, obligs = compile_program(g, root_ids)
-        residual = polish(residual, choice)
+
+        # Fallback: any template without a registered lowering → generic MM2
+        # codegen on the planned region. This keeps callers without registered
+        # templates working (and preserves the test_mgfw.jl baseline behavior).
+        if used_fallback || isempty(residual_pieces)
+            g      = MCoreGraph()
+            root_ids = _sexpr_to_mcore!(g, parse_sexpr("(dummy)")) |> x -> [x]
+            for node in parse_program(region_to_compile)
+                push!(root_ids, _sexpr_to_mcore!(g, node))
+            end
+            fallback_residual, fb_obligs = compile_program(g, root_ids)
+            push!(residual_pieces, fallback_residual)
+            obligs = fb_obligs
+        end
+        obligs === nothing && (obligs = BiSimObligation[])
+
+        # Compose: runtime-metadata annotations + concatenated residual.
+        # Templates that fired produce machine-readable comments that the
+        # runtime / supercompiler can parse; this is the "runtime metadata"
+        # half of Algorithm 5 step 8.
+        meta_lines = String[
+            "; mgfw:templates " * join(string.(templates_used), ","),
+            "; mgfw:coercions " * join(string.(unique(coercions_used)), ","),
+            "; mgfw:backend " * string(choice),
+        ]
+        residual = polish(join([join(meta_lines, "\n"); residual_pieces], "\n"), choice)
     end
     timings[:lower] = t8
 
@@ -487,12 +540,35 @@ end
 
 function _template_effect_kind(t::GeometryTemplate) :: EffectKind
     contract = t.local_concurrency
-    # Map commutes_when conditions to EffectKind for LC checking
-    :never       ∈ contract.commutes_when && return EFF_WRITE
-    :read_only   ∈ contract.commutes_when && return EFF_READ
-    :append_only ∈ contract.commutes_when && return EFF_APPEND
-    :always      ∈ contract.commutes_when && return EFF_PURE
-    EFF_READ  # default: assume read (conservative)
+    # The old classifier checked for [:never, :read_only, :append_only, :always]
+    # which NEVER appear in commutes_when — `default_local_concurrency` emits
+    # geometry-specific tags like :disjoint_targets_or_monotone_join,
+    # :regions_disjoint, :distinct_prefix_ownership, :distinct_output_patch_sets.
+    # So every template fell through to EFF_READ and the TyLAA verification
+    # step was dead.
+    #
+    # The corrected classifier maps the *actual* tags `default_local_concurrency`
+    # emits to the right EffectKind:
+    #
+    #   Factor  → :disjoint_targets_or_monotone_join  (Append-like, commutative)
+    #   DAG     → :regions_disjoint, :rewrite_confluent  (Write — needs confluence)
+    #   Trie    → :distinct_prefix_ownership  (Append-like, counter-merge)
+    #   Tensor  → :distinct_output_patch_sets  (Write — patch replay)
+    #
+    # Plus the original generic tags (kept for hand-built templates).
+    cw = contract.commutes_when
+    # Generic tags (override geometry inference)
+    :never       ∈ cw && return EFF_WRITE
+    :read_only   ∈ cw && return EFF_READ
+    :append_only ∈ cw && return EFF_APPEND
+    :always      ∈ cw && return EFF_PURE
+    # Geometry-specific tags from default_local_concurrency
+    (:disjoint_targets_or_monotone_join ∈ cw ||
+     :disjoint_prefix_ownership         ∈ cw ||
+     :distinct_prefix_ownership         ∈ cw)        && return EFF_APPEND
+    (:regions_disjoint                  ∈ cw ||
+     :distinct_output_patch_sets        ∈ cw)        && return EFF_WRITE
+    EFF_READ  # safe default
 end
 
 """

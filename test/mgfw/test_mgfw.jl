@@ -358,3 +358,75 @@ end
     # Space size unchanged or larger (no guarantee of new atoms from IR stub)
     @test space_val_count(s) >= 2
 end
+
+# ── Regression tests for 2026-05-30 audit fixes (Path B) ───────────────────────
+
+@testset "Bug 2: GLOBAL_REGISTRY auto-initialized via __init__" begin
+    # Audit found __init_registry__ was never auto-called by Julia (only __init__
+    # auto-fires). Fix: rename + auto-invoke. With the fix, GLOBAL_REGISTRY must
+    # be non-empty by the time `using MorkSupercompiler` returns.
+    @test !isempty(GLOBAL_REGISTRY.templates)
+    @test haskey(GLOBAL_REGISTRY.templates, :HeuristicModusPonens)
+    @test haskey(GLOBAL_REGISTRY.templates, :EvidenceCapsule)
+end
+
+@testset "Bug 3: _template_effect_kind classifies by actual concurrency tags" begin
+    # Audit found the classifier checked for [:never, :read_only, :append_only,
+    # :always] which never appear in commutes_when — default_local_concurrency
+    # emits geometry-specific tags. Fix: geometry-aware classifier.
+    # All four geometries should classify as a non-default EffectKind now.
+    factor_t = make_template(:f_test, sem_model(:Q, :Formula), GEOM_FACTOR)
+    trie_t   = make_template(:t_test, sem_codec(:Set), GEOM_TRIE)
+    dag_t    = make_template(:d_test, sem_prog(:Sig, :T), GEOM_DAG)
+    tensor_t = make_template(:x_test, sem_rel(:A, :B), GEOM_TENSOR_SPARSE)
+    # Factor + Trie are append-like (commutative under their tags)
+    @test MorkSupercompiler._template_effect_kind(factor_t) == EFF_APPEND
+    @test MorkSupercompiler._template_effect_kind(trie_t)   == EFF_APPEND
+    # DAG + Tensor require write-confluence/patch-replay
+    @test MorkSupercompiler._template_effect_kind(dag_t)    == EFF_WRITE
+    @test MorkSupercompiler._template_effect_kind(tensor_t) == EFF_WRITE
+end
+
+@testset "Bug 1: mg_compile step 8 honors optimized_templates + emits metadata" begin
+    # Audit found step 8 silently discarded optimized_templates and routed
+    # through plain MM2 compile, violating Alg 5 step 8 directly. Fix: dispatch
+    # via TEMPLATE_LOWERINGS; emit ;; mgfw: annotations as runtime metadata.
+    reg = GLOBAL_REGISTRY    # populated by __init__
+    result = mg_compile("(edge 0 1) (edge 1 2)", reg)
+    @test result isa CompilationResult
+    # Runtime metadata annotations must be present in the residual
+    @test occursin("mgfw:templates", result.residual_code)
+    @test occursin("mgfw:backend",   result.residual_code)
+end
+
+@testset "MVP demo 1: PLN STV factor template registered + lowering wired" begin
+    # §15.4 demo 2: register the PLN STV HeuristicModusPonens template; verify
+    # its lowering emits a residual that contains the STV-MP rewrite skeleton.
+    @test haskey(GLOBAL_REGISTRY.templates, :PLN_STV_HeuristicModusPonens)
+    t  = GLOBAL_REGISTRY.templates[:PLN_STV_HeuristicModusPonens]
+    @test t.presentation == GEOM_FACTOR
+    @test :stv_strength_revisable in t.laws
+    fn = get_lowering(:PLN_STV_HeuristicModusPonens)
+    @test fn !== nothing
+    residual = fn(t, "")   # region is unused by this template
+    @test occursin("stv-mp", residual)
+    @test occursin("apply-mp", residual)
+    @test occursin("PLN_STV_HeuristicModusPonens", residual)   # metadata tag
+end
+
+@testset "MVP demo 2: Trie motif-miner template registered + lowering wired" begin
+    # §15.4 demo 3: register the FactorGraphMotifMiner trie template; verify
+    # its lowering emits the 3-stage seed→grow→count miner skeleton.
+    @test haskey(GLOBAL_REGISTRY.templates, :FactorGraphMotifMiner)
+    t  = GLOBAL_REGISTRY.templates[:FactorGraphMotifMiner]
+    @test t.presentation == GEOM_TRIE
+    @test :evidence_mass == t.noether_charge
+    @test :counter_associative in t.laws
+    fn = get_lowering(:FactorGraphMotifMiner)
+    @test fn !== nothing
+    residual = fn(t, "")
+    @test occursin("motif-stage 1", residual)
+    @test occursin("motif-stage 2", residual)
+    @test occursin("motif-stage 3", residual)
+    @test occursin("FactorGraphMotifMiner", residual)   # metadata tag
+end

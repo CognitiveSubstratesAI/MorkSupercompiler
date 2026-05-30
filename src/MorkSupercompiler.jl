@@ -108,6 +108,33 @@ include("mgfw/FactorGeometry.jl")
 include("mgfw/TrieDAGGeometry.jl")
 include("mgfw/MGCompiler.jl")
 
+# §15.4 MVP demonstration templates — registered with their lowerings inside
+# `__init__` via the SchemaRegistry.init_registry! hook (see SchemaRegistry.jl).
+include("mgfw/templates/pln_stv.jl")
+include("mgfw/templates/motif_miner.jl")
+
+# Wire the MVP-template lowerings + template registrations into the global
+# registry. Registers idempotently — `register!` overwrites, so re-calling
+# is safe. Invoked at `__init__` time by replacing `init_registry!` with
+# a version that calls both the framework-shipped registrations AND ours.
+function _register_mvp_templates!()
+    register!(GLOBAL_REGISTRY, TEMPLATE_PLN_STV_MP)
+    register!(GLOBAL_REGISTRY, TEMPLATE_TRIE_MOTIF_MINER)
+    register_lowering!(:PLN_STV_HeuristicModusPonens, pln_stv_lowering)
+    register_lowering!(:FactorGraphMotifMiner,        motif_miner_lowering)
+    nothing
+end
+
+# Inline the framework-shipped registrations + MVP-template additions. Avoids
+# the let-prev-closure trick (which captures by name → infinite recursion).
+function init_registry!()
+    register!(GLOBAL_REGISTRY, TEMPLATE_HEURISTIC_MP)
+    register!(GLOBAL_REGISTRY, TEMPLATE_EVIDENCE_CAPSULE)
+    register!(GLOBAL_REGISTRY, TEMPLATE_CAUSAL_DAG)
+    _register_mvp_templates!()
+    nothing
+end
+
 # ── High-level public API ─────────────────────────────────────────────────────
 
 """

@@ -103,9 +103,49 @@ end
 # Shared global registry
 const GLOBAL_REGISTRY = SchemaRegistry()
 
-function __init_registry__()
+# Map of template name → lowering callback. Templates declare contracts
+# (effects / laws / cache); their lowering (how step 8 emits residual code)
+# lives here so the registry-as-data stays separable from runtime callbacks.
+# Signature: `lowering_fn(template::GeometryTemplate, region::AbstractString, ctx) → String`.
+const TEMPLATE_LOWERINGS = Dict{Symbol, Function}()
+
+"""
+    register_lowering!(name::Symbol, fn::Function)
+
+Associate a lowering function with a registered template by name. Step 8
+of `mg_compile` dispatches via this map when present, falling back to the
+generic MM2 codegen path otherwise.
+"""
+function register_lowering!(name::Symbol, fn::Function)
+    TEMPLATE_LOWERINGS[name] = fn
+    fn
+end
+
+"""
+    get_lowering(name::Symbol) → Union{Nothing, Function}
+"""
+get_lowering(name::Symbol) = get(TEMPLATE_LOWERINGS, name, nothing)
+
+"""
+    init_registry!()
+
+Populate `GLOBAL_REGISTRY` with the framework-shipped templates and their
+lowerings. Auto-invoked at module load via `__init__` so callers can rely
+on `GLOBAL_REGISTRY` being non-empty by the time the module is `using`-ed.
+Idempotent — safe to call multiple times (register! / register_lowering!
+both overwrite).
+"""
+function init_registry!()
     register!(GLOBAL_REGISTRY, TEMPLATE_HEURISTIC_MP)
     register!(GLOBAL_REGISTRY, TEMPLATE_EVIDENCE_CAPSULE)
+    register!(GLOBAL_REGISTRY, TEMPLATE_CAUSAL_DAG)
+    nothing
+end
+
+# Julia auto-invokes `__init__` (NOT `__init_registry__`) at module load —
+# audit 2026-05-30 caught that the previous `__init_registry__` was dead.
+function __init__()
+    init_registry!()
 end
 
 # ── §8.1 Human-facing DSL ─────────────────────────────────────────────────────
@@ -370,6 +410,7 @@ define_codec_search(; kwargs...) =
     authoring_workflow(DSLForm(:define_codec_search, Dict{Symbol,Any}(kwargs)))
 
 export SchemaRegistry, register!, lookup, search, coercion_path, GLOBAL_REGISTRY
+export TEMPLATE_LOWERINGS, register_lowering!, get_lowering, init_registry!
 export DSLForm, AuthoringResult, authoring_workflow
 export parse_define_factor_rule, parse_define_trie_miner, parse_define_codec_search
 export parse_define_coercion, parse_define_exactness, parse_define_cache_contract
