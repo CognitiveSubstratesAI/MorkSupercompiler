@@ -157,3 +157,34 @@ end
     @test occursin("approx", rep)
     @test occursin("within_tol", rep)
 end
+
+# ── Path C regression: SCPipeline drives §6 supercompiler core ─────────────────
+
+@testset "opts.supercompile=true invokes the §6 driver" begin
+    # Verifies the TyLA G functor wiring: when opts.supercompile=true,
+    # execute! must populate result.drive_results with a DriveResult per
+    # top-level node AND record timings[:supercompile]. With supercompile=false
+    # (default) the drive_results must be empty.
+    facts = "(edge a b) (edge b c)"
+    prog  = raw"(exec 0 (, (edge $x $y)) (, (node $x)))"
+
+    s = new_space()
+    space_add_all_sexpr!(s, facts)
+    opts_off = SCOptions(supercompile=false, max_steps=1)
+    res_off  = execute!(s, prog; opts=opts_off)
+    @test isempty(res_off.drive_results)
+    @test !haskey(res_off.timings, :supercompile)
+
+    # Fresh space — supercompile=true path
+    s2 = new_space()
+    space_add_all_sexpr!(s2, facts)
+    opts_on = SCOptions(supercompile=true, drive_steps=100, max_steps=1)
+    res_on  = execute!(s2, prog; opts=opts_on)
+    @test !isempty(res_on.drive_results)
+    @test haskey(res_on.timings, :supercompile)
+    @test res_on.timings[:supercompile] >= 0.0
+    # Each DriveResult must record a terminal state — value/fold/blocked/max_steps
+    for dr in res_on.drive_results
+        @test dr.terminated in (:value, :fold, :blocked, :max_steps)
+    end
+end

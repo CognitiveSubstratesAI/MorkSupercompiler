@@ -22,6 +22,7 @@ using MorkSupercompiler
     include("supercompiler/test_stepper.jl")
     include("supercompiler/test_canonical_keys.jl")
     include("supercompiler/test_bounded_split.jl")
+    include("supercompiler/test_driver.jl")
     include("supercompiler/test_kb_saturation.jl")
     include("supercompiler/test_evo_specializer.jl")
     include("supercompiler/test_pipeline_decompose.jl")

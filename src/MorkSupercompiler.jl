@@ -56,6 +56,7 @@ include("rewrite/Rewrite.jl")
 include("supercompiler/Stepper.jl")
 include("supercompiler/CanonicalKeys.jl")
 include("supercompiler/BoundedSplit.jl")
+include("supercompiler/Driver.jl")            # §6 driver — closes TyLA G functor gap
 include("supercompiler/PipelineDecompose.jl")
 
 # Layer 6 — Phase 3 Specializations + Code Generation (§7–9)
@@ -125,14 +126,24 @@ function _register_mvp_templates!()
     nothing
 end
 
-# Inline the framework-shipped registrations + MVP-template additions. Avoids
-# the let-prev-closure trick (which captures by name → infinite recursion).
+# Inline the framework-shipped registrations + MVP-template additions. Defined
+# here (after all template files have loaded) rather than in SchemaRegistry.jl
+# to avoid the Julia "Method overwriting is not permitted during precompilation"
+# error that would fire if SchemaRegistry.jl defined a stub and we overrode it.
 function init_registry!()
     register!(GLOBAL_REGISTRY, TEMPLATE_HEURISTIC_MP)
     register!(GLOBAL_REGISTRY, TEMPLATE_EVIDENCE_CAPSULE)
     register!(GLOBAL_REGISTRY, TEMPLATE_CAUSAL_DAG)
     _register_mvp_templates!()
     nothing
+end
+
+# Julia auto-invokes `__init__` at module load. This is the only place
+# `init_registry!` is called automatically — callers depending on
+# GLOBAL_REGISTRY being populated can rely on it being non-empty after
+# `using MorkSupercompiler`.
+function __init__()
+    init_registry!()
 end
 
 # ── High-level public API ─────────────────────────────────────────────────────

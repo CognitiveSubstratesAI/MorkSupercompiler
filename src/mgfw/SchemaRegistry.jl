@@ -130,23 +130,19 @@ get_lowering(name::Symbol) = get(TEMPLATE_LOWERINGS, name, nothing)
     init_registry!()
 
 Populate `GLOBAL_REGISTRY` with the framework-shipped templates and their
-lowerings. Auto-invoked at module load via `__init__` so callers can rely
-on `GLOBAL_REGISTRY` being non-empty by the time the module is `using`-ed.
-Idempotent — safe to call multiple times (register! / register_lowering!
+lowerings. Auto-invoked at module load via `__init__` (defined in the
+top-level module after all template files load) so callers can rely on
+`GLOBAL_REGISTRY` being non-empty by the time `using MorkSupercompiler`
+returns. Idempotent — safe to call multiple times (register! / register_lowering!
 both overwrite).
-"""
-function init_registry!()
-    register!(GLOBAL_REGISTRY, TEMPLATE_HEURISTIC_MP)
-    register!(GLOBAL_REGISTRY, TEMPLATE_EVIDENCE_CAPSULE)
-    register!(GLOBAL_REGISTRY, TEMPLATE_CAUSAL_DAG)
-    nothing
-end
 
-# Julia auto-invokes `__init__` (NOT `__init_registry__`) at module load —
-# audit 2026-05-30 caught that the previous `__init_registry__` was dead.
-function __init__()
-    init_registry!()
-end
+NOTE: this function is defined AND `__init__` is bound in the top-level
+`MorkSupercompiler` module (see MorkSupercompiler.jl) — NOT here — because
+the MVP-template files load AFTER SchemaRegistry.jl, and we need the init
+function to register them too. Defining it once at top level avoids the
+Julia "Method overwriting is not permitted during precompilation" error.
+"""
+function init_registry! end
 
 # ── §8.1 Human-facing DSL ─────────────────────────────────────────────────────
 

@@ -38,25 +38,29 @@ struct SCOptions
     decompose_multi_source:: Bool     # Stage 3: PipelineDecompose (Rule-of-64 fix)
     saturate_kb           :: Bool     # Stage 4: KBSaturation on background
     use_mm2_compiler      :: Bool     # Stage 5: lower through MM2Compiler
+    supercompile          :: Bool     # Stage 4c: §6 driver (Stepper + CanonicalKeys + BoundedSplit)
     max_steps             :: Int      # Stage 6: space_metta_calculus! limit
     stats_sample_frac     :: Float64  # fraction of space to sample for stats
     split_budget          :: Int      # BoundedSplit branch budget
+    sc_max_drive_steps    :: Int      # §6 driver: per-region rewrite_once iteration cap
     cleanup_intermediates :: Bool     # Post: remove _sc_tmp* atoms from space
 end
 
-SCOptions(; max_steps   = typemax(Int),
-            plan        = true,
-            stats       = true,
-            use_approx  = false,
-            error_tol   = 0.05,
-            decompose   = true,
-            saturate    = false,
-            mm2_compile = false,
-            sample_frac = 1.0,
-            budget      = SPLIT_DEFAULT_BUDGET,
-            cleanup     = true) =
+SCOptions(; max_steps     = typemax(Int),
+            plan          = true,
+            stats         = true,
+            use_approx    = false,
+            error_tol     = 0.05,
+            decompose     = true,
+            saturate      = false,
+            mm2_compile   = false,
+            supercompile  = false,
+            sample_frac   = 1.0,
+            budget        = SPLIT_DEFAULT_BUDGET,
+            drive_steps   = 1000,
+            cleanup       = true) =
     SCOptions(stats, plan, use_approx, error_tol, decompose, saturate, mm2_compile,
-              max_steps, sample_frac, budget, cleanup)
+              supercompile, max_steps, sample_frac, budget, drive_steps, cleanup)
 
 const SC_DEFAULTS = SCOptions()
 
@@ -83,6 +87,7 @@ struct SCResult
     program_planned   :: String
     n_atoms_original  :: Int   # atom count before decomposition
     n_atoms_decomposed:: Int   # atom count after decomposition (≥ original)
+    drive_results     :: Vector{DriveResult}    # Stage 4c: §6 driver output per region
     approx_result     :: Union{Nothing, ApproxPipelineResult}  # Stage 2b output (nothing if skipped)
 end
 
@@ -172,6 +177,42 @@ function execute!(s       :: Space,
         timings[:saturate] = t
     end
 
+    # Stage 4c — optional §6 supercompiler core (Path C: closes TyLA G functor gap).
+    # Drive each top-level node through Stepper + CanonicalKeys + BoundedSplit.
+    # Default off — when enabled, observes folding/splitting on the M-Core view
+    # of the planned program. The driver's output is recorded for inspection
+    # (drive_results); execution still proceeds via Stage 5 metta_calculus!.
+    #
+    # This is the §6 unit-tested machinery composed end-to-end. Without this
+    # block, the supercompiler is effectively a planner + decomposer; with it
+    # the TyLA G functor (Appendix D) is load-bearing in code.
+    drive_results = DriveResult[]
+    if opts.supercompile
+        t = @elapsed begin
+            g = MCoreGraph()
+            space_reg = copy(DEFAULT_PRIM_REGISTRY)
+            register_space_primitives!(space_reg, s)
+            opts.use_approx_pipeline && register_approx_primitives!(space_reg)
+            ft = FoldTable()
+            for node in parse_program(program_planned)
+                root_id = try
+                    _sexpr_to_mcore!(g, node)
+                catch
+                    continue
+                end
+                isvalid(root_id) || continue
+                push!(drive_results,
+                      drive!(g, root_id;
+                             ft=ft,
+                             max_steps=opts.sc_max_drive_steps,
+                             stats=stats,
+                             split_budget=opts.split_budget,
+                             registry=space_reg))
+            end
+        end
+        timings[:supercompile] = t
+    end
+
     # Stage 4b — optional MM2Compiler lowering with space-aware primitive registry
     obligs = BiSimObligation[]
     if opts.use_mm2_compiler
@@ -203,7 +244,7 @@ function execute!(s       :: Space,
     end
 
     SCResult(steps, stats, plan_str, obligs, timings, program_planned,
-             n_atoms_original, n_atoms_decomposed, approx_res)
+             n_atoms_original, n_atoms_decomposed, drive_results, approx_res)
 end
 
 """
@@ -221,7 +262,9 @@ function execute(facts   :: AbstractString,
     opts2 = SCOptions(opts.collect_stats, opts.plan_join_order,
                       opts.use_approx_pipeline, opts.error_tolerance,
                       opts.decompose_multi_source, opts.saturate_kb, opts.use_mm2_compiler,
+                      opts.supercompile,
                       steps, opts.stats_sample_frac, opts.split_budget,
+                      opts.sc_max_drive_steps,
                       opts.cleanup_intermediates)
     result = execute!(s, program; opts=opts2)
     (s, result)
