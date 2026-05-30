@@ -85,4 +85,83 @@ function naive_top_k_motifs(atoms::AbstractVector{<:AbstractString}, k::Int)
     pairs[1:min(k, length(pairs))]
 end
 
+# ── §4.1 GeodesicBGC priority function reference (workload #2) ────────────────
+
+"""
+    bgc_forward_f(adj, start, target_depth) → Dict{Node, Float64}
+
+Forward reachability per spec §4.1: f(x, t) = "how easy is x to reach from
+`start`". Concrete instantiation on a directed graph: f(x) = number of
+distinct paths from `start` to `x` of length ≤ `target_depth`. Reachable
+nodes get f > 0; unreachable get 0 (intentionally NOT in the dict so
+log(f) ill-defined cases are caught at the priority step).
+
+`adj`: Dict{Node, Vector{Node}} adjacency list (outgoing edges).
+"""
+function bgc_forward_f(adj::Dict{N, Vector{N}}, start::N,
+                        target_depth::Int) where {N}
+    f = Dict{N, Float64}(start => 1.0)   # 1 trivial path of length 0
+    frontier = [start]
+    for _ in 1:target_depth
+        next_frontier = N[]
+        for u in frontier
+            outs = get(adj, u, N[])
+            for v in outs
+                f[v] = get(f, v, 0.0) + f[u]   # accumulate path counts
+                push!(next_frontier, v)
+            end
+        end
+        isempty(next_frontier) && break
+        frontier = next_frontier
+    end
+    f
+end
+
+"""
+    bgc_backward_g(adj, goal, target_depth) → Dict{Node, Float64}
+
+Backward usefulness per spec §4.1: g(x, t) = "how easy is x to continue
+to `goal`". Operates on the reversed graph — for each node x, count paths
+from x to `goal` of length ≤ `target_depth`.
+"""
+function bgc_backward_g(adj::Dict{N, Vector{N}}, goal::N,
+                         target_depth::Int) where {N}
+    # Reverse the adjacency
+    rev = Dict{N, Vector{N}}()
+    for (u, vs) in adj, v in vs
+        push!(get!(() -> N[], rev, v), u)
+    end
+    bgc_forward_f(rev, goal, target_depth)
+end
+
+"""
+    bgc_priority(f, g, x; step_cost=1.0, prev_x=nothing) → Float64
+
+Spec §4.1 priority function used by GeodesicBGC-Worklist:
+    priority(x) = Δ(log f(x) + log g(x)) / step_cost
+
+`Δ` = change vs the previous frontier element. If `prev_x === nothing`,
+returns the raw log f + log g (initial frontier item). Returns -Inf for
+nodes with f=0 or g=0 (unreachable from start or to goal — should not be
+on the frontier).
+
+The spec's GeodesicBGC-Worklist (§12.2) consumes this priority: pop highest
+first, expand. The function is the heart of the composite's
+"least-effort path" semantic.
+"""
+function bgc_priority(f::AbstractDict, g::AbstractDict, x;
+                      step_cost::Real=1.0,
+                      prev_x=nothing) :: Float64
+    fx = get(f, x, 0.0)
+    gx = get(g, x, 0.0)
+    (fx <= 0.0 || gx <= 0.0) && return -Inf
+    curr = log(fx) + log(gx)
+    prev_x === nothing && return curr / step_cost
+    fp = get(f, prev_x, 0.0); gp = get(g, prev_x, 0.0)
+    (fp <= 0.0 || gp <= 0.0) && return curr / step_cost
+    prev = log(fp) + log(gp)
+    (curr - prev) / step_cost
+end
+
 export stv_mp_reference, naive_top_k_motifs
+export bgc_forward_f, bgc_backward_g, bgc_priority

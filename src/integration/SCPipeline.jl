@@ -89,6 +89,8 @@ struct SCResult
     n_atoms_decomposed:: Int   # atom count after decomposition (≥ original)
     drive_results     :: Vector{DriveResult}    # Stage 4c: §6 driver output per region
     approx_result     :: Union{Nothing, ApproxPipelineResult}  # Stage 2b output (nothing if skipped)
+    n_facts_derived   :: Int   # Stage 4: derived facts from KBSaturation (0 if saturate_kb=false)
+    n_kb_facts        :: Int   # Stage 4: total facts (base + derived) in the saturation KB
 end
 
 # ── Main pipeline entry point ─────────────────────────────────────────────────
@@ -154,6 +156,14 @@ function execute!(s       :: Space,
     # Stage 4 — optional KB saturation on background facts (Algorithm 11 §7.1)
     # Implements IncrementalSaturation: enumerate MORK atoms → MCoreGraph facts
     # → saturate! until fixed point with semi-naive evaluation.
+    #
+    # NOTE: derived facts live on the local MCoreGraph; they are NOT written
+    # back to the MORK Space (would require M-Core → s-expr serialization).
+    # We surface the counts so callers can verify saturation actually fired
+    # (previously a silent no-op for runtime semantics — see audit
+    # 2026-05-30 finding "saturate_kb is silently no-op for runtime").
+    n_facts_derived = 0
+    n_kb_facts      = 0
     if opts.saturate_kb
         t = @elapsed begin
             g  = MCoreGraph()
@@ -172,7 +182,8 @@ function execute!(s       :: Space,
                     # Skip atoms that don't parse to valid M-Core
                 end
             end
-            saturate!(kb; max_rounds=100)
+            n_facts_derived = saturate!(kb; max_rounds=100)
+            n_kb_facts      = length(kb.facts)
         end
         timings[:saturate] = t
     end
@@ -244,7 +255,8 @@ function execute!(s       :: Space,
     end
 
     SCResult(steps, stats, plan_str, obligs, timings, program_planned,
-             n_atoms_original, n_atoms_decomposed, drive_results, approx_res)
+             n_atoms_original, n_atoms_decomposed, drive_results, approx_res,
+             n_facts_derived, n_kb_facts)
 end
 
 """

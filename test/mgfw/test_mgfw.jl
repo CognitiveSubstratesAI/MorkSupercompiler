@@ -506,3 +506,103 @@ end
     @test occursin("motif-stage 2", residual)
     @test occursin("motif-stage 3", residual)
 end
+
+@testset "MVP §15.4 demo 3 (end-to-end): miner lowering executed by MORK" begin
+    # Load the miner's lowering into a fresh MORK space, pre-load 1-arg atoms
+    # representing the toy dataset, run space_metta_calculus!, and verify
+    # the stage-1 seed-scan produces the expected (motif X) +
+    # (motif-count X 1) atoms for each distinct symbol. This is the first
+    # genuine framework round-trip — previously every demo test was
+    # structural-only (read the lowering string).
+    t  = GLOBAL_REGISTRY.templates[:FactorGraphMotifMiner]
+    fn = get_lowering(:FactorGraphMotifMiner)
+    rules = fn(t, "")
+
+    s = new_space()
+    # Use 4 distinct 1-arg atoms — MORK hash-cons collapses duplicates so
+    # the count semantic at this stage is "distinct symbols seen", not
+    # "occurrences". Higher-stage occurrence-merge wires up once the
+    # trie-geometry runtime is fully integrated (workload #2 / §15.2 d6).
+    space_add_all_sexpr!(s, "(a) (b) (c) (d)")
+    space_add_all_sexpr!(s, rules)
+    space_metta_calculus!(s, 100)
+
+    dump  = space_dump_all_sexpr(s)
+    lines = split(dump, "\n"; keepempty=false)
+    for sym in ("a", "b", "c", "d")
+        @test any(l -> occursin("(motif $sym)", l),         lines)
+        @test any(l -> occursin("(motif-count $sym 1)", l), lines)
+    end
+
+    # The naive Julia reference on the equivalent dataset has 4 distinct
+    # entries, matching MORK's stage-1 output cardinality.
+    ref = naive_top_k_motifs(["a", "b", "c", "d"], 10)
+    @test length(ref) == 4
+end
+
+@testset "MVP §15.4 demo 2 (smoke): PLN STV lowering loads into MORK" begin
+    # Smoke test: the lowering's (= ...) MeTTa-style rules parse into MORK
+    # without raising. Full numerical equivalence (executing the rule
+    # via MORK against stv_mp_reference) requires arithmetic primitive
+    # wiring (`*`, `min`) through the supercompiler's prim registry —
+    # queued for the PLN session.
+    t  = GLOBAL_REGISTRY.templates[:PLN_STV_HeuristicModusPonens]
+    fn = get_lowering(:PLN_STV_HeuristicModusPonens)
+    rules = fn(t, "")
+    s = new_space()
+    @test_nowarn space_add_all_sexpr!(s, rules)
+end
+
+@testset "GeodesicBGC priority — toy graph-reachability domain (workload #2)" begin
+    # Concrete instantiation of the spec §4.1 priority function on a
+    # graph-reachability domain. Closes the MGFW_INTEGRATION.md tail item
+    # "GeodesicBGC priority functions — workload-side, queued."
+    #
+    # Toy graph (directed):
+    #   S -> A -> B -> G          path: S→A→B→G  (length 3)
+    #   S -> C -> G               path: S→C→G    (length 2)
+    #   S -> D                    dead end (no path to G)
+    adj = Dict(
+        :S => [:A, :C, :D],
+        :A => [:B],
+        :B => [:G],
+        :C => [:G],
+    )
+
+    f = bgc_forward_f(adj, :S, 5)
+    g = bgc_backward_g(adj, :G, 5)
+
+    # Reachability sanity
+    @test f[:S] == 1.0     # 1 trivial path
+    @test f[:A] == 1.0     # S→A
+    @test f[:C] == 1.0     # S→C
+    @test f[:G] >= 1.0     # at least one path reaches goal (≥1 via S→C→G)
+    @test get(f, :D, 0.0) == 1.0   # D reachable but goal unreachable from D
+
+    @test g[:G] == 1.0     # trivial backward path
+    @test g[:C] == 1.0     # C→G
+    @test g[:B] == 1.0     # B→G
+    @test g[:A] == 1.0     # A→B→G
+    # D has no path to G — should not be in g (or g[:D] = 0)
+    @test get(g, :D, 0.0) == 0.0
+
+    # Priority: nodes reachable from S AND able to continue to G have finite
+    # priority; dead-end D should be -Inf.
+    pri_A = bgc_priority(f, g, :A)
+    pri_C = bgc_priority(f, g, :C)
+    pri_D = bgc_priority(f, g, :D)
+    @test isfinite(pri_A)
+    @test isfinite(pri_C)
+    @test pri_D == -Inf    # unreachable to goal
+
+    # Δ priority — moving from a less-promising to a more-promising node
+    # yields positive priority (spec §4.1 says raise log f + log g per cost).
+    # Δ from D (-Inf path) to A (real path) should be finite > 0 because the
+    # function falls back to absolute when prev is degenerate.
+    pri_delta = bgc_priority(f, g, :A; prev_x=:D)
+    @test isfinite(pri_delta)
+
+    # step_cost scales the priority inversely
+    pri_high_cost = bgc_priority(f, g, :A; step_cost=2.0)
+    @test pri_high_cost ≈ pri_A / 2.0
+end

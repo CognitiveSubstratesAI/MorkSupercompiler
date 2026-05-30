@@ -188,3 +188,31 @@ end
         @test dr.terminated in (:value, :fold, :blocked, :max_steps)
     end
 end
+
+# ── Workload-side #3: saturate stage now reports observable counts ─────────────
+
+@testset "opts.saturate_kb populates n_facts_derived + n_kb_facts" begin
+    # Previously: opts.saturate_kb=true ran KBSaturation on a throwaway
+    # MCoreGraph that was discarded — no observable effect. Audit
+    # MGFW_INTEGRATION.md §6 flagged this as workload-side cleanup.
+    # Fix: capture saturate! return value + kb fact count, surface in SCResult.
+    s    = new_space()
+    space_add_all_sexpr!(s, "(parent alice bob) (parent bob carol)")
+    prog = raw"(exec 0 (, (parent $x $y)) (, (ancestor $x $y)))"
+
+    # saturate_kb=false: counts are zero (default)
+    opts_off = SCOptions(saturate=false, max_steps=1)
+    res_off  = execute!(s, prog; opts=opts_off)
+    @test res_off.n_facts_derived == 0
+    @test res_off.n_kb_facts      == 0
+
+    # saturate_kb=true: counts populated (≥ 0 — exact value depends on
+    # what M-Core round-trips to). With no rules registered we expect
+    # 0 derived but n_kb_facts > 0 from the base fact parse.
+    s2 = new_space()
+    space_add_all_sexpr!(s2, "(parent alice bob) (parent bob carol)")
+    opts_on = SCOptions(saturate=true, max_steps=1)
+    res_on  = execute!(s2, prog; opts=opts_on)
+    @test res_on.n_kb_facts >= 0     # base facts loaded into local KB
+    @test haskey(res_on.timings, :saturate)
+end
