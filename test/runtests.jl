@@ -25,6 +25,7 @@ using MorkSupercompiler
     include("supercompiler/test_kb_saturation.jl")
     include("supercompiler/test_evo_specializer.jl")
     include("supercompiler/test_pipeline_decompose.jl")
+    include("supercompiler/test_projection_lossless.jl")
 
     # ── Code Generation ───────────────────────────────────────────────────────
     include("codegen/test_mm2_compiler.jl")
