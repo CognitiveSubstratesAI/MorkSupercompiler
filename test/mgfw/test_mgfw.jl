@@ -430,3 +430,79 @@ end
     @test occursin("motif-stage 3", residual)
     @test occursin("FactorGraphMotifMiner", residual)   # metadata tag
 end
+
+# ── Item 2 (Path C tail): GeodesicBGC-Composite registered + lowering wired ────
+
+@testset "MVP §12.2: GeodesicBGC-Composite template registered + lowering" begin
+    # Spec §12.2 + Appendix A: the canonical hybrid that composes
+    # DualWorklist scheduler + Factor guidance + Trie evidence. Previously
+    # `build_geodesic_bgc_composite` existed but the template was never
+    # registered in GLOBAL_REGISTRY and had no lowering.
+    @test haskey(GLOBAL_REGISTRY.templates, :GeodesicBGC_Composite)
+    t = GLOBAL_REGISTRY.templates[:GeodesicBGC_Composite]
+    @test :monotone_priority in t.laws
+    @test :anytime_splice    in t.laws
+    @test :evidence_conserved in t.laws
+    @test get(t.backend_affinity, :mm2,  :low) == :high
+    @test get(t.backend_affinity, :mork, :low) == :high
+
+    fn = get_lowering(:GeodesicBGC_Composite)
+    @test fn !== nothing
+    residual = fn(t, "")
+    # All four §12.2 data-flow edges must appear as exec rewrite blocks.
+    @test occursin("bgc-stage scheduler-to-guidance", residual)
+    @test occursin("bgc-stage guidance-to-scheduler", residual)
+    @test occursin("bgc-stage scheduler-to-evidence", residual)
+    @test occursin("bgc-stage evidence-to-scheduler", residual)
+    @test occursin("GeodesicBGC_Composite", residual)   # metadata tag
+end
+
+# ── Item 1 (Path C tail): MGFW MVP demo references (§15.4) ─────────────────────
+
+@testset "MVP §15.4 demo 2: PLN STV reference vs lowering formula" begin
+    # The lowering emits a MeTTa rewrite rule with the strength × strength,
+    # min × min × 0.9 formula. The reference computes the same in plain Julia.
+    # Both must agree on representative inputs.
+    s_b, c_b = stv_mp_reference(0.8, 0.9, 0.7, 0.85)
+    @test s_b ≈ 0.8 * 0.7                              # = 0.56
+    @test c_b ≈ min(0.9, 0.85) * 0.9                   # = 0.85 * 0.9 = 0.765
+    # Degenerate case: zero strength → zero conclusion strength
+    s2, c2 = stv_mp_reference(0.0, 1.0, 0.9, 1.0)
+    @test s2 == 0.0
+    @test c2 ≈ 1.0 * 0.9
+    # The lowering must encode the SAME formula structure (text-level
+    # check — full execution-vs-reference diff requires the trie-geometry
+    # runtime, queued separately).
+    t  = GLOBAL_REGISTRY.templates[:PLN_STV_HeuristicModusPonens]
+    fn = get_lowering(:PLN_STV_HeuristicModusPonens)
+    residual = fn(t, "")
+    @test occursin("(* \$As \$Is)",          residual)    # strength: As * Is
+    @test occursin("(* (min \$Ac \$Ic) 0.9)", residual)    # confidence: min * 0.9
+end
+
+@testset "MVP §15.4 demo 3: motif miner reference top-k vs lowering structure" begin
+    # Reference: naive_top_k returns descending-by-count pairs.
+    atoms = ["foo a", "foo b", "bar c", "foo d", "bar e", "baz f"]
+    top2 = naive_top_k_motifs(atoms, 2)
+    @test length(top2) == 2
+    @test top2[1] == ("foo" => 3)
+    @test top2[2] == ("bar" => 2)
+
+    # k=1 picks the most-frequent motif
+    @test naive_top_k_motifs(atoms, 1) == ["foo" => 3]
+
+    # k > distinct → all distinct returned (here 3 distinct)
+    all_motifs = naive_top_k_motifs(atoms, 10)
+    @test length(all_motifs) == 3
+
+    # The lowering encodes the 3-stage seed → grow → score cascade. A full
+    # MORK execution comparison against the reference is queued; for now
+    # we verify the lowering emits all three stages (so the trie miner
+    # downstream consumer KNOWS what to wire).
+    t  = GLOBAL_REGISTRY.templates[:FactorGraphMotifMiner]
+    fn = get_lowering(:FactorGraphMotifMiner)
+    residual = fn(t, "")
+    @test occursin("motif-stage 1", residual)
+    @test occursin("motif-stage 2", residual)
+    @test occursin("motif-stage 3", residual)
+end

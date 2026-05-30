@@ -113,6 +113,8 @@ include("mgfw/MGCompiler.jl")
 # `__init__` via the SchemaRegistry.init_registry! hook (see SchemaRegistry.jl).
 include("mgfw/templates/pln_stv.jl")
 include("mgfw/templates/motif_miner.jl")
+include("mgfw/templates/geodesic_bgc.jl")
+include("mgfw/templates/references.jl")
 
 # Wire the MVP-template lowerings + template registrations into the global
 # registry. Registers idempotently — `register!` overwrites, so re-calling
@@ -121,8 +123,13 @@ include("mgfw/templates/motif_miner.jl")
 function _register_mvp_templates!()
     register!(GLOBAL_REGISTRY, TEMPLATE_PLN_STV_MP)
     register!(GLOBAL_REGISTRY, TEMPLATE_TRIE_MOTIF_MINER)
+    # GeodesicBGC composite — §12.2 worked example, registered AFTER its
+    # sub-templates so the registry has the pieces in case `mg_compile`
+    # walks the composite's components list.
+    register!(GLOBAL_REGISTRY, build_geodesic_bgc_composite(GLOBAL_REGISTRY))
     register_lowering!(:PLN_STV_HeuristicModusPonens, pln_stv_lowering)
     register_lowering!(:FactorGraphMotifMiner,        motif_miner_lowering)
+    register_lowering!(:GeodesicBGC_Composite,        geodesic_bgc_lowering)
     nothing
 end
 
