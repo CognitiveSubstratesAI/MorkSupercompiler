@@ -134,3 +134,54 @@ end
     derived_deep = derive_fact(premise, rule_str, :ancestor, ["alice", "carol"], ctx_deep)
     @test width(derived_deep.truth_pbox) >= width(derived.truth_pbox) - 1e-9
 end
+
+# ── Regression tests for 2026-05-30 audit fixes ────────────────────────────────
+
+@testset "disjunction_or — inclusion-exclusion upper bound" begin
+    # Previously: upper bound was hard-clamped to `min(hi_ab, 1.0)` without
+    # subtracting `lo_and`. So `or(0.5, 0.5)` returned [0.75, 1.0] instead of
+    # the correct [0.75, 0.75] from P(A∨B) = P(A) + P(B) − P(A∧B).
+    a = pbox_exact(0.5)
+    b = pbox_exact(0.5)
+    o = disjunction_or(a, b)
+    @test !isempty(o.intervals)
+    lo, hi = o.intervals[1]
+    # For independent point-mass 0.5 each:
+    #   ab  = 1.0;   and = 0.25
+    #   or  = ab − and = [0.75, 0.75]
+    @test isapprox(lo, 0.75; atol=1e-9)
+    @test isapprox(hi, 0.75; atol=1e-9)
+end
+
+@testset "_and_frechet — uses conjunction Fréchet bounds not additive" begin
+    # Previously delegated to add_pbox (additive Fréchet for SUM). Spec §2.3
+    # + §4.2.1 prescribe joint-mass bounds [max(p_A + p_B − 1, 0), min(p_A, p_B)].
+    # Need PARTIAL correlation (dependent but unequal sigs) to route to
+    # _and_frechet, not _and_lukasiewicz (which fires on identical sigs).
+    a0 = pbox_exact(0.6)
+    b0 = pbox_exact(0.7)
+    a1, b1 = mark_dependent(a0, b0, 1)   # share bit 1
+    # Add bit 2 to b only — now a.sig = [1], b.sig = [1,1]; overlap but unequal.
+    _, b = mark_dependent(b1, b1, 2)
+    a = a1
+
+    z = conjunction_and(a, b)   # dispatches to _and_frechet since dependent + unequal
+    @test !isempty(z.intervals)
+    lo, hi = z.intervals[1]
+    # Fréchet conjunction of 0.6 and 0.7: [max(0.3, 0), min(0.6, 0.7)] = [0.3, 0.6]
+    @test isapprox(lo, 0.3; atol=1e-9)
+    @test isapprox(hi, 0.6; atol=1e-9)
+    # Crucially: upper bound MUST be ≤ min(p_A, p_B) = 0.6, NOT > 1.0 as
+    # additive Fréchet would yield (0.6 + 0.7 = 1.3 widened).
+    @test hi <= 0.6 + 1e-9
+end
+
+@testset "convergence_width_bound — guard fires on either invalid arg" begin
+    # Previously: `n <= 0 || r <= 0 && return Inf` parses as
+    # `n <= 0 || (r <= 0 && return Inf)`. So invalid n with valid r fell through
+    # and tried sqrt(non-positive) → NaN. Parens fix forces early return.
+    @test convergence_width_bound(0, 0.5) == Inf
+    @test convergence_width_bound(-1, 0.5) == Inf
+    @test convergence_width_bound(100, 0.0) == Inf
+    @test convergence_width_bound(100, -0.1) == Inf
+end

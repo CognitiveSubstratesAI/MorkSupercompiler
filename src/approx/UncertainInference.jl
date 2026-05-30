@@ -110,8 +110,26 @@ function _and_lukasiewicz(T_A::PBox, T_B::PBox) :: PBox
 end
 
 function _and_frechet(T_A::PBox, T_B::PBox) :: PBox
-    # Fréchet bounds: same as add_pbox for dependent case
-    add_pbox(T_A, T_B)   # add_pbox detects dependency and uses Fréchet
+    # Fréchet conjunction bounds (spec §4.2.1):
+    #   max(p_A + p_B - 1, 0) ≤ P(A ∧ B) ≤ min(p_A, p_B)
+    # Previous impl delegated to `add_pbox` (additive Fréchet — for SUM not
+    # INTERSECTION). add_pbox returns intervals approximating [aL+bL, aU+bU]
+    # capped by widening, NOT the conjunction bounds above. Wrong operator,
+    # silently passed because tests only checked "width ≥ independent width".
+    new_intervals = Tuple{Float64,Float64}[]
+    new_probs     = Float64[]
+    for (i, (alo, ahi)) in enumerate(T_A.intervals)
+        pa = T_A.probabilities[i]
+        for (j, (blo, bhi)) in enumerate(T_B.intervals)
+            pb = T_B.probabilities[j]
+            lo = max(alo + blo - 1.0, 0.0)
+            hi = min(ahi, bhi)
+            push!(new_intervals, (lo, hi))
+            push!(new_probs, min(pa, pb))
+        end
+    end
+    sig = _union_sig(T_A.correlation_sig, T_B.correlation_sig)
+    merge_overlapping(PBox(new_intervals, new_probs, sum(new_probs), sig))
 end
 
 """
@@ -126,8 +144,13 @@ function disjunction_or(T_A::PBox, T_B::PBox) :: PBox
     and_term = conjunction_and(T_A, T_B)
     # or = A + B - A∧B; for p-boxes: add then subtract (via widened bounds)
     ab  = add_pbox(T_A, T_B)
-    # Subtract: invert and_term intervals (subtract from ab)
-    sub_ivs  = [(max(lo_ab - hi_and, 0.0), min(hi_ab, 1.0))
+    # Inclusion-exclusion bounds on P(A ∨ B):
+    #   lower = (aL + bL) − andU = lo_ab − hi_and  (worst case: most subtracted)
+    #   upper = (aU + bU) − andL = hi_ab − lo_and  (best case: least subtracted)
+    # Previous impl hard-clamped the upper bound to `min(hi_ab, 1.0)` — never
+    # subtracted `lo_and`. So `disjunction_or(0.5, 0.5)` returned [0.75, 1.0]
+    # instead of the correct [0.75, 0.75]. Untested.
+    sub_ivs  = [(max(lo_ab - hi_and, 0.0), min(max(hi_ab - lo_and, 0.0), 1.0))
                 for ((lo_ab, hi_ab), (lo_and, hi_and))
                 in zip(ab.intervals, and_term.intervals[1:min(end, length(ab.intervals))])]
     isempty(sub_ivs) && return ab
@@ -246,7 +269,9 @@ end
 Returns the theoretical upper bound on p-box width at iteration n with rate r.
 """
 function convergence_width_bound(n_iterations::Int, sampling_rate::Float64) :: Float64
-    n_iterations <= 0 || sampling_rate <= 0.0 && return Inf
+    # Parens fix Julia precedence — `&&` binds tighter than `||`, so the old
+    # `cond1 || cond2 && return X` only early-returned for cond2.
+    (n_iterations <= 0 || sampling_rate <= 0.0) && return Inf
     1.0 / sqrt(n_iterations * sampling_rate)
 end
 

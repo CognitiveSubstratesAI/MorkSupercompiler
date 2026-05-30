@@ -188,7 +188,7 @@ For each Prim(:kb_query, [pattern_id, ...]):
   - build a FixedArgMask for which arg positions are ground (Sym/Lit) vs free (Var)
 """
 function _collect_kb_sig(g::MCoreGraph, id::NodeID, max_depth::Int) :: CanonicalKBSig
-    max_depth <= 0 || !isvalid(id) && return CanonicalKBSig()
+    (max_depth <= 0 || !isvalid(id)) && return CanonicalKBSig()
     preds = Dict{Symbol, FixedArgMask}()
     _traverse_kb_sig!(g, id, max_depth, preds)
     isempty(preds) && return CanonicalKBSig()
@@ -198,17 +198,21 @@ function _collect_kb_sig(g::MCoreGraph, id::NodeID, max_depth::Int) :: Canonical
 end
 
 function _traverse_kb_sig!(g, id, depth, preds)
-    !isvalid(id) || depth <= 0 && return
+    (!isvalid(id) || depth <= 0) && return
     node = get_node(g, id)
     if node isa Prim && node.op == :kb_query && !isempty(node.args)
         pat_id = node.args[1]
         isvalid(pat_id) || return
         pat = get_node(g, pat_id)
-        if pat isa Con && isvalid(pat.head)
-            head_node = get_node(g, _sym_node_of(g, pat.head))
-            pred = pat.head isa Symbol ? pat.head : :unknown
+        if pat isa Con
+            # Previously: `head_node = get_node(g, _sym_node_of(g, pat.head))`
+            # — `_sym_node_of(::Symbol)` always returned NULL_NODE, so this
+            # call would throw `error("NULL_NODE has no node")`. The whole
+            # KB-signature path was dead-on-arrival. Also `pat.args` was a
+            # FieldError (Con stores `fields`, not `args`). Fixed both.
+            pred = pat.head
             mask = FixedArgMask()
-            for (i, arg_id) in enumerate(pat.args)
+            for (i, arg_id) in enumerate(pat.fields)
                 isvalid(arg_id) || continue
                 arg_node = get_node(g, arg_id)
                 if arg_node isa Sym || arg_node isa Lit
@@ -224,13 +228,11 @@ function _traverse_kb_sig!(g, id, depth, preds)
     end
 end
 
-_sym_node_of(g, s::Symbol) = NULL_NODE  # head is already a symbol in Con
-
 """
 Traverse the subtree collecting effect classes from all Prim nodes.
 """
 function _collect_effect_sig(g::MCoreGraph, id::NodeID, max_depth::Int) :: CanonicalEffectSig
-    max_depth <= 0 || !isvalid(id) && return CanonicalEffectSig()
+    (max_depth <= 0 || !isvalid(id)) && return CanonicalEffectSig()
     effects   = EffectClass[]
     resources = Symbol[]
     _traverse_effect_sig!(g, id, max_depth, effects, resources)
@@ -241,7 +243,7 @@ function _collect_effect_sig(g::MCoreGraph, id::NodeID, max_depth::Int) :: Canon
 end
 
 function _traverse_effect_sig!(g, id, depth, effects, resources)
-    !isvalid(id) || depth <= 0 && return
+    (!isvalid(id) || depth <= 0) && return
     node = get_node(g, id)
     if node isa Prim
         eset = node.effects
@@ -257,9 +259,16 @@ end
 function _effectset_to_effects(eset::EffectSet) :: Vector{<:Effect}
     effs = Effect[]
     mask = eset.mask
+    # Bit layout per Stepper.jl `_node_effects`:
+    #   0x01 = Read, 0x02 = Write, 0x04 = Append, 0x08 = Create,
+    #   0x10 = Delete, 0x20 = Observe
+    # Create + Delete were previously missing — effect signatures silently
+    # dropped them, breaking Algorithm 10's effect-subsumption check.
     mask & 0x01 != 0 && push!(effs, ReadEffect(DEFAULT_SPACE))
-    mask & 0x04 != 0 && push!(effs, AppendEffect(DEFAULT_SPACE))
     mask & 0x02 != 0 && push!(effs, WriteEffect(DEFAULT_SPACE))
+    mask & 0x04 != 0 && push!(effs, AppendEffect(DEFAULT_SPACE))
+    mask & 0x08 != 0 && push!(effs, CreateEffect(DEFAULT_SPACE))
+    mask & 0x10 != 0 && push!(effs, DeleteEffect(DEFAULT_SPACE))
     mask & 0x20 != 0 && push!(effs, ObserveEffect(DEFAULT_SPACE))
     effs
 end
