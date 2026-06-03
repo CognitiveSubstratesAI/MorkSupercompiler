@@ -204,6 +204,12 @@ Algorithm 11 (IncrementalSaturation) from §7.1.  Semi-naive evaluation:
   - Returns the total number of new facts derived
 
 Semi-naive invariant prevents quadratic re-derivation cost.
+
+!!! note "Not on the executed path (as of 2026-06-03)"
+    `saturate!` mutates `kb.facts` over a local `MCoreGraph`; derived `Con` nodes are
+    NOT serialized back to MORK s-expressions, so saturation is observability-only on
+    the live path. Writing derived facts back to the Space is scheduled phase work.
+    See the README "live path" section.
 """
 function saturate!(kb::KBState; max_rounds::Int=1000)::Int
     total_new = 0

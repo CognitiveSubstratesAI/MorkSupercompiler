@@ -11,8 +11,37 @@ Implements the full specification from three design documents by Ben Goertzel (O
 | *A Multi-Geometry Hyperon Methods Framework* (Apr 2026) | 5 | ✅ Complete — audited `docs/AUDIT_DOC3.md` |
 
 **Repo**: [sivaji1012/Supercompiler](https://github.com/sivaji1012/Supercompiler)  
-**Depends on**: [sivaji1012/MORK](https://github.com/sivaji1012/MORK) + [sivaji1012/PathMap](https://github.com/sivaji1012/PathMap)  
-**Tests**: 580+ across 22 test files, all passing
+**Depends on**: [MORK](https://github.com/CognitiveSubstratesAI/MORK) + [PathMap](https://github.com/CognitiveSubstratesAI/PathMap) + MORKTensorNetworks + HPC  
+**Tests**: 916 across ~30 test files, all passing
+
+---
+
+## What runs on the live execution path
+
+The algorithms above are **implemented and unit-tested**, but "✅ Complete" means
+*algorithm-complete*, not *all load-bearing*. To be precise about the shipped runtime:
+
+**On the live path** (what `SCPipeline.execute!` actually transforms + runs): an MM2
+**query planner** + **Rule-of-64 pipeline decomposer** + **approximate-rewrite
+pipeline** + **geometry-aware MM2 lowering**. The compiler→runtime seam is
+encoding-sound — `compile_program` output runs through `space_metta_calculus!` and
+derives the expected atoms (`test/integration/test_mm2_roundtrip.jl`). (That validates
+the encoding/priority *shape*, not the §9.3 Priority-Control Equivalence theorem
+itself, which is about ordering across multiple priorities.)
+
+**Built and unit-tested, but NOT yet load-bearing** (runs into a throwaway graph, or
+records without discharging):
+- the §6 driving/folding core (`Driver.drive!`) — `drive_results` are recorded for
+  inspection; execution still proceeds via `space_metta_calculus!`,
+- KB saturation (`KBSaturation.saturate!`) — derives onto a local `MCoreGraph`, never
+  written back to the Space,
+- the proof surfaces — MM2 `BiSimObligation`s, the approximate Phase-4 tolerance check
+  (self-consistent arithmetic vs *assigned* error, not measured), and MGCompiler
+  `proof_artifacts`/TyLAA `@warn` — **record or assert; they do not prove or gate**.
+
+Wiring `drive!`/`saturate!` into the executed program — and discharging the proof
+obligations against an exact reference — is scheduled phase work, gated on building a
+verification surface that does not exist yet. See `docs/AUDIT_DOC1.md` + the 2026-06-03 audit.
 
 ---
 

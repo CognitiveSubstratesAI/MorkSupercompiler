@@ -60,6 +60,13 @@ Invariant: every iteration either advances the focus, folds back to a
 prior canonical key, or terminates. Bounded by `max_steps` to guard
 against runaway recursion (which would itself indicate a Stepper bug —
 the whistle should always fire eventually under finite-state termination).
+
+!!! note "Not on the executed path (as of 2026-06-03)"
+    `drive!`'s `DriveResult` is recorded for inspection; it does NOT transform the
+    program that runs — `SCPipeline.execute!` still executes via MORK's
+    `space_metta_calculus!`. Making `drive!` load-bearing (folding/splitting the
+    executed program) is scheduled phase work, gated on a semantics-preserving
+    verification surface that does not exist yet. See the README "live path" section.
 """
 function drive!(
     g::MCoreGraph,
