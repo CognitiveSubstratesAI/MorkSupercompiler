@@ -51,6 +51,7 @@ using Aqua
     include("integration/test_profiler.jl")
     include("integration/test_explainer.jl")
     include("integration/test_adaptive_planner.jl")
+    include("integration/test_mm2_roundtrip.jl")   # A-4: compiler → runtime seam
 
     # ── Multi-Geometry Framework (Doc 3) ─────────────────────────────────────
     include("mgfw/test_mgfw.jl")
