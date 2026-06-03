@@ -10,7 +10,7 @@ using MorkSupercompiler
 
     @testset "variable flow" begin
         sources = parse_program("(parity \$i \$p)\n(succ \$i \$si)\n(A \$si \$se)")
-        stats2  = MORKStatistics(Dict("parity" => 5, "succ" => 5, "A" => 5), 15)
+        stats2 = MORKStatistics(Dict("parity" => 5, "succ" => 5, "A" => 5), 15)
         nodes = build_join_nodes(sources, stats2)
         @test length(nodes) == 3
         # \$i introduced by (parity \$i \$p) so succ and A should have \$i in vars_in
@@ -22,8 +22,8 @@ using MorkSupercompiler
         # Ground source should be first (card=1 beats card=5)
         stats3 = MORKStatistics(Dict("parity" => 5, "lt" => 10, "succ" => 1), 20)
         sources = parse_program("(lt \$x \$y)\n(parity \$i \$p)\n(succ 0 1)")
-        nodes   = build_join_nodes(sources, stats3)
-        perm    = plan_join_order(nodes)
+        nodes = build_join_nodes(sources, stats3)
+        perm = plan_join_order(nodes)
         # Lowest card wins: succ has card=1 (and is ground) → should be first
         @test perm[1] == 3   # succ 0 1 is source 3 (1-indexed)
     end
@@ -32,8 +32,8 @@ using MorkSupercompiler
         prog = """((phase \$p) (, (lt \$x \$y) (parity \$i \$p) (succ 0 1)) (O res))"""
         stats3 = MORKStatistics(Dict("parity" => 5, "lt" => 10, "succ" => 1), 16)
         planned = plan_program(prog, stats3)
-        nodes   = parse_program(planned)
-        conj    = ((nodes[1]::SList).items[2]::SList)
+        nodes = parse_program(planned)
+        conj = ((nodes[1]::SList).items[2]::SList)
         first_src = conj.items[2]
         # Lowest-card source first: succ 0 1 (card=1)
         @test sprint_sexpr(first_src) == "(succ 0 1)"
@@ -53,7 +53,7 @@ end
 
     @testset "plan_query — reorders by cardinality" begin
         # (lt $x $y) has 50 atoms, (succ $i $si) has 5 — succ should come first
-        conj  = parse_sexpr("(, (lt \$x \$y) (succ \$i \$si))")
+        conj = parse_sexpr("(, (lt \$x \$y) (succ \$i \$si))")
         sources = (conj::SList).items[2:end]
         stats = MORKStatistics(Dict("lt" => 50, "succ" => 5), 55)
         planned, barriers = plan_query(sources, stats)

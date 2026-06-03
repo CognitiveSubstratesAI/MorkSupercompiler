@@ -52,7 +52,6 @@ using MorkSupercompiler
     include("approx/test_uncertain_inference.jl")
     include("approx/test_approx_moses.jl")
     include("approx/test_approx_pipeline.jl")
-
 end
 
 println("All tests passed ✓")

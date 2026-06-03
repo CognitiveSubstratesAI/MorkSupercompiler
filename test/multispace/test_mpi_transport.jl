@@ -4,7 +4,7 @@ using Test, MorkSupercompiler, MORK
 
 @testset "mpi_active — false without MPI init" begin
     @test mpi_active() == false
-    @test mpi_rank()   == LOCAL_PEER
+    @test mpi_rank() == LOCAL_PEER
     @test mpi_nranks() == Int32(1)
 end
 
@@ -18,7 +18,7 @@ end
 @testset "NamedSpaceID — peer_id field" begin
     a = NamedSpaceID("my-kb")
     @test a.peer_id == LOCAL_PEER
-    @test a.name    == "my-kb"
+    @test a.name == "my-kb"
 
     b = NamedSpaceID("my-kb", UInt64(0), Int32(3))
     @test b.peer_id == Int32(3)
@@ -37,7 +37,7 @@ end
 
 @testset "SpaceRegistry — rank/nranks default" begin
     reg = SpaceRegistry()
-    @test reg.rank   == LOCAL_PEER
+    @test reg.rank == LOCAL_PEER
     @test reg.nranks == Int32(1)
 end
 
@@ -47,7 +47,7 @@ end
     enable_multi_space!(false)
     enable_multi_space!(true; use_mpi=false)
     @test ENABLE_MULTI_SPACE[] == true
-    @test mpi_active()         == false   # no MPI init without use_mpi=true
+    @test mpi_active() == false   # no MPI init without use_mpi=true
     enable_multi_space!(false)
 end
 
@@ -56,9 +56,9 @@ end
 @testset "MPI ops are no-ops without init" begin
     # send to rank 1 when MPI not initialized — should silently do nothing
     @test mpi_send_traverse!(Int32(1), UInt8[0x01, 0x02]) === nothing
-    @test mpi_poll_traverse!()                             === nothing
-    @test mpi_broadcast_traverse!(UInt8[0x01])             === nothing
-    @test mpi_barrier!()                                   === nothing
+    @test mpi_poll_traverse!() === nothing
+    @test mpi_broadcast_traverse!(UInt8[0x01]) === nothing
+    @test mpi_barrier!() === nothing
 end
 
 # ── space_traverse! — Stage 1 unchanged with MPI off ────────────────────────
@@ -68,13 +68,13 @@ end
     space_add_all_sexpr!(s, "(edge 0 1) (edge 1 2) (edge 2 3)")
 
     result = space_traverse!(s, raw"(edge $x $y)")
-    @test result.activated   == true
-    @test result.count       == 3
-    @test result.p_traverse  >= 0.3
+    @test result.activated == true
+    @test result.count == 3
+    @test result.p_traverse >= 0.3
 
     result2 = space_traverse!(s, raw"(nonexistent $x)")
     @test result2.activated == false
-    @test result2.count     == 0
+    @test result2.count == 0
 end
 
 # ── process_mpi_traversals! — no-op without MPI ──────────────────────────────

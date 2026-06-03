@@ -25,10 +25,10 @@ using MORK: Space, new_space, space_add_all_sexpr!, space_metta_calculus!
     BackendAffinity
 
 How strongly a region prefers a given backend (§9).
-  HIGH   — strong preference (region uses backend-specific features)
-  MEDIUM — moderate preference (region works well on this backend)
-  LOW    — weak preference (backend works but not optimal)
-  NONE   — backend not applicable
+HIGH   — strong preference (region uses backend-specific features)
+MEDIUM — moderate preference (region works well on this backend)
+LOW    — weak preference (backend works but not optimal)
+NONE   — backend not applicable
 """
 @enum AffinityLevel HIGH MEDIUM LOW NONE
 
@@ -38,12 +38,12 @@ How strongly a region prefers a given backend (§9).
 Affinity scores for all supported backends (§9).
 """
 struct BackendProfile
-    mm2         :: AffinityLevel   # MM2 worklist patterns
-    mork        :: AffinityLevel   # MORK-native operations
-    factor      :: AffinityLevel   # Factor graph runtime
-    trie        :: AffinityLevel   # Trie/PathMap runtime
-    tensor      :: AffinityLevel   # GPU tensor kernels
-    petta       :: AffinityLevel   # PeTTa (Prolog-based)
+    mm2::AffinityLevel   # MM2 worklist patterns
+    mork::AffinityLevel   # MORK-native operations
+    factor::AffinityLevel   # Factor graph runtime
+    trie::AffinityLevel   # Trie/PathMap runtime
+    tensor::AffinityLevel   # GPU tensor kernels
+    petta::AffinityLevel   # PeTTa (Prolog-based)
 end
 
 BackendProfile(; mm2=MEDIUM, mork=MEDIUM, factor=LOW, trie=LOW, tensor=NONE, petta=LOW) =
@@ -53,14 +53,14 @@ BackendProfile(; mm2=MEDIUM, mork=MEDIUM, factor=LOW, trie=LOW, tensor=NONE, pet
     BackendChoice
 
 The result of backend selection (stage 3 of §9).
-  primary   — main backend to use
-  fallback  — backup if primary is unavailable
-  is_hybrid — true if multiple backends needed (mixed execution)
+primary   — main backend to use
+fallback  — backup if primary is unavailable
+is_hybrid — true if multiple backends needed (mixed execution)
 """
 struct BackendChoice
-    primary   :: Symbol
-    fallback  :: Symbol
-    is_hybrid :: Bool
+    primary::Symbol
+    fallback::Symbol
+    is_hybrid::Bool
 end
 
 # ── §9 Four-stage late commitment ─────────────────────────────────────────────
@@ -71,8 +71,8 @@ end
 §9 Stage 1: Soft backend affinity analysis. Inspects geometry templates,
 effects, and laws to suggest backend preferences WITHOUT committing.
 """
-function affinity_analysis(templates::Vector{GeometryTemplate}) :: BackendProfile
-    mm2_score  = 0
+function affinity_analysis(templates::Vector{GeometryTemplate})::BackendProfile
+    mm2_score = 0
     mork_score = 0
     factor_score = 0
     trie_score = 0
@@ -82,27 +82,37 @@ function affinity_analysis(templates::Vector{GeometryTemplate}) :: BackendProfil
         aff = t.backend_affinity
 
         # Geometry signals
-        g == GEOM_FACTOR       && (factor_score += 2; mm2_score  += 1; mork_score += 1)
-        g == GEOM_TRIE         && (trie_score   += 2; mork_score += 2)
-        g == GEOM_DAG          && (mm2_score    += 2; mork_score += 1)
-        g == GEOM_TENSOR_SPARSE && (mork_score  += 1)
-        g == GEOM_TENSOR_DENSE  && nothing   # tensor/GPU low unless batched
+        g == GEOM_FACTOR && (factor_score += 2; mm2_score += 1; mork_score += 1)
+        g == GEOM_TRIE && (trie_score += 2; mork_score += 2)
+        g == GEOM_DAG && (mm2_score += 2; mork_score += 1)
+        g == GEOM_TENSOR_SPARSE && (mork_score += 1)
+        g == GEOM_TENSOR_DENSE && nothing   # tensor/GPU low unless batched
 
         # Template-level hints
-        get(aff, :mm2, :medium)  == :high && (mm2_score  += 2)
+        get(aff, :mm2, :medium) == :high && (mm2_score += 2)
         get(aff, :mork, :medium) == :high && (mork_score += 2)
-        :sink_free in t.laws             && (mm2_score   += 1)
-        :monotone  in t.laws             && (mork_score  += 1)
+        :sink_free in t.laws && (mm2_score += 1)
+        :monotone in t.laws && (mork_score += 1)
     end
 
     n = max(1, length(templates))
-    _score_to_affinity(x) = x ÷ n >= 3 ? HIGH : x ÷ n >= 2 ? MEDIUM : x ÷ n >= 1 ? LOW : NONE
+    _score_to_affinity(x) =
+        if x ÷ n >= 3
+            HIGH
+        elseif x ÷ n >= 2
+            MEDIUM
+        elseif x ÷ n >= 1
+            LOW
+        else
+            NONE
+        end
 
-    BackendProfile(
-        mm2    = _score_to_affinity(mm2_score),
-        mork   = _score_to_affinity(mork_score),
-        factor = _score_to_affinity(factor_score),
-        trie   = _score_to_affinity(trie_score))
+    BackendProfile(;
+        mm2=_score_to_affinity(mm2_score),
+        mork=_score_to_affinity(mork_score),
+        factor=_score_to_affinity(factor_score),
+        trie=_score_to_affinity(trie_score)
+    )
 end
 
 """
@@ -111,21 +121,22 @@ end
 §9 Stage 2: Backend-aware but backend-neutral IR optimization (ADR-055).
 Four passes — first three preserve prior behaviour; Pass 4 is new:
 
-  1. Validity pruning — drop templates that fail is_valid_template.
-  2. Cache contract ordering — content_hash > version_tuple > epoch > others.
-  3. Semiring-geometry matching (ADR-055, replaces ad-hoc cardinality heuristic):
-     infer natural semiring from geometry tag and re-rank accordingly.
-     mg_framework_spec §9/§12 maps:
-       GEOM_TRIE         → Boolean / MaxPlus  (reachability, best-path)
-       GEOM_FACTOR       → SumProduct         (counting, PLN inference)
-       GEOM_DAG          → MinPlus / Boolean  (shortest paths, DAG traversal)
-       GEOM_TENSOR_SPARSE → MaxPlus           (ECAN STI spreading)
-       GEOM_TENSOR_DENSE  → SumProduct        (Tucker dense einsums)
-  4. Semiring cost estimation — use semiring_matmul complexity proxy
-     (O(nnz) for sparse vs O(n³) for dense) to break ties within same rank.
+ 1. Validity pruning — drop templates that fail is_valid_template.
+ 2. Cache contract ordering — content_hash > version_tuple > epoch > others.
+ 3. Semiring-geometry matching (ADR-055, replaces ad-hoc cardinality heuristic):
+    infer natural semiring from geometry tag and re-rank accordingly.
+    mg_framework_spec §9/§12 maps:
+    GEOM_TRIE         → Boolean / MaxPlus  (reachability, best-path)
+    GEOM_FACTOR       → SumProduct         (counting, PLN inference)
+    GEOM_DAG          → MinPlus / Boolean  (shortest paths, DAG traversal)
+    GEOM_TENSOR_SPARSE → MaxPlus           (ECAN STI spreading)
+    GEOM_TENSOR_DENSE  → SumProduct        (Tucker dense einsums)
+ 4. Semiring cost estimation — use semiring_matmul complexity proxy
+    (O(nnz) for sparse vs O(n³) for dense) to break ties within same rank.
 """
-function backend_neutral_optimize(templates :: Vector{GeometryTemplate},
-                                   stats    :: MORKStatistics) :: Vector{GeometryTemplate}
+function backend_neutral_optimize(
+    templates::Vector{GeometryTemplate}, stats::MORKStatistics
+)::Vector{GeometryTemplate}
     isempty(templates) && return templates
 
     # Pass 1: validity pruning
@@ -133,11 +144,17 @@ function backend_neutral_optimize(templates :: Vector{GeometryTemplate},
     isempty(valid) && return templates   # guard: don't drop everything
 
     # Pass 2: cache contract ordering
-    _cache_rank(t::GeometryTemplate) :: Int = begin
+    _cache_rank(t::GeometryTemplate)::Int = begin
         keys = t.cache_contract.key
-        :content_hash  ∈ keys ? 0 :
-        :version_tuple ∈ keys ? 1 :
-        :epoch         ∈ keys ? 2 : 3
+        if :content_hash ∈ keys
+            0
+        elseif :version_tuple ∈ keys
+            1
+        elseif :epoch ∈ keys
+            2
+        else
+            3
+        end
     end
     sort!(valid; by=_cache_rank)
 
@@ -152,14 +169,25 @@ function backend_neutral_optimize(templates :: Vector{GeometryTemplate},
     #   3 = GEOM_TENSOR_SPARSE (MaxPlus — ECAN, patch-log shard workflow)
     #   4 = GEOM_TENSOR_DENSE  (SumProduct — Tucker dense einsums)
     #   5 = everything else
-    sort!(valid; by = t -> begin
-        g = geometry_of(t)
-        g == GEOM_TRIE          ? 0 :
-        g == GEOM_DAG           ? 1 :
-        g == GEOM_FACTOR        ? 2 :
-        g == GEOM_TENSOR_SPARSE ? 3 :
-        g == GEOM_TENSOR_DENSE  ? 4 : 5
-    end)
+    sort!(
+        valid;
+        by=t -> begin
+            g = geometry_of(t)
+            if g == GEOM_TRIE
+                0
+            elseif g == GEOM_DAG
+                1
+            elseif g == GEOM_FACTOR
+                2
+            elseif g == GEOM_TENSOR_SPARSE
+                3
+            elseif g == GEOM_TENSOR_DENSE
+                4
+            else
+                5
+            end
+        end
+    )
 
     # Pass 4: semiring cost estimation within same rank
     # Use a simple nnz proxy: sparser structures (TRIE/DAG) get priority over
@@ -167,20 +195,44 @@ function backend_neutral_optimize(templates :: Vector{GeometryTemplate},
     # Proxy: templates with :content_hash + GEOM_TRIE are cheapest to evaluate.
     if stats.total_atoms > 0
         n = stats.total_atoms
-        sort!(valid; by = t -> begin
-            g    = geometry_of(t)
-            rank = g == GEOM_TRIE ? 0 : g == GEOM_DAG ? 1 :
-                   g == GEOM_FACTOR ? 2 : g == GEOM_TENSOR_SPARSE ? 3 :
-                   g == GEOM_TENSOR_DENSE ? 4 : 5
-            base = if g == GEOM_TRIE;          log2(max(1, n))
-                   elseif g == GEOM_DAG;       sqrt(Float64(n))
-                   elseif g == GEOM_FACTOR;    Float64(n)
-                   elseif g == GEOM_TENSOR_SPARSE; Float64(n) * 0.1
-                   elseif g == GEOM_TENSOR_DENSE;  Float64(n)^1.5
-                   else Float64(n)^2
-                   end
-            rank * 1e9 + base
-        end)
+        sort!(
+            valid;
+            by=t -> begin
+                g = geometry_of(t)
+                rank = if g == GEOM_TRIE
+                    0
+                elseif g == GEOM_DAG
+                    1
+                elseif g == GEOM_FACTOR
+                    2
+                elseif g == GEOM_TENSOR_SPARSE
+                    3
+                elseif g == GEOM_TENSOR_DENSE
+                    4
+                else
+                    5
+                end
+                base = if g == GEOM_TRIE
+                    ;
+                    log2(max(1, n))
+                elseif g == GEOM_DAG
+                    ;
+                    sqrt(Float64(n))
+                elseif g == GEOM_FACTOR
+                    ;
+                    Float64(n)
+                elseif g == GEOM_TENSOR_SPARSE
+                    ;
+                    Float64(n) * 0.1
+                elseif g == GEOM_TENSOR_DENSE
+                    ;
+                    Float64(n)^1.5
+                else
+                    Float64(n)^2
+                end
+                rank * 1e9 + base
+            end
+        )
     end
 
     valid
@@ -191,19 +243,24 @@ end
 
 §9 Stage 3: Backend selection.  Pick the backend with highest affinity.
 """
-function select_backend(profile   :: BackendProfile,
-                         templates :: Vector{GeometryTemplate}) :: BackendChoice
+function select_backend(
+    profile::BackendProfile, templates::Vector{GeometryTemplate}
+)::BackendChoice
     # Highest-affinity backend wins
-    scores = [(:mm2, profile.mm2), (:mork, profile.mork),
-              (:factor, profile.factor), (:trie, profile.trie)]
+    scores = [
+        (:mm2, profile.mm2),
+        (:mork, profile.mork),
+        (:factor, profile.factor),
+        (:trie, profile.trie)
+    ]
     # HIGH=0 < MEDIUM=1 < LOW=2 < NONE=3 — argmin picks highest affinity
     best_idx = argmin(Int(s[2]) for s in scores)
-    primary  = scores[best_idx][1]
+    primary = scores[best_idx][1]
 
     # Fallback: second best
-    rest        = [s for s in scores if s[1] != primary]
+    rest = [s for s in scores if s[1] != primary]
     fallback_idx = isempty(rest) ? nothing : argmin(Int(s[2]) for s in rest)
-    fallback     = fallback_idx === nothing ? :direct : rest[fallback_idx][1]
+    fallback = fallback_idx === nothing ? :direct : rest[fallback_idx][1]
 
     # Hybrid if factor + trie both HIGH (e.g., GeodesicBGC-Composite)
     is_hybrid = profile.factor >= MEDIUM && profile.trie >= MEDIUM
@@ -217,15 +274,15 @@ end
 §9 Stage 4: Backend-specific polishing.
 
 MM2 backend: renumber exec atom priorities sequentially (0,1,2,...) so
-  no two exec atoms share the same priority — required by MM2 semantics.
-  Malformed (exec ...) lines without a numeric second token get priority 0.
+no two exec atoms share the same priority — required by MM2 semantics.
+Malformed (exec ...) lines without a numeric second token get priority 0.
 
 MORK/trie/factor/tensor backends: code is already in s-expression form
-  compatible with space_add_all_sexpr! — pass through unchanged.
+compatible with space_add_all_sexpr! — pass through unchanged.
 """
-function polish(code::String, choice::BackendChoice) :: String
+function polish(code::String, choice::BackendChoice)::String
     choice.primary != :mm2 && return code   # only MM2 needs priority renumbering
-    isempty(strip(code))  && return code
+    isempty(strip(code)) && return code
 
     lines = split(code, "\n"; keepempty=false)
     result = String[]
@@ -252,22 +309,22 @@ end
     CompilationResult
 
 Result of Algorithm 5 (9-step geometry-aware pipeline, §12.1).
-  residual_code   — lowered executable code (MM2 exec s-expressions or other)
-  backend_choice  — selected backend
-  templates_used  — all geometry templates involved
-  coercion_chain  — coercions applied
-  proof_artifacts — bisimulation obligations + exactness witnesses
-  profile         — backend affinity scores
-  phase_timings   :: Dict
+residual_code   — lowered executable code (MM2 exec s-expressions or other)
+backend_choice  — selected backend
+templates_used  — all geometry templates involved
+coercion_chain  — coercions applied
+proof_artifacts — bisimulation obligations + exactness witnesses
+profile         — backend affinity scores
+phase_timings   :: Dict
 """
 struct CompilationResult
-    residual_code   :: String
-    backend_choice  :: BackendChoice
-    templates_used  :: Vector{GeometryTemplate}
-    coercion_chain  :: Vector{Coercion}
-    proof_artifacts :: Vector{BiSimObligation}
-    profile         :: BackendProfile
-    phase_timings   :: Dict{Symbol, Float64}
+    residual_code::String
+    backend_choice::BackendChoice
+    templates_used::Vector{GeometryTemplate}
+    coercion_chain::Vector{Coercion}
+    proof_artifacts::Vector{BiSimObligation}
+    profile::BackendProfile
+    phase_timings::Dict{Symbol, Float64}
 end
 
 """
@@ -276,26 +333,28 @@ end
 
 Algorithm 5 (Geometry-aware compilation and supercompilation pipeline, §12.1):
 9 steps:
-  1.  Parse and infer semantic objects and effect regions
-  2.  Attach initial presentations from the framework registry
-  3.  Compute backend affinities and candidate coercion graph
-  4.  Run geometry-aware planning and selective supercompilation
-  5.  Choose exact or approximate kernels subject to cost and witness constraints
-  6.  Choose concurrency and distribution policies
-  7.  Select backend(s): PeTTa, MM2, tensor, trie, factor, or hybrid
-  8.  Lower to residual executable code and runtime metadata
-  9.  Return mixed executable + proof/witness artifacts
-"""
-function mg_compile(region          :: AbstractString,
-                    registry        :: SchemaRegistry = GLOBAL_REGISTRY;
-                    stats           :: MORKStatistics = MORKStatistics(),
-                    error_tolerance :: Float64        = 0.0) :: CompilationResult
 
+ 1. Parse and infer semantic objects and effect regions
+ 2. Attach initial presentations from the framework registry
+ 3. Compute backend affinities and candidate coercion graph
+ 4. Run geometry-aware planning and selective supercompilation
+ 5. Choose exact or approximate kernels subject to cost and witness constraints
+ 6. Choose concurrency and distribution policies
+ 7. Select backend(s): PeTTa, MM2, tensor, trie, factor, or hybrid
+ 8. Lower to residual executable code and runtime metadata
+ 9. Return mixed executable + proof/witness artifacts
+"""
+function mg_compile(
+    region::AbstractString,
+    registry::SchemaRegistry=GLOBAL_REGISTRY;
+    stats::MORKStatistics=MORKStatistics(),
+    error_tolerance::Float64=0.0
+)::CompilationResult
     timings = Dict{Symbol, Float64}()
 
     # Step 1: Parse region → SNodes → infer semantic types
     t1 = @elapsed begin
-        nodes   = parse_program(region)
+        nodes = parse_program(region)
         sem_types = _infer_semantic_types(nodes)
     end
     timings[:parse] = t1
@@ -308,7 +367,7 @@ function mg_compile(region          :: AbstractString,
 
     # Step 3: Backend affinity analysis + coercion graph
     t3 = @elapsed begin
-        profile  = affinity_analysis(templates)
+        profile = affinity_analysis(templates)
         coercions = _build_coercion_chain(templates, registry)
     end
     timings[:affinity] = t3
@@ -355,11 +414,11 @@ function mg_compile(region          :: AbstractString,
     # which coercions composed) is recorded as `;; mgfw:` comment annotations
     # at the top of the residual so the supercompiler / runtime can inspect it.
     t8 = @elapsed begin
-        residual_pieces  = String[]
-        templates_used   = Symbol[]
-        coercions_used   = Symbol[]
-        used_fallback    = false
-        obligs           = nothing
+        residual_pieces = String[]
+        templates_used = Symbol[]
+        coercions_used = Symbol[]
+        used_fallback = false
+        obligs = nothing
 
         for t in optimized_templates
             fn = get_lowering(t.name)
@@ -382,7 +441,7 @@ function mg_compile(region          :: AbstractString,
         # codegen on the planned region. This keeps callers without registered
         # templates working (and preserves the test_mgfw.jl baseline behavior).
         if used_fallback || isempty(residual_pieces)
-            g      = MCoreGraph()
+            g = MCoreGraph()
             root_ids = _sexpr_to_mcore!(g, parse_sexpr("(dummy)")) |> x -> [x]
             for node in parse_program(region_to_compile)
                 push!(root_ids, _sexpr_to_mcore!(g, node))
@@ -400,7 +459,7 @@ function mg_compile(region          :: AbstractString,
         meta_lines = String[
             "; mgfw:templates " * join(string.(templates_used), ","),
             "; mgfw:coercions " * join(string.(unique(coercions_used)), ","),
-            "; mgfw:backend " * string(choice),
+            "; mgfw:backend " * string(choice)
         ]
         residual = polish(join([join(meta_lines, "\n"); residual_pieces], "\n"), choice)
     end
@@ -408,8 +467,8 @@ function mg_compile(region          :: AbstractString,
 
     # Step 9: Return
     CompilationResult(
-        residual, choice, optimized_templates, coercions,
-        obligs, profile, timings)
+        residual, choice, optimized_templates, coercions, obligs, profile, timings
+    )
 end
 
 # ── §12.2 Geodesic BGC composite template ─────────────────────────────────────
@@ -421,33 +480,37 @@ end
 multi-geometry composition (DualWorklist + Factor + Trie).
 
 Components:
-  scheduler → GeodesicBGC-Worklist (DualWorklist geometry)
-  guidance  → FactorFGSurrogate (Factor geometry)
-  evidence  → EvidenceCapsule (Trie geometry)
+scheduler → GeodesicBGC-Worklist (DualWorklist geometry)
+guidance  → FactorFGSurrogate (Factor geometry)
+evidence  → EvidenceCapsule (Trie geometry)
 
 Data flow:
-  scheduler → guidance  via :active_subgraph_query
-  guidance  → scheduler via :fg_score_update
-  scheduler → evidence  via :capsule_transport
-  evidence  → scheduler via :overlap_veto
+scheduler → guidance  via :active_subgraph_query
+guidance  → scheduler via :fg_score_update
+scheduler → evidence  via :capsule_transport
+evidence  → scheduler via :overlap_veto
 """
-function build_geodesic_bgc_composite(reg::SchemaRegistry) :: GeometryTemplate
+function build_geodesic_bgc_composite(reg::SchemaRegistry)::GeometryTemplate
     make_template(
         :GeodesicBGC_Composite,
         sem_model(:Q, :Formula),
         GEOM_FACTOR;  # primary geometry
-        operators = [:scheduler_pop, :guidance_update, :evidence_update, :splice_check],
-        effects   = [ReadEffect(DEFAULT_SPACE), AppendEffect(DEFAULT_SPACE),
-                     ObserveEffect(DEFAULT_SPACE)],
-        laws      = [:monotone_priority, :anytime_splice, :evidence_conserved],
-        cache     = CacheContract([:capsule_cid, :sketch_cid, :epoch], [:new_token_mint]),
-        exactness = EXACT,
-        affinity  = Dict(:mm2 => :high, :mork => :high, :tensor => :low))
+        operators=[:scheduler_pop, :guidance_update, :evidence_update, :splice_check],
+        effects=[
+            ReadEffect(DEFAULT_SPACE),
+            AppendEffect(DEFAULT_SPACE),
+            ObserveEffect(DEFAULT_SPACE)
+        ],
+        laws=[:monotone_priority, :anytime_splice, :evidence_conserved],
+        cache=CacheContract([:capsule_cid, :sketch_cid, :epoch], [:new_token_mint]),
+        exactness=EXACT,
+        affinity=Dict(:mm2 => :high, :mork => :high, :tensor => :low)
+    )
 end
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-function _infer_semantic_types(nodes::Vector{SNode}) :: Vector{SemanticType}
+function _infer_semantic_types(nodes::Vector{SNode})::Vector{SemanticType}
     types = SemanticType[]
     for node in nodes
         node isa SList || continue
@@ -469,8 +532,9 @@ function _infer_semantic_types(nodes::Vector{SNode}) :: Vector{SemanticType}
     isempty(types) ? [sem_model(:Q, :Formula)] : types
 end
 
-function _attach_presentations(sem_types::Vector{SemanticType},
-                                reg::SchemaRegistry) :: Vector{GeometryTemplate}
+function _attach_presentations(
+    sem_types::Vector{SemanticType}, reg::SchemaRegistry
+)::Vector{GeometryTemplate}
     templates = GeometryTemplate[]
     for st in sem_types
         # Find best matching template in registry
@@ -479,24 +543,38 @@ function _attach_presentations(sem_types::Vector{SemanticType},
             push!(templates, candidates[1])
         else
             # Create a default template
-            geom = st.kind == SK_MODEL ? GEOM_FACTOR :
-                   st.kind == SK_PROG  ? GEOM_DAG    :
-                   st.kind == SK_CODEC ? GEOM_TRIE   : GEOM_FACTOR
-            push!(templates, make_template(
-                Symbol("auto_$(st.kind)"), st, geom;
-                operators=[:read, :write],
-                effects=[ReadEffect(DEFAULT_SPACE)]))
+            geom =
+                if st.kind == SK_MODEL
+                    GEOM_FACTOR
+                elseif st.kind == SK_PROG
+                    GEOM_DAG
+                elseif st.kind == SK_CODEC
+                    GEOM_TRIE
+                else
+                    GEOM_FACTOR
+                end
+            push!(
+                templates,
+                make_template(
+                    Symbol("auto_$(st.kind)"),
+                    st,
+                    geom;
+                    operators=[:read, :write],
+                    effects=[ReadEffect(DEFAULT_SPACE)]
+                )
+            )
         end
     end
     isempty(templates) ? [TEMPLATE_HEURISTIC_MP] : templates
 end
 
-function _build_coercion_chain(templates::Vector{GeometryTemplate},
-                                reg::SchemaRegistry) :: Vector{Coercion}
+function _build_coercion_chain(
+    templates::Vector{GeometryTemplate}, reg::SchemaRegistry
+)::Vector{Coercion}
     coercions = Coercion[]
-    for i in 1:length(templates)-1
+    for i in 1:(length(templates) - 1)
         g1 = geometry_of(templates[i])
-        g2 = geometry_of(templates[i+1])
+        g2 = geometry_of(templates[i + 1])
         g1 == g2 && continue
         path = coercion_path(reg, g1, g2)
         append!(coercions, path)
@@ -511,18 +589,18 @@ end
 
 TyLAA verification (§7.2, §15.3): verify that compiled geometry templates
 satisfy independence-respecting traces — the three TyLAA conditions:
-  LC (Local Confluence): each pair of applicable rewrites has a common reduct
-  G  (Generalisation):   the type layer is at least as general as the red theory
-  SHD (Shared Derivation): parallel independent steps share a common derivation
+LC (Local Confluence): each pair of applicable rewrites has a common reduct
+G  (Generalisation):   the type layer is at least as general as the red theory
+SHD (Shared Derivation): parallel independent steps share a common derivation
 
 Practical approximation using Effects.jl:
-  For each pair of templates, check that their effect sets commute.
-  If effects commute → LC holds for that pair (independent steps are safe).
-  Returns a list of violation messages (empty = all checks pass).
+For each pair of templates, check that their effect sets commute.
+If effects commute → LC holds for that pair (independent steps are safe).
+Returns a list of violation messages (empty = all checks pass).
 """
-function _apply_concurrency_policies!(templates::Vector{GeometryTemplate}) :: Vector{String}
+function _apply_concurrency_policies!(templates::Vector{GeometryTemplate})::Vector{String}
     violations = String[]
-    for i in 1:length(templates), j in (i+1):length(templates)
+    for i in 1:length(templates), j in (i + 1):length(templates)
         t1 = templates[i]
         t2 = templates[j]
         # Extract effect kinds from concurrency contracts
@@ -530,15 +608,17 @@ function _apply_concurrency_policies!(templates::Vector{GeometryTemplate}) :: Ve
         e2 = _template_effect_kind(t2)
         # LC check: effects must commute for safe parallel execution
         if !effects_commute(e1, e2)
-            push!(violations,
+            push!(
+                violations,
                 "TyLAA LC violation: templates $(t1.name) ($(e1)) and $(t2.name) ($(e2)) " *
-                "have non-commuting effects — parallel execution unsafe")
+                "have non-commuting effects — parallel execution unsafe"
+            )
         end
     end
     violations
 end
 
-function _template_effect_kind(t::GeometryTemplate) :: EffectKind
+function _template_effect_kind(t::GeometryTemplate)::EffectKind
     contract = t.local_concurrency
     # The old classifier checked for [:never, :read_only, :append_only, :always]
     # which NEVER appear in commutes_when — `default_local_concurrency` emits
@@ -558,16 +638,17 @@ function _template_effect_kind(t::GeometryTemplate) :: EffectKind
     # Plus the original generic tags (kept for hand-built templates).
     cw = contract.commutes_when
     # Generic tags (override geometry inference)
-    :never       ∈ cw && return EFF_WRITE
-    :read_only   ∈ cw && return EFF_READ
+    :never ∈ cw && return EFF_WRITE
+    :read_only ∈ cw && return EFF_READ
     :append_only ∈ cw && return EFF_APPEND
-    :always      ∈ cw && return EFF_PURE
+    :always ∈ cw && return EFF_PURE
     # Geometry-specific tags from default_local_concurrency
-    (:disjoint_targets_or_monotone_join ∈ cw ||
-     :disjoint_prefix_ownership         ∈ cw ||
-     :distinct_prefix_ownership         ∈ cw)        && return EFF_APPEND
-    (:regions_disjoint                  ∈ cw ||
-     :distinct_output_patch_sets        ∈ cw)        && return EFF_WRITE
+    (
+        :disjoint_targets_or_monotone_join ∈ cw || :disjoint_prefix_ownership ∈ cw ||
+        :distinct_prefix_ownership ∈ cw
+    ) &&
+        return EFF_APPEND
+    (:regions_disjoint ∈ cw || :distinct_output_patch_sets ∈ cw) && return EFF_WRITE
     EFF_READ  # safe default
 end
 
@@ -577,13 +658,14 @@ end
 High-level entry point: compile + execute a region.
 Compiles via mg_compile, then loads and runs in MORK Space.
 """
-function mg_run!(s      :: Space,
-                 region :: AbstractString;
-                 registry  :: SchemaRegistry = GLOBAL_REGISTRY,
-                 stats     :: MORKStatistics = MORKStatistics(),
-                 max_steps :: Int            = typemax(Int),
-                 kwargs...) :: Tuple{CompilationResult, Int}
-
+function mg_run!(
+    s::Space,
+    region::AbstractString;
+    registry::SchemaRegistry=GLOBAL_REGISTRY,
+    stats::MORKStatistics=MORKStatistics(),
+    max_steps::Int=typemax(Int),
+    kwargs...
+)::Tuple{CompilationResult, Int}
     result = mg_compile(region, registry; stats=stats, kwargs...)
     space_add_all_sexpr!(s, result.residual_code)
     n_steps = space_metta_calculus!(s, max_steps)

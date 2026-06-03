@@ -15,7 +15,7 @@ using MorkSupercompiler
     @testset "estimate_cardinality — with predicate count" begin
         stats2 = MORKStatistics(Dict("parity" => 5, "succ" => 5, "lt" => 10), 20)
         @test estimate_cardinality(parse_sexpr("(parity \$i \$p)"), stats2) == 5
-        @test estimate_cardinality(parse_sexpr("(lt \$x \$y)"), stats2)     == 10
+        @test estimate_cardinality(parse_sexpr("(lt \$x \$y)"), stats2) == 10
         # Ground atom: should give 1 (no variables to expand)
         @test estimate_cardinality(parse_sexpr("(parity 0 even)"), stats2) >= 1
     end

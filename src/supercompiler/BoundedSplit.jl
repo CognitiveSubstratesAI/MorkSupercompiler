@@ -31,18 +31,18 @@ The probability of each branch comes from MORKStatistics:
 One branch of a split.  `probability` is the estimated fraction of
 executions that take this branch.
 
-  id          — NodeID of the expression in this branch
-  env         — variable bindings in scope for this branch
-  probability — estimated probability in [0, 1]
-  is_catchall — true for the catch-all residual branch (added for soundness)
+id          — NodeID of the expression in this branch
+env         — variable bindings in scope for this branch
+probability — estimated probability in [0, 1]
+is_catchall — true for the catch-all residual branch (added for soundness)
 """
 struct Branch
-    id          :: NodeID
-    env         :: Env
-    probability :: Float64
-    is_catchall :: Bool
+    id::NodeID
+    env::Env
+    probability::Float64
+    is_catchall::Bool
 end
-Branch(id, env, p)   = Branch(id, env, p, false)
+Branch(id, env, p) = Branch(id, env, p, false)
 Branch_catchall(id, env) = Branch(id, env, 0.0, true)
 
 # ── Split result ──────────────────────────────────────────────────────────────
@@ -51,21 +51,21 @@ Branch_catchall(id, env) = Branch(id, env, 0.0, true)
     SplitResult
 
 Outcome of a bounded split:
-  branches        — selected branches (sorted by descending probability)
-  total_prob      — sum of selected branch probabilities (< 1 if catchall added)
-  budget_hit      — true if the budget limit stopped selection
-  catchall_added  — true if a catch-all residual was appended for soundness
+branches        — selected branches (sorted by descending probability)
+total_prob      — sum of selected branch probabilities (< 1 if catchall added)
+budget_hit      — true if the budget limit stopped selection
+catchall_added  — true if a catch-all residual was appended for soundness
 """
 struct SplitResult
-    branches      :: Vector{Branch}
-    total_prob    :: Float64
-    budget_hit    :: Bool
-    catchall_added:: Bool
+    branches::Vector{Branch}
+    total_prob::Float64
+    budget_hit::Bool
+    catchall_added::Bool
 end
 
 # Constants from spec §6.2
-const SPLIT_PROB_THRESHOLD  = 0.95
-const SPLIT_DEFAULT_BUDGET  = 16
+const SPLIT_PROB_THRESHOLD = 0.95
+const SPLIT_DEFAULT_BUDGET = 16
 
 # ── Algorithm 9 — BoundedSplit (§6.2) ──────────────────────────────────────────
 
@@ -74,17 +74,15 @@ const SPLIT_DEFAULT_BUDGET  = 16
 
 Algorithm 9 (BoundedSplit) from §6.2.  Dispatches on node kind:
 
-  Choice(alts)            → split_choice_bounded
-  Match(scrut, _) if scrut not yet a value → split_match_symbolic
-  Prim(:kb_query, [pat])  → split_kb_symbolic
-  _                       → single-branch split (no splitting needed)
+Choice(alts)            → split_choice_bounded
+Match(scrut, _) if scrut not yet a value → split_match_symbolic
+Prim(:kb_query, [pat])  → split_kb_symbolic
+_                       → single-branch split (no splitting needed)
 """
-function bounded_split(g       :: MCoreGraph,
-                       id      :: NodeID,
-                       env     :: Env,
-                       stats   :: MORKStatistics;
-                       budget  :: Int = SPLIT_DEFAULT_BUDGET) :: SplitResult
-
+function bounded_split(
+    g::MCoreGraph, id::NodeID, env::Env, stats::MORKStatistics;
+    budget::Int=SPLIT_DEFAULT_BUDGET
+)::SplitResult
     !isvalid(id) && return SplitResult([Branch(id, env, 1.0)], 1.0, false, false)
 
     node = get_node(g, id)
@@ -102,19 +100,19 @@ end
 
 # ── SplitChoiceBounded (§6.2 Algorithm 9) ─────────────────────────────────────
 
-function _split_choice_bounded(g, node::Choice, id, env, stats, budget) :: SplitResult
+function _split_choice_bounded(g, node::Choice, id, env, stats, budget)::SplitResult
     alts = node.alts
 
     # Estimate probability for each alternative
     probs = [_estimate_guard_prob(g, alt.guard, stats) for alt in alts]
 
     # Sort descending by probability
-    perm    = sortperm(probs; rev=true)
-    sorted  = [(alts[i], probs[i]) for i in perm]
+    perm = sortperm(probs; rev=true)
+    sorted = [(alts[i], probs[i]) for i in perm]
 
-    selected       = Branch[]
-    cumulative     = 0.0
-    budget_hit     = false
+    selected = Branch[]
+    cumulative = 0.0
+    budget_hit = false
 
     for (alt, prob) in sorted
         if length(selected) >= budget
@@ -131,7 +129,7 @@ function _split_choice_bounded(g, node::Choice, id, env, stats, budget) :: Split
     catchall_added = false
     if cumulative < 1.0
         # Catch-all: a residual Choice covering the remaining alts
-        remaining = [alts[perm[i]] for i in (length(selected)+1):length(sorted)]
+        remaining = [alts[perm[i]] for i in (length(selected) + 1):length(sorted)]
         if !isempty(remaining)
             catchall_id = add_choice!(g, Choice(remaining, node.effects))
             push!(selected, Branch_catchall(catchall_id, env))
@@ -144,21 +142,21 @@ end
 
 # ── SplitMatchSymbolic ─────────────────────────────────────────────────────────
 
-function _split_match_symbolic(g, node::MatchNode, id, env, stats, budget) :: SplitResult
+function _split_match_symbolic(g, node::MatchNode, id, env, stats, budget)::SplitResult
     # For each clause, estimate probability via guard
     clauses = node.clauses
-    probs   = [_estimate_clause_prob(g, c, stats) for c in clauses]
-    perm    = sortperm(probs; rev=true)
+    probs = [_estimate_clause_prob(g, c, stats) for c in clauses]
+    perm = sortperm(probs; rev=true)
 
-    selected   = Branch[]
+    selected = Branch[]
     cumulative = 0.0
     budget_hit = false
 
     for i in perm
-        length(selected) >= budget && (budget_hit = true; break)
+        length(selected) >= budget && (budget_hit=true; break)
         cumulative >= SPLIT_PROB_THRESHOLD && break
 
-        c    = clauses[i]
+        c = clauses[i]
         prob = probs[i]
         # Build a single-clause match for this branch
         branch_id = add_match!(g, MatchNode(node.scrut, [c], node.effects))
@@ -168,7 +166,7 @@ function _split_match_symbolic(g, node::MatchNode, id, env, stats, budget) :: Sp
 
     catchall_added = false
     if cumulative < 1.0
-        remaining_cs = [clauses[perm[i]] for i in (length(selected)+1):length(perm)]
+        remaining_cs = [clauses[perm[i]] for i in (length(selected) + 1):length(perm)]
         if !isempty(remaining_cs)
             ca_id = add_match!(g, MatchNode(node.scrut, remaining_cs, node.effects))
             push!(selected, Branch_catchall(ca_id, env))
@@ -190,24 +188,24 @@ that could match gets its own branch, weighted by cardinality.
 This implements the "symbolic split by predicate/mode" described in §2.2
 ("Bounded Splitting uses symbolic splits, not fact enumeration").
 """
-function _split_kb_symbolic(g, node::Prim, id, env, stats, budget) :: SplitResult
+function _split_kb_symbolic(g, node::Prim, id, env, stats, budget)::SplitResult
     # Pattern is args[1]
     isempty(node.args) && return SplitResult([Branch(id, env, 1.0)], 1.0, false, false)
 
-    pat_id   = node.args[1]
-    total    = max(1, stats.total_atoms)
+    pat_id = node.args[1]
+    total = max(1, stats.total_atoms)
     branches = Branch[]
 
     # Each predicate in stats is a potential match branch
     sorted_preds = sort(collect(predicate_counts(stats)); by=x->-x[2])
-    cumulative   = 0.0
-    budget_hit   = false
+    cumulative = 0.0
+    budget_hit = false
 
     for (pred, count) in sorted_preds
-        length(branches) >= budget && (budget_hit = true; break)
+        length(branches) >= budget && (budget_hit=true; break)
         cumulative >= SPLIT_PROB_THRESHOLD && break
 
-        prob   = count / total
+        prob = count / total
         # Build specialized query: same pattern but with predicate hint
         hint_id = add_sym!(g, Sym(pred))
         spec_id = add_prim!(g, Prim(:kb_query_pred, [pat_id, hint_id], node.effects))
@@ -230,8 +228,9 @@ end
 
 # ── Probability estimation helpers ───────────────────────────────────────────
 
-function _estimate_guard_prob(g::MCoreGraph, guard_id::NodeID,
-                               stats::MORKStatistics) :: Float64
+function _estimate_guard_prob(
+    g::MCoreGraph, guard_id::NodeID, stats::MORKStatistics
+)::Float64
     !isvalid(guard_id) && return 1.0 / max(1, stats.total_atoms ÷ 4)
 
     node = get_node(g, guard_id)
@@ -239,29 +238,38 @@ function _estimate_guard_prob(g::MCoreGraph, guard_id::NodeID,
 
     if node isa Prim && node.op == :kb_query
         isempty(node.args) && return 0.1
-        pat  = node.args[1]
+        pat = node.args[1]
         snode = parse_sexpr(sprint_mcore(g, pat))
-        card  = estimate_cardinality(snode, stats)
+        card = estimate_cardinality(snode, stats)
         return clamp(card / max(1, stats.total_atoms), 0.0, 1.0)
     end
 
     0.5   # fallback: uniform
 end
 
-function _estimate_clause_prob(g::MCoreGraph, clause::MatchClause,
-                                stats::MORKStatistics) :: Float64
+function _estimate_clause_prob(
+    g::MCoreGraph, clause::MatchClause, stats::MORKStatistics
+)::Float64
     _estimate_guard_prob(g, clause.guard, stats)
 end
 
 # ── Minimal M-Core → sexpr serializer (for probability estimation) ────────────
 
-"""Sprint a NodeID as a rough sexpr string (used for cardinality lookup only)."""
-function sprint_mcore(g::MCoreGraph, id::NodeID) :: String
+"""
+Sprint a NodeID as a rough sexpr string (used for cardinality lookup only).
+"""
+function sprint_mcore(g::MCoreGraph, id::NodeID)::String
     !isvalid(id) && return "nil"
     node = get_node(g, id)
-    if node isa Sym;    return string(node.name)
-    elseif node isa Lit; return string(node.val)
-    elseif node isa Var; return "\$x$(node.ix)"
+    if node isa Sym
+        ;
+        return string(node.name)
+    elseif node isa Lit
+        ;
+        return string(node.val)
+    elseif node isa Var
+        ;
+        return "\$x$(node.ix)"
     elseif node isa Con
         parts = join([sprint_mcore(g, f) for f in node.fields], " ")
         return "($(node.head) $parts)"

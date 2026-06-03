@@ -16,11 +16,10 @@
 # final_template projection (line 64 of PipelineDecompose.jl).
 
 using Test
-using MORK: new_space, space_add_all_sexpr!, space_dump_all_sexpr,
-            space_metta_calculus!
+using MORK: new_space, space_add_all_sexpr!, space_dump_all_sexpr, space_metta_calculus!
 using MorkSupercompiler: plan!
 
-function _result_set(dump::String) :: Set{String}
+function _result_set(dump::String)::Set{String}
     Set(filter(l -> startswith(strip(l), "(Result"), strip.(split(dump, '\n'))))
 end
 
@@ -40,7 +39,6 @@ function _run_both(facts::String, program::String)
 end
 
 @testset "PipelineDecompose lossless projection" begin
-
     @testset "3-source single-hop (x is final-only)" begin
         # (A $x $y)(B $y $z)(C $z $w) → (Result $x $w)
         # Two $x values share $y=shared.  Without final-template threading,

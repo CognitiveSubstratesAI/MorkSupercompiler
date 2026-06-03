@@ -22,8 +22,8 @@ using MORK: Space, space_val_count, space_add_all_sexpr!, space_metta_calculus!
 
 # ── Constants (§5.2.2) ────────────────────────────────────────────────────────
 
-const MAX_PLAN_AGE    = 50     # replan after this many metta_calculus! calls
-const REPLAN_DRIFT    = 0.20   # replan if cardinality drifts by > 20%
+const MAX_PLAN_AGE = 50     # replan after this many metta_calculus! calls
+const REPLAN_DRIFT = 0.20   # replan if cardinality drifts by > 20%
 
 # ── AdaptivePlan ──────────────────────────────────────────────────────────────
 
@@ -32,21 +32,21 @@ const REPLAN_DRIFT    = 0.20   # replan if cardinality drifts by > 20%
 
 Cached join plan with version tracking and drift detection.
 
-  program_planned  — the last planned version of the program
-  stats            — MORKStatistics at planning time
-  atom_count_base  — space atom count when this plan was created
-  plan_version     — monotone counter incremented on each replan
-  calls_since_plan — metta_calculus! calls since last plan
-  cardinality_cache — per-predicate cardinality at planning time (for drift)
+program_planned  — the last planned version of the program
+stats            — MORKStatistics at planning time
+atom_count_base  — space atom count when this plan was created
+plan_version     — monotone counter incremented on each replan
+calls_since_plan — metta_calculus! calls since last plan
+cardinality_cache — per-predicate cardinality at planning time (for drift)
 """
 mutable struct AdaptivePlan
-    program_original :: String
-    program_planned  :: String
-    stats            :: MORKStatistics
-    atom_count_base  :: Int
-    plan_version     :: Int
-    calls_since_plan :: Int
-    cardinality_cache:: Dict{String, Int}   # predicate → count at plan time
+    program_original::String
+    program_planned::String
+    stats::MORKStatistics
+    atom_count_base::Int
+    plan_version::Int
+    calls_since_plan::Int
+    cardinality_cache::Dict{String, Int}   # predicate → count at plan time
 end
 
 """
@@ -54,13 +54,18 @@ end
 
 Build the initial plan for `program` given the current state of `s`.
 """
-function AdaptivePlan(s::Space, program::AbstractString) :: AdaptivePlan
+function AdaptivePlan(s::Space, program::AbstractString)::AdaptivePlan
     stats = collect_stats(s)
-    prog  = plan_program(program, stats)
+    prog = plan_program(program, stats)
     AdaptivePlan(
-        String(program), prog, stats,
-        space_val_count(s), 1, 0,
-        copy(predicate_counts(stats)))
+        String(program),
+        prog,
+        stats,
+        space_val_count(s),
+        1,
+        0,
+        copy(predicate_counts(stats))
+    )
 end
 
 # ── Algorithm 5 — ShouldReplan (§5.2.2) ──────────────────────────────────────
@@ -71,13 +76,14 @@ end
 Algorithm 5 (ShouldReplan) adapted for MORK.
 
 Triggers a replan if:
-  1. Plan age (calls_since_plan) exceeds MAX_PLAN_AGE, OR
-  2. Any predicate cardinality drifts by more than REPLAN_DRIFT × original, OR
-  3. Total atom count has doubled since last plan
+
+ 1. Plan age (calls_since_plan) exceeds MAX_PLAN_AGE, OR
+ 2. Any predicate cardinality drifts by more than REPLAN_DRIFT × original, OR
+ 3. Total atom count has doubled since last plan
 
 Under sink-free semantics, cardinalities can only increase.
 """
-function should_replan(ap::AdaptivePlan, s::Space) :: Bool
+function should_replan(ap::AdaptivePlan, s::Space)::Bool
     # Condition 1: plan age
     ap.calls_since_plan >= MAX_PLAN_AGE && return true
 
@@ -103,16 +109,16 @@ end
 Rebuild the plan for `ap.program_original` against the current `s`.
 Returns true if the plan actually changed.
 """
-function replan!(ap::AdaptivePlan, s::Space) :: Bool
+function replan!(ap::AdaptivePlan, s::Space)::Bool
     new_stats = collect_stats(s)
-    new_prog  = plan_program(ap.program_original, new_stats)
+    new_prog = plan_program(ap.program_original, new_stats)
 
     changed = new_prog != ap.program_planned
-    ap.program_planned   = new_prog
-    ap.stats             = new_stats
-    ap.atom_count_base   = space_val_count(s)
-    ap.plan_version     += 1
-    ap.calls_since_plan  = 0
+    ap.program_planned = new_prog
+    ap.stats = new_stats
+    ap.atom_count_base = space_val_count(s)
+    ap.plan_version += 1
+    ap.calls_since_plan = 0
     ap.cardinality_cache = copy(predicate_counts(new_stats))
     changed
 end
@@ -123,19 +129,18 @@ end
     run_adaptive!(s, ap, new_facts; steps, force_replan) -> NamedTuple
 
 Execute one adaptive planning cycle:
-  1. Load `new_facts` into `s`
-  2. Check if replanning is needed (Algorithm 5)
-  3. Replan if needed (or forced)
-  4. Load the planned program and run metta_calculus!
+
+ 1. Load `new_facts` into `s`
+ 2. Check if replanning is needed (Algorithm 5)
+ 3. Replan if needed (or forced)
+ 4. Load the planned program and run metta_calculus!
 
 Returns `(steps=N, replanned=Bool, plan_version=Int)`.
 """
-function run_adaptive!(s             :: Space,
-                          ap            :: AdaptivePlan,
-                          new_facts     :: AbstractString = "";
-                          steps         :: Int  = typemax(Int),
-                          force_replan  :: Bool = false) :: NamedTuple
-
+function run_adaptive!(
+    s::Space, ap::AdaptivePlan, new_facts::AbstractString=""; steps::Int=typemax(Int),
+    force_replan::Bool=false
+)::NamedTuple
     !isempty(new_facts) && space_add_all_sexpr!(s, new_facts)
 
     replanned = false
@@ -160,7 +165,7 @@ incrementally and merge into base when delta exceeds 10% of base.
 
 Returns the updated `is` (mutates in place).
 """
-function update_stats!(is::IncrementalStats, s::Space) :: IncrementalStats
+function update_stats!(is::IncrementalStats, s::Space)::IncrementalStats
     new_delta = collect_stats(s)   # full scan; future: scan only new atoms
     is.delta = _merge_mork_stats(is.delta, new_delta)
 
@@ -169,7 +174,7 @@ function update_stats!(is::IncrementalStats, s::Space) :: IncrementalStats
     is.growth_rate = α * (current_atoms - is.base.total_atoms) + (1.0 - α) * is.growth_rate
 
     if _should_merge(is)
-        is.base  = _merge_mork_stats(is.base, is.delta)
+        is.base = _merge_mork_stats(is.base, is.delta)
         is.delta = MORKStatistics()
         is.last_merge_total = current_atoms
     end

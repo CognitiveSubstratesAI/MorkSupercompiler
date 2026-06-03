@@ -22,20 +22,20 @@ the frequent ones" or "find the heavy compressors inside a stream."
     DAGNode
 
 A node in a hash-consed canonical DAG. Immutable once created.
-  id       — content hash (structural identity)
-  head     — node type/constructor name
-  children — ordered child node IDs
-  metadata — per-node annotations (fitness, normalization tags, etc.)
+id       — content hash (structural identity)
+head     — node type/constructor name
+children — ordered child node IDs
+metadata — per-node annotations (fitness, normalization tags, etc.)
 """
 struct DAGNode
-    id       :: UInt64
-    head     :: Symbol
-    children :: Vector{UInt64}   # child node IDs
-    metadata :: Dict{Symbol, Any}
+    id::UInt64
+    head::Symbol
+    children::Vector{UInt64}   # child node IDs
+    metadata::Dict{Symbol, Any}
 end
 
 DAGNode(head::Symbol, children::Vector{UInt64}=UInt64[]) =
-    DAGNode(hash(string(head, children)), head, children, Dict{Symbol,Any}())
+    DAGNode(hash(string(head, children)), head, children, Dict{Symbol, Any}())
 
 """
     DAGStore
@@ -44,10 +44,10 @@ Hash-consed store of DAGNodes. Structural sharing: identical substructures
 share the same UInt64 ID. This is the canonical DAG representation.
 """
 mutable struct DAGStore
-    nodes     :: Dict{UInt64, DAGNode}
-    root_ids  :: Vector{UInt64}    # current deme roots
+    nodes::Dict{UInt64, DAGNode}
+    root_ids::Vector{UInt64}    # current deme roots
 end
-DAGStore() = DAGStore(Dict{UInt64,DAGNode}(), UInt64[])
+DAGStore() = DAGStore(Dict{UInt64, DAGNode}(), UInt64[])
 
 """
     dag_intern!(store, node) -> UInt64
@@ -55,7 +55,7 @@ DAGStore() = DAGStore(Dict{UInt64,DAGNode}(), UInt64[])
 Add a DAGNode to the store (or return existing ID for identical structure).
 This is hash-consing: same structure → same ID.
 """
-function dag_intern!(store::DAGStore, node::DAGNode) :: UInt64
+function dag_intern!(store::DAGStore, node::DAGNode)::UInt64
     haskey(store.nodes, node.id) || (store.nodes[node.id] = node)
     node.id
 end
@@ -69,15 +69,16 @@ dag_intern!(store::DAGStore, head::Symbol, children::Vector{UInt64}=UInt64[]) =
 Normalize a DAG node to ENF (Existential Normal Form) per §10.2.3 and §3.2.
 
 ENF rules applied iteratively until fixed point:
-  1. Canonical child ordering — sort children IDs for commutative operators
-     (:and, :or, :conj) so structurally equivalent programs share the same ID.
-  2. Flatten nested same-head operators — (:and (:and a b) c) → (:and a b c).
-  3. Deduplicate children — remove duplicate child IDs under commutative ops.
-  4. Re-intern after rewriting — hash-consing ensures structural sharing.
+
+ 1. Canonical child ordering — sort children IDs for commutative operators
+    (:and, :or, :conj) so structurally equivalent programs share the same ID.
+ 2. Flatten nested same-head operators — (:and (:and a b) c) → (:and a b c).
+ 3. Deduplicate children — remove duplicate child IDs under commutative ops.
+ 4. Re-intern after rewriting — hash-consing ensures structural sharing.
 
 Returns the normalized (possibly new) node ID.
 """
-function dag_normalize!(store::DAGStore, id::UInt64) :: UInt64
+function dag_normalize!(store::DAGStore, id::UInt64)::UInt64
     haskey(store.nodes, id) || return id
     node = store.nodes[id]
     isempty(node.children) && return id   # leaf: already in ENF
@@ -115,14 +116,14 @@ end
 A population of candidate DAG programs (one deme in the MOSES sense).
 """
 mutable struct Deme
-    id           :: Int
-    store        :: DAGStore
-    fitnesses    :: Dict{UInt64, Float64}    # id → fitness score
-    eda_model    :: Dict{Symbol, Float64}    # estimated distribution of operators
-    generation   :: Int
+    id::Int
+    store::DAGStore
+    fitnesses::Dict{UInt64, Float64}    # id → fitness score
+    eda_model::Dict{Symbol, Float64}    # estimated distribution of operators
+    generation::Int
 end
 
-Deme(id::Int) = Deme(id, DAGStore(), Dict{UInt64,Float64}(), Dict{Symbol,Float64}(), 0)
+Deme(id::Int) = Deme(id, DAGStore(), Dict{UInt64, Float64}(), Dict{Symbol, Float64}(), 0)
 
 # ── Algorithm 3 — Canonical DAG evolutionary loop (§10.2.3) ──────────────────
 
@@ -130,14 +131,14 @@ Deme(id::Int) = Deme(id, DAGStore(), Dict{UInt64,Float64}(), Dict{Symbol,Float64
     DemeEvolutionResult
 
 Result of one round of Algorithm 3.
-  updated_demes   — demes after mutation, scoring, EDA update
-  exemplars       — top-k programs to potentially migrate to other demes
-  shared_stats    :: Dict — subgraph statistics shared across demes
+updated_demes   — demes after mutation, scoring, EDA update
+exemplars       — top-k programs to potentially migrate to other demes
+shared_stats    :: Dict — subgraph statistics shared across demes
 """
 struct DemeEvolutionResult
-    updated_demes :: Vector{Deme}
-    exemplars     :: Vector{UInt64}    # root IDs of best programs
-    shared_stats  :: Dict{Symbol, Int}  # subgraph frequency counts
+    updated_demes::Vector{Deme}
+    exemplars::Vector{UInt64}    # root IDs of best programs
+    shared_stats::Dict{Symbol, Int}  # subgraph frequency counts
 end
 
 """
@@ -145,21 +146,23 @@ end
 
 Algorithm 3 (Canonical DAG evolutionary loop) from §10.2.3.
 8 steps:
-  1. For all demes in parallel:
-  2.   Sample/mutate candidate DAG programs
-  3.   Normalize by ENF
-  4.   Evaluate fitness, record shared subgraph statistics
-  5.   Update local EDA model (optionally coerce to factor geometry)
-  6.   Rebuild candidate pool, migrate exemplars if policy allows
-  7. End parallel
-  8. Return updated demes and optional new sketches
-"""
-function evolve_demes!(demes          :: Vector{Deme},
-                        fitness_fn     :: Function;
-                        top_k          :: Int     = 5,
-                        migration_frac :: Float64 = 0.1,
-                        max_candidates :: Int     = 20) :: DemeEvolutionResult
 
+ 1. For all demes in parallel:
+ 2. Sample/mutate candidate DAG programs
+ 3. Normalize by ENF
+ 4. Evaluate fitness, record shared subgraph statistics
+ 5. Update local EDA model (optionally coerce to factor geometry)
+ 6. Rebuild candidate pool, migrate exemplars if policy allows
+ 7. End parallel
+ 8. Return updated demes and optional new sketches
+"""
+function evolve_demes!(
+    demes::Vector{Deme},
+    fitness_fn::Function;
+    top_k::Int=5,
+    migration_frac::Float64=0.1,
+    max_candidates::Int=20
+)::DemeEvolutionResult
     shared_stats = Dict{Symbol, Int}()
 
     # Steps 1–6: process each deme (in practice: in parallel)
@@ -184,8 +187,7 @@ function evolve_demes!(demes          :: Vector{Deme},
     end
 
     # Step 6: collect exemplars (top-k across all demes)
-    all_scored = [(id, score) for deme in demes
-                              for (id, score) in deme.fitnesses]
+    all_scored = [(id, score) for deme in demes for (id, score) in deme.fitnesses]
     sort!(all_scored; by=x -> -x[2])
     exemplars = [id for (id, _) in all_scored[1:min(top_k, length(all_scored))]]
 
@@ -197,7 +199,7 @@ function evolve_demes!(demes          :: Vector{Deme},
     DemeEvolutionResult(demes, exemplars, shared_stats)
 end
 
-function _sample_candidates(deme::Deme, n::Int) :: Vector{UInt64}
+function _sample_candidates(deme::Deme, n::Int)::Vector{UInt64}
     existing = collect(keys(deme.store.nodes))
     isempty(existing) && return UInt64[dag_intern!(deme.store, :leaf)]
 
@@ -213,8 +215,8 @@ function _sample_candidates(deme::Deme, n::Int) :: Vector{UInt64}
     candidates
 end
 
-function _update_subgraph_stats!(stats::Dict{Symbol,Int}, store::DAGStore, id::UInt64)
-    haskey(store.nodes, id) || return
+function _update_subgraph_stats!(stats::Dict{Symbol, Int}, store::DAGStore, id::UInt64)
+    haskey(store.nodes, id) || return nothing
     n = store.nodes[id]
     stats[n.head] = get(stats, n.head, 0) + 1
     for child_id in n.children
@@ -226,7 +228,7 @@ function _update_eda_model!(deme::Deme, top_k::Int)
     sorted = sort(collect(deme.fitnesses); by=x -> -x[2])
     top_ids = [id for (id, _) in sorted[1:min(top_k, length(sorted))]]
     # Count operator frequencies in top programs
-    op_counts = Dict{Symbol,Int}()
+    op_counts = Dict{Symbol, Int}()
     for id in top_ids
         haskey(deme.store.nodes, id) || continue
         n = deme.store.nodes[id]
@@ -240,7 +242,7 @@ end
 
 function _migrate_exemplars!(demes::Vector{Deme}, exemplars::Vector{UInt64}, frac::Float64)
     n_migrate = max(1, round(Int, length(exemplars) * frac))
-    migrants  = exemplars[1:min(n_migrate, length(exemplars))]
+    migrants = exemplars[1:min(n_migrate, length(exemplars))]
     for deme in demes
         for id in migrants
             # Find the store that has this id
@@ -258,39 +260,38 @@ end
     TrieEntry
 
 One entry in the prefix trie for pattern mining.
-  pattern   — the structural pattern (as a vector of SNode path items)
-  count     — how many times this pattern appears in the dataset
-  weight    — importance weight for ranking
-  children  :: Dict — sub-patterns indexed by next path step
+pattern   — the structural pattern (as a vector of SNode path items)
+count     — how many times this pattern appears in the dataset
+weight    — importance weight for ranking
+children  :: Dict — sub-patterns indexed by next path step
 """
 mutable struct TrieEntry
-    pattern  :: Vector{Symbol}
-    count    :: Int
-    weight   :: Float64
-    children :: Dict{Symbol, TrieEntry}
+    pattern::Vector{Symbol}
+    count::Int
+    weight::Float64
+    children::Dict{Symbol, TrieEntry}
 end
 
-TrieEntry(pattern::Vector{Symbol}) =
-    TrieEntry(pattern, 0, 0.0, Dict{Symbol,TrieEntry}())
+TrieEntry(pattern::Vector{Symbol}) = TrieEntry(pattern, 0, 0.0, Dict{Symbol, TrieEntry}())
 
 """
     PatternTrie
 
 The trie geometry runtime for §10.3.
 Supports the three PathMap stages from §15.6:
-  Stage 1 — seed extraction by subtree scan
-  Stage 2 — growth by prefix proximity
-  Stage 3 — scoring via in-place prefix counters
+Stage 1 — seed extraction by subtree scan
+Stage 2 — growth by prefix proximity
+Stage 3 — scoring via in-place prefix counters
 """
 mutable struct PatternTrie
-    root     :: TrieEntry
-    top_k    :: Vector{Tuple{Vector{Symbol}, Float64}}  # (pattern, weight) top-k
-    k        :: Int
-    template :: GeometryTemplate
+    root::TrieEntry
+    top_k::Vector{Tuple{Vector{Symbol}, Float64}}  # (pattern, weight) top-k
+    k::Int
+    template::GeometryTemplate
 end
 
 PatternTrie(template::GeometryTemplate; k::Int=10) =
-    PatternTrie(TrieEntry(Symbol[]), Tuple{Vector{Symbol},Float64}[], k, template)
+    PatternTrie(TrieEntry(Symbol[]), Tuple{Vector{Symbol}, Float64}[], k, template)
 
 """
     trie_seed!(trie, data_atoms) -> Int
@@ -299,15 +300,14 @@ PatternTrie(template::GeometryTemplate; k::Int=10) =
 Scans `data_atoms` (as SNode patterns), inserts all length-1 patterns as seeds.
 Returns the number of seeds inserted.
 """
-function trie_seed!(trie::PatternTrie, data_atoms::Vector{SNode}) :: Int
+function trie_seed!(trie::PatternTrie, data_atoms::Vector{SNode})::Int
     n_seeds = 0
     for atom in data_atoms
         atom isa SList || continue
         for item in (atom::SList).items
             item isa SAtom || continue
             sym = Symbol((item::SAtom).name)
-            child = get!(trie.root.children, sym,
-                         TrieEntry([sym]))
+            child = get!(trie.root.children, sym, TrieEntry([sym]))
             child.count += 1
             n_seeds += 1
         end
@@ -323,7 +323,7 @@ end
 Extends existing patterns by one step using prefix-proximity on `data_atoms`.
 Returns number of new extended patterns.
 """
-function trie_grow!(trie::PatternTrie, data_atoms::Vector{SNode}; max_depth::Int=3) :: Int
+function trie_grow!(trie::PatternTrie, data_atoms::Vector{SNode}; max_depth::Int=3)::Int
     n_new = 0
     # For each existing leaf in top_k, try extending with one more symbol
     for (pattern, _) in trie.top_k
@@ -333,9 +333,10 @@ function trie_grow!(trie::PatternTrie, data_atoms::Vector{SNode}; max_depth::Int
             items = (atom::SList).items
             length(items) < length(pattern) + 1 && continue
             # Check if atom starts with pattern
-            matches = all(k -> items[k] isa SAtom &&
-                               Symbol((items[k]::SAtom).name) == pattern[k],
-                          eachindex(pattern))
+            matches = all(
+                k -> items[k] isa SAtom && Symbol((items[k]::SAtom).name) == pattern[k],
+                eachindex(pattern)
+            )
             matches || continue
             next_item = items[length(pattern) + 1]
             next_item isa SAtom || continue
@@ -360,7 +361,7 @@ end
 §15.6 Stage 3 — Scoring via in-place prefix counters.
 Computes TF-IDF-like weights for each pattern and returns top-k sorted by weight.
 """
-function trie_score!(trie::PatternTrie) :: Vector{Tuple{Vector{Symbol},Float64}}
+function trie_score!(trie::PatternTrie)::Vector{Tuple{Vector{Symbol}, Float64}}
     _score_subtrie!(trie.root, trie.root.count + 1)
     _rebuild_topk!(trie)
     trie.top_k
@@ -375,13 +376,13 @@ function _score_subtrie!(entry::TrieEntry, total::Int)
 end
 
 function _rebuild_topk!(trie::PatternTrie)
-    all_entries = Tuple{Vector{Symbol},Float64}[]
+    all_entries = Tuple{Vector{Symbol}, Float64}[]
     _collect_entries!(trie.root, all_entries)
     sort!(all_entries; by=x -> -x[2])
     trie.top_k = all_entries[1:min(trie.k, length(all_entries))]
 end
 
-function _collect_entries!(entry::TrieEntry, out::Vector{Tuple{Vector{Symbol},Float64}})
+function _collect_entries!(entry::TrieEntry, out::Vector{Tuple{Vector{Symbol}, Float64}})
     entry.count > 0 && push!(out, (entry.pattern, entry.weight))
     for child in values(entry.children)
         _collect_entries!(child, out)
@@ -392,15 +393,14 @@ end
     run_trie_miner(template, data_atoms; k=10, max_depth=3) -> Vector{Tuple}
 
 Full three-stage trie mining (§15.6 MVP deliverable 6):
-  seed → grow → score → return top-k patterns
+seed → grow → score → return top-k patterns
 """
-function run_trie_miner(template   :: GeometryTemplate,
-                         data_atoms :: Vector{SNode};
-                         k          :: Int = 10,
-                         max_depth  :: Int = 3) :: Vector{Tuple{Vector{Symbol},Float64}}
+function run_trie_miner(
+    template::GeometryTemplate, data_atoms::Vector{SNode}; k::Int=10, max_depth::Int=3
+)::Vector{Tuple{Vector{Symbol}, Float64}}
     trie = PatternTrie(template; k=k)
     trie_seed!(trie, data_atoms)
-    for _ in 1:max_depth-1
+    for _ in 1:(max_depth - 1)
         trie_grow!(trie, data_atoms; max_depth=max_depth)
     end
     trie_score!(trie)

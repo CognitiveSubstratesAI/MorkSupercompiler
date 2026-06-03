@@ -29,6 +29,7 @@ the cheap path.
     DriveResult
 
 Records what happened during a `drive!` invocation:
+
   - `final_id`: NodeID the driver settled on
   - `steps`: how many rewrite_once iterations fired
   - `n_folds`: how many times the whistle blew (fold-back hit)
@@ -36,11 +37,11 @@ Records what happened during a `drive!` invocation:
   - `terminated`: :value | :fold | :blocked | :max_steps
 """
 struct DriveResult
-    final_id   :: NodeID
-    steps      :: Int
-    n_folds    :: Int
-    n_splits   :: Int
-    terminated :: Symbol
+    final_id::NodeID
+    steps::Int
+    n_folds::Int
+    n_splits::Int
+    terminated::Symbol
 end
 
 # ── The driver ────────────────────────────────────────────────────────────────
@@ -60,18 +61,19 @@ prior canonical key, or terminates. Bounded by `max_steps` to guard
 against runaway recursion (which would itself indicate a Stepper bug —
 the whistle should always fire eventually under finite-state termination).
 """
-function drive!(g       :: MCoreGraph,
-                id      :: NodeID;
-                env     :: Env             = Env(),
-                deps    :: DepSet          = DepSet(),
-                ft      :: FoldTable       = FoldTable(),
-                max_steps :: Int           = 1000,
-                stats   :: MORKStatistics  = MORKStatistics(),
-                split_budget :: Int        = SPLIT_DEFAULT_BUDGET,
-                registry:: PrimRegistry    = DEFAULT_PRIM_REGISTRY) :: DriveResult
-
-    steps    = 0
-    n_folds  = 0
+function drive!(
+    g::MCoreGraph,
+    id::NodeID;
+    env::Env=Env(),
+    deps::DepSet=DepSet(),
+    ft::FoldTable=FoldTable(),
+    max_steps::Int=1000,
+    stats::MORKStatistics=MORKStatistics(),
+    split_budget::Int=SPLIT_DEFAULT_BUDGET,
+    registry::PrimRegistry=DEFAULT_PRIM_REGISTRY
+)::DriveResult
+    steps = 0
+    n_folds = 0
     n_splits = 0
 
     while steps < max_steps
@@ -100,11 +102,17 @@ function drive!(g       :: MCoreGraph,
                 # Drive each branch — share the fold table so common
                 # sub-derivations get cached across branches.
                 for branch in split.branches
-                    drive!(g, branch.id;
-                           env=branch.env, deps=deps,
-                           ft=ft, max_steps=max_steps - steps,
-                           stats=stats, split_budget=split_budget,
-                           registry=registry)
+                    drive!(
+                        g,
+                        branch.id;
+                        env=branch.env,
+                        deps=deps,
+                        ft=ft,
+                        max_steps=max_steps - steps,
+                        stats=stats,
+                        split_budget=split_budget,
+                        registry=registry
+                    )
                 end
                 # Return the split point itself as the residual marker —
                 # the actual sub-derivations are recorded in the fold table.
@@ -116,8 +124,7 @@ function drive!(g       :: MCoreGraph,
         else
             # Residual — advance focus to the next form.
             new_id = (result::Residual).id
-            new_id == id &&
-                return DriveResult(id, steps, n_folds, n_splits, :value)
+            new_id == id && return DriveResult(id, steps, n_folds, n_splits, :value)
             id = new_id
             steps += 1
         end

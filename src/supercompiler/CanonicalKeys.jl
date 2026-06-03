@@ -34,11 +34,11 @@ Encoding: `arities[d]` = arity at depth d (d=1 is outermost).
 Missing depths = 0 (leaf / not expanded).
 """
 struct CompactShape
-    arities :: NTuple{3, UInt8}   # depth 1, 2, 3
+    arities::NTuple{3, UInt8}   # depth 1, 2, 3
 end
-CompactShape()                                              = CompactShape((UInt8(0), UInt8(0), UInt8(0)))
+CompactShape() = CompactShape((UInt8(0), UInt8(0), UInt8(0)))
 # Convenience constructor: 1-3 integers → NTuple{3,UInt8}
-function CompactShape(a1::Integer, a2::Integer=0, a3::Integer=0) :: CompactShape
+function CompactShape(a1::Integer, a2::Integer=0, a3::Integer=0)::CompactShape
     CompactShape((UInt8(a1), UInt8(a2), UInt8(a3)))
 end
 
@@ -48,30 +48,35 @@ end
 s1 subsumes s2 iff s1 is "at least as general": for each depth, s1 arity ≤ s2 arity
 (s1 constrains less — more general).
 """
-shape_subsumes(s1::CompactShape, s2::CompactShape) :: Bool =
+shape_subsumes(s1::CompactShape, s2::CompactShape)::Bool =
     all(s1.arities[i] <= s2.arities[i] for i in 1:3)
 
-"""Extract a CompactShape from an MCoreNode (depth-3 traversal)."""
-function extract_shape(g::MCoreGraph, id::NodeID) :: CompactShape
+"""
+Extract a CompactShape from an MCoreNode (depth-3 traversal).
+"""
+function extract_shape(g::MCoreGraph, id::NodeID)::CompactShape
     !isvalid(id) && return CompactShape()
     n = get_node(g, id)
     a1 = _node_arity(n)
-    if a1 == 0; return CompactShape(0, 0, 0) end
+    if a1 == 0
+        ;
+        return CompactShape(0, 0, 0)
+    end
     # depth 2: average arity of immediate children
     a2 = _avg_child_arity(g, n)
     CompactShape(a1, a2, 0)
 end
 
-_node_arity(n::Con)       = UInt8(min(length(n.fields), 63))
-_node_arity(n::App)       = UInt8(min(length(n.args) + 1, 63))
-_node_arity(n::Abs)       = UInt8(min(length(n.params), 63))
-_node_arity(n::LetNode)   = UInt8(min(length(n.bindings), 63))
+_node_arity(n::Con) = UInt8(min(length(n.fields), 63))
+_node_arity(n::App) = UInt8(min(length(n.args) + 1, 63))
+_node_arity(n::Abs) = UInt8(min(length(n.params), 63))
+_node_arity(n::LetNode) = UInt8(min(length(n.bindings), 63))
 _node_arity(n::MatchNode) = UInt8(min(length(n.clauses), 63))
-_node_arity(n::Choice)    = UInt8(min(length(n.alts), 63))
-_node_arity(n::Prim)      = UInt8(min(length(n.args), 63))
-_node_arity(::MCoreNode)  = UInt8(0)
+_node_arity(n::Choice) = UInt8(min(length(n.alts), 63))
+_node_arity(n::Prim) = UInt8(min(length(n.args), 63))
+_node_arity(::MCoreNode) = UInt8(0)
 
-function _avg_child_arity(g::MCoreGraph, n::Con) :: UInt8
+function _avg_child_arity(g::MCoreGraph, n::Con)::UInt8
     isempty(n.fields) && return UInt8(0)
     s = sum(_node_arity(get_node(g, f)) for f in n.fields; init=UInt8(0))
     UInt8(min(div(Int(s), length(n.fields)), 63))
@@ -87,7 +92,7 @@ Bitmask indicating which argument positions of a predicate are constrained
 (fixed / non-variable) in a pattern.  Bit i set ↔ arg i is fixed.
 """
 struct FixedArgMask
-    bits :: UInt32
+    bits::UInt32
 end
 FixedArgMask() = FixedArgMask(UInt32(0))
 fixed_arg(m::FixedArgMask, i::Int) = (m.bits >> (i - 1)) & UInt32(1) != 0
@@ -103,14 +108,16 @@ KB access signature: which predicates are accessed and which argument
 positions are constrained.  Predicates stored sorted for canonical ordering.
 """
 struct CanonicalKBSig
-    predicates     :: Vector{Tuple{Symbol, FixedArgMask}}  # sorted by pred name
-    access_pattern :: UInt32   # bitmask: which arg positions accessed overall
+    predicates::Vector{Tuple{Symbol, FixedArgMask}}  # sorted by pred name
+    access_pattern::UInt32   # bitmask: which arg positions accessed overall
 end
-CanonicalKBSig() = CanonicalKBSig(Tuple{Symbol,FixedArgMask}[], UInt32(0))
+CanonicalKBSig() = CanonicalKBSig(Tuple{Symbol, FixedArgMask}[], UInt32(0))
 
 # ── CanonicalEffectSig (§6.3.1) ───────────────────────────────────────────────
 
-"""Effect class — coarser than the full Effect type, for canonical signatures."""
+"""
+Effect class — coarser than the full Effect type, for canonical signatures.
+"""
 @enum EffectClass begin
     ECLASS_READ
     ECLASS_WRITE
@@ -120,11 +127,11 @@ CanonicalKBSig() = CanonicalKBSig(Tuple{Symbol,FixedArgMask}[], UInt32(0))
     ECLASS_OBSERVE
 end
 
-effect_class(::ReadEffect)    = ECLASS_READ
-effect_class(::WriteEffect)   = ECLASS_WRITE
-effect_class(::AppendEffect)  = ECLASS_APPEND
-effect_class(::CreateEffect)  = ECLASS_CREATE
-effect_class(::DeleteEffect)  = ECLASS_DELETE
+effect_class(::ReadEffect) = ECLASS_READ
+effect_class(::WriteEffect) = ECLASS_WRITE
+effect_class(::AppendEffect) = ECLASS_APPEND
+effect_class(::CreateEffect) = ECLASS_CREATE
+effect_class(::DeleteEffect) = ECLASS_DELETE
 effect_class(::ObserveEffect) = ECLASS_OBSERVE
 
 """
@@ -133,8 +140,8 @@ effect_class(::ObserveEffect) = ECLASS_OBSERVE
 Effect signature: sorted multiset of effect classes + set of resource IDs.
 """
 struct CanonicalEffectSig
-    effects   :: Vector{EffectClass}   # sorted
-    resources :: Vector{Symbol}        # sorted SpaceID names
+    effects::Vector{EffectClass}   # sorted
+    resources::Vector{Symbol}        # sorted SpaceID names
 end
 CanonicalEffectSig() = CanonicalEffectSig(EffectClass[], Symbol[])
 
@@ -144,38 +151,41 @@ CanonicalEffectSig() = CanonicalEffectSig(EffectClass[], Symbol[])
     CanonicalPathSig
 
 Canonical key for fold/termination checking.  All fields canonically encoded:
-  head       — symbol name of the outermost node
-  shape      — depth-3 arity vector (bounded to prevent key explosion)
-  tags       — sorted multiset of constructor/symbol tags
-  depth      — current unfolding depth
-  kb_sig     — KB access signature
-  effect_sig — effect signature
+head       — symbol name of the outermost node
+shape      — depth-3 arity vector (bounded to prevent key explosion)
+tags       — sorted multiset of constructor/symbol tags
+depth      — current unfolding depth
+kb_sig     — KB access signature
+effect_sig — effect signature
 """
 struct CanonicalPathSig
-    head       :: Symbol
-    shape      :: CompactShape
-    tags       :: Vector{Symbol}          # sorted
-    depth      :: Int
-    kb_sig     :: CanonicalKBSig
-    effect_sig :: CanonicalEffectSig
+    head::Symbol
+    shape::CompactShape
+    tags::Vector{Symbol}          # sorted
+    depth::Int
+    kb_sig::CanonicalKBSig
+    effect_sig::CanonicalEffectSig
 end
 
-"""Build a CanonicalPathSig from a node in the graph.
+"""
+Build a CanonicalPathSig from a node in the graph.
 
 Implements Algorithm 10 §6.3 — populates kb_sig and effect_sig by
 traversing the MCoreGraph subtree (bounded to depth 4):
-  kb_sig     — predicates accessed via :kb_query Prim nodes
-  effect_sig — effect classes from all Prim nodes in the subtree
+kb_sig     — predicates accessed via :kb_query Prim nodes
+effect_sig — effect classes from all Prim nodes in the subtree
 """
-function canonical_key(g::MCoreGraph, id::NodeID, depth::Int=0) :: CanonicalPathSig
-    !isvalid(id) && return CanonicalPathSig(:null, CompactShape(), Symbol[], depth,
-                                            CanonicalKBSig(), CanonicalEffectSig())
-    node     = get_node(g, id)
-    head     = _node_head(node)
-    shape    = extract_shape(g, id)
-    tags     = sort!(_collect_tags(g, id, 3))
-    kb_sig   = _collect_kb_sig(g, id, 4)
-    eff_sig  = _collect_effect_sig(g, id, 4)
+function canonical_key(g::MCoreGraph, id::NodeID, depth::Int=0)::CanonicalPathSig
+    !isvalid(id) &&
+        return CanonicalPathSig(
+            :null, CompactShape(), Symbol[], depth, CanonicalKBSig(), CanonicalEffectSig()
+        )
+    node = get_node(g, id)
+    head = _node_head(node)
+    shape = extract_shape(g, id)
+    tags = sort!(_collect_tags(g, id, 3))
+    kb_sig = _collect_kb_sig(g, id, 4)
+    eff_sig = _collect_effect_sig(g, id, 4)
     CanonicalPathSig(head, shape, tags, depth, kb_sig, eff_sig)
 end
 
@@ -184,10 +194,11 @@ end
 """
 Traverse the subtree (bounded depth) collecting :kb_query predicate accesses.
 For each Prim(:kb_query, [pattern_id, ...]):
+
   - extract the predicate head from pattern_id (first Con/Sym child)
   - build a FixedArgMask for which arg positions are ground (Sym/Lit) vs free (Var)
 """
-function _collect_kb_sig(g::MCoreGraph, id::NodeID, max_depth::Int) :: CanonicalKBSig
+function _collect_kb_sig(g::MCoreGraph, id::NodeID, max_depth::Int)::CanonicalKBSig
     (max_depth <= 0 || !isvalid(id)) && return CanonicalKBSig()
     preds = Dict{Symbol, FixedArgMask}()
     _traverse_kb_sig!(g, id, max_depth, preds)
@@ -198,11 +209,11 @@ function _collect_kb_sig(g::MCoreGraph, id::NodeID, max_depth::Int) :: Canonical
 end
 
 function _traverse_kb_sig!(g, id, depth, preds)
-    (!isvalid(id) || depth <= 0) && return
+    (!isvalid(id) || depth <= 0) && return nothing
     node = get_node(g, id)
     if node isa Prim && node.op == :kb_query && !isempty(node.args)
         pat_id = node.args[1]
-        isvalid(pat_id) || return
+        isvalid(pat_id) || return nothing
         pat = get_node(g, pat_id)
         if pat isa Con
             # Previously: `head_node = get_node(g, _sym_node_of(g, pat.head))`
@@ -231,19 +242,21 @@ end
 """
 Traverse the subtree collecting effect classes from all Prim nodes.
 """
-function _collect_effect_sig(g::MCoreGraph, id::NodeID, max_depth::Int) :: CanonicalEffectSig
+function _collect_effect_sig(g::MCoreGraph, id::NodeID, max_depth::Int)::CanonicalEffectSig
     (max_depth <= 0 || !isvalid(id)) && return CanonicalEffectSig()
-    effects   = EffectClass[]
+    effects = EffectClass[]
     resources = Symbol[]
     _traverse_effect_sig!(g, id, max_depth, effects, resources)
     isempty(effects) && return CanonicalEffectSig()
-    sort!(effects); unique!(effects)
-    sort!(resources); unique!(resources)
+    sort!(effects);
+    unique!(effects)
+    sort!(resources);
+    unique!(resources)
     CanonicalEffectSig(effects, resources)
 end
 
 function _traverse_effect_sig!(g, id, depth, effects, resources)
-    (!isvalid(id) || depth <= 0) && return
+    (!isvalid(id) || depth <= 0) && return nothing
     node = get_node(g, id)
     if node isa Prim
         eset = node.effects
@@ -256,7 +269,7 @@ function _traverse_effect_sig!(g, id, depth, effects, resources)
     end
 end
 
-function _effectset_to_effects(eset::EffectSet) :: Vector{<:Effect}
+function _effectset_to_effects(eset::EffectSet)::Vector{<:Effect}
     effs = Effect[]
     mask = eset.mask
     # Bit layout per Stepper.jl `_node_effects`:
@@ -273,21 +286,21 @@ function _effectset_to_effects(eset::EffectSet) :: Vector{<:Effect}
     effs
 end
 
-_node_head(n::Sym)       = n.name
-_node_head(n::Var)       = :Var
-_node_head(n::Lit)       = :Lit
-_node_head(n::Con)       = n.head
-_node_head(n::App)       = :App
-_node_head(n::Abs)       = :Abs
-_node_head(n::LetNode)   = :Let
+_node_head(n::Sym) = n.name
+_node_head(n::Var) = :Var
+_node_head(n::Lit) = :Lit
+_node_head(n::Con) = n.head
+_node_head(n::App) = :App
+_node_head(n::Abs) = :Abs
+_node_head(n::LetNode) = :Let
 _node_head(n::MatchNode) = :Match
-_node_head(n::Choice)    = :Choice
-_node_head(n::Prim)      = n.op
-_node_head(n::MCoreRef)  = n.def_id
-_node_head(::MCoreNode)  = :unknown
+_node_head(n::Choice) = :Choice
+_node_head(n::Prim) = n.op
+_node_head(n::MCoreRef) = n.def_id
+_node_head(::MCoreNode) = :unknown
 _node_head(::UncertainNode) = :UncertainNode
 
-function _collect_tags(g::MCoreGraph, id::NodeID, max_depth::Int) :: Vector{Symbol}
+function _collect_tags(g::MCoreGraph, id::NodeID, max_depth::Int)::Vector{Symbol}
     max_depth <= 0 || !isvalid(id) && return Symbol[]
     node = get_node(g, id)
     tags = [_node_head(node)]
@@ -298,14 +311,14 @@ function _collect_tags(g::MCoreGraph, id::NodeID, max_depth::Int) :: Vector{Symb
     tags
 end
 
-_node_children(n::Con)       = n.fields
-_node_children(n::App)       = [n.fun; n.args]
-_node_children(n::Abs)       = [n.body]
-_node_children(n::LetNode)   = [v for (_, v) in n.bindings]
+_node_children(n::Con) = n.fields
+_node_children(n::App) = [n.fun; n.args]
+_node_children(n::Abs) = [n.body]
+_node_children(n::LetNode) = [v for (_, v) in n.bindings]
 _node_children(n::MatchNode) = [n.scrut]
-_node_children(n::Choice)    = [a.expr for a in n.alts]
-_node_children(n::Prim)      = n.args
-_node_children(::MCoreNode)  = NodeID[]
+_node_children(n::Choice) = [a.expr for a in n.alts]
+_node_children(n::Prim) = n.args
+_node_children(::MCoreNode) = NodeID[]
 
 # ── Algorithm 10 — KeySubsumption (§6.3.2) ────────────────────────────────────
 
@@ -318,14 +331,14 @@ Returns true iff `key1` subsumes `key2` — meaning the expression represented
 by `key2` can be safely folded back to the one represented by `key1`.
 
 Three-part check (verbatim from spec):
-  (1) Structural: same head + key1.shape subsumes key2.shape
-  (2) KB: for every predicate in key2, key1 has a more-general entry
-  (3) Effect: key1.effects ⊆ key2.effects (key1 has fewer effects)
+(1) Structural: same head + key1.shape subsumes key2.shape
+(2) KB: for every predicate in key2, key1 has a more-general entry
+(3) Effect: key1.effects ⊆ key2.effects (key1 has fewer effects)
 """
-function subsumes(key1::CanonicalPathSig, key2::CanonicalPathSig) :: Bool
+function subsumes(key1::CanonicalPathSig, key2::CanonicalPathSig)::Bool
     # (1) Structural subsumption
-    key1.head != key2.head                    && return false
-    !shape_subsumes(key1.shape, key2.shape)   && return false
+    key1.head != key2.head && return false
+    !shape_subsumes(key1.shape, key2.shape) && return false
 
     # (2) KB subsumption: every predicate in key2 must have a match in key1
     for (pred2, mask2) in key2.kb_sig.predicates
@@ -360,11 +373,13 @@ The fold table is the mechanism that guarantees termination: the supercompiler
 can only introduce finitely many distinct canonical keys.
 """
 mutable struct FoldTable
-    entries :: Vector{Tuple{CanonicalPathSig, NodeID}}
+    entries::Vector{Tuple{CanonicalPathSig, NodeID}}
 end
 FoldTable() = FoldTable(Tuple{CanonicalPathSig, NodeID}[])
 
-"""Record a new expression in the fold table."""
+"""
+Record a new expression in the fold table.
+"""
 function record!(ft::FoldTable, key::CanonicalPathSig, id::NodeID)
     push!(ft.entries, (key, id))
 end
@@ -375,16 +390,17 @@ end
 Return the NodeID of a previously-seen expression subsumed by `key`,
 or `nothing` if no such expression exists in the table.
 """
-function lookup_fold(ft::FoldTable, key::CanonicalPathSig) :: Union{NodeID, Nothing}
+function lookup_fold(ft::FoldTable, key::CanonicalPathSig)::Union{NodeID, Nothing}
     for (seen_key, seen_id) in ft.entries
         subsumes(seen_key, key) && return seen_id
     end
     nothing
 end
 
-"""Return true if the fold table already has a subsuming entry for `key`."""
-can_fold(ft::FoldTable, key::CanonicalPathSig) :: Bool =
-    lookup_fold(ft, key) !== nothing
+"""
+Return true if the fold table already has a subsuming entry for `key`.
+"""
+can_fold(ft::FoldTable, key::CanonicalPathSig)::Bool = lookup_fold(ft, key) !== nothing
 
 export CompactShape, shape_subsumes, extract_shape
 export FixedArgMask, fixed_arg, set_fixed

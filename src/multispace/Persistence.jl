@@ -13,9 +13,8 @@ File format: MORK binary path serialization (.act compatible).
 Persist the named space to `path` using MORK's path serialization.
 Updates `reg.disk_paths[id]` so subsequent `load-space` knows the path.
 """
-function save_space!(reg::SpaceRegistry, name::AbstractString,
-                     path::AbstractString)
-    s  = get_space(reg, name)
+function save_space!(reg::SpaceRegistry, name::AbstractString, path::AbstractString)
+    s = get_space(reg, name)
     id = NamedSpaceID(name)
     space_backup_tree(s, path)
     reg.disk_paths[id] = String(path)
@@ -31,14 +30,15 @@ If `name` is not yet registered, creates a new :app space first.
 
 Lazy loading: only loads when explicitly called — does NOT auto-load on startup.
 """
-function load_space!(reg::SpaceRegistry, name::AbstractString,
-                     path::AbstractString;
-                     create_if_missing::Bool = true) :: Space
+function load_space!(
+    reg::SpaceRegistry, name::AbstractString, path::AbstractString;
+    create_if_missing::Bool=true
+)::Space
     id = NamedSpaceID(name)
     if !haskey(reg.spaces, id)
         create_if_missing || error("space \"$name\" not registered")
         reg.spaces[id] = new_space()
-        reg.roles[id]  = :app
+        reg.roles[id] = :app
     end
     s = reg.spaces[id]
     space_restore_tree!(s, path)

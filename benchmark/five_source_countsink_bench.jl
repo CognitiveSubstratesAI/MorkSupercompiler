@@ -9,7 +9,7 @@ using MORK
 
 # ── Synthetic graph generator ─────────────────────────────────────────────────
 
-function make_chain_graph(n_nodes::Int, density::Float64=0.3) :: String
+function make_chain_graph(n_nodes::Int, density::Float64=0.3)::String
     rng_state = Ref(UInt64(0xDEADBEEF42))
     function rand_node()
         rng_state[] = rng_state[] * 6364136223846793005 + 1442695040888963407
@@ -17,12 +17,12 @@ function make_chain_graph(n_nodes::Int, density::Float64=0.3) :: String
     end
     facts = String[]
     # Add nodes
-    for i in 0:n_nodes-1
+    for i in 0:(n_nodes - 1)
         push!(facts, "(node $i)")
     end
     # Add edges with given density
-    for i in 0:n_nodes-1
-        for j in 0:n_nodes-1
+    for i in 0:(n_nodes - 1)
+        for j in 0:(n_nodes - 1)
             i == j && continue
             if (i * 31 + j * 17) % 100 < Int(density * 100)
                 push!(facts, "(edge $i $j)")
@@ -38,7 +38,7 @@ const FIVE_SOURCE_EXEC = "(exec 0 (, (edge \$a \$b) (edge \$b \$c) (edge \$c \$d
 
 # ── Timing helper ─────────────────────────────────────────────────────────────
 
-function time_exec(facts, prog; max_steps=typemax(Int), trials=2) :: Float64
+function time_exec(facts, prog; max_steps=typemax(Int), trials=2)::Float64
     times = Float64[]
     for _ in 1:trials
         s = new_space()
@@ -58,8 +58,8 @@ function run_countsink_bench(K::Int; baseline_steps=50)
 
     # Decomposed — runs to completion
     decomposed = decompose_program(FIVE_SOURCE_EXEC)
-    n_stages   = length(parse_program(decomposed))
-    n_orig     = length(parse_program(FIVE_SOURCE_EXEC))
+    n_stages = length(parse_program(decomposed))
+    n_orig = length(parse_program(FIVE_SOURCE_EXEC))
     println("    Original exec atoms: $n_orig  →  decomposed: $n_stages stages")
 
     t_decomp = time_exec(facts, decomposed; max_steps=typemax(Int))
@@ -70,7 +70,9 @@ function run_countsink_bench(K::Int; baseline_steps=50)
     dump = space_dump_all_sexpr(s_check)
     n_results = count(l -> startswith(l, "(chain-count"), split(dump, "\n"))
 
-    println("    Decomposed:  $(round(t_decomp, digits=1)) ms  → $n_results chain-count atoms")
+    println(
+        "    Decomposed:  $(round(t_decomp, digits=1)) ms  → $n_results chain-count atoms"
+    )
 
     # Baseline — capped (exponential cost at K≥15)
     t_base = time_exec(facts, FIVE_SOURCE_EXEC; max_steps=baseline_steps)
@@ -78,7 +80,9 @@ function run_countsink_bench(K::Int; baseline_steps=50)
 
     theoretical = Float64(K)^3 / 4.0
     println("    Theoretical speedup at K=$K: $(round(theoretical, digits=0))×")
-    println("    Observed ratio (decomp vs capped baseline): $(round(t_base/t_decomp, digits=1))×")
+    println(
+        "    Observed ratio (decomp vs capped baseline): $(round(t_base/t_decomp, digits=1))×"
+    )
 end
 
 # ── Run ───────────────────────────────────────────────────────────────────────

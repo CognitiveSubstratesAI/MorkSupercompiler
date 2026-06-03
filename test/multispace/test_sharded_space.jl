@@ -8,8 +8,8 @@ using Test, MorkSupercompiler, MORK
 
 @testset "new_sharded_space — default policy" begin
     ss = new_sharded_space("test-kb")
-    @test ss.name         == "test-kb"
-    @test ss.policy       == :hash_mod
+    @test ss.name == "test-kb"
+    @test ss.policy == :hash_mod
     @test ss isa ShardedSpace
     @test sharded_val_count(ss) == 0
 end
@@ -41,9 +41,9 @@ end
 @testset "shard_owner — LOCAL_PEER on single node" begin
     ss = new_sharded_space("routing")
     # MPI not active → always LOCAL_PEER
-    @test shard_owner(ss, "(edge 0 1)")     == LOCAL_PEER
-    @test shard_owner(ss, "(fact hello)")   == LOCAL_PEER
-    @test shard_owner(ss, UInt8[0x01,0x02]) == LOCAL_PEER
+    @test shard_owner(ss, "(edge 0 1)") == LOCAL_PEER
+    @test shard_owner(ss, "(fact hello)") == LOCAL_PEER
+    @test shard_owner(ss, UInt8[0x01, 0x02]) == LOCAL_PEER
 end
 
 # ── sharded_flush! — no-op without MPI ───────────────────────────────────────
@@ -88,7 +88,7 @@ end
 
 @testset "mpi_allreduce_sum — identity without MPI" begin
     @test mpi_allreduce_sum(Int64(42)) == 42
-    @test mpi_allreduce_sum(Int64(0))  == 0
+    @test mpi_allreduce_sum(Int64(0)) == 0
 end
 
 @testset "mpi_allgatherv_strings — identity without MPI" begin

@@ -20,8 +20,9 @@ using MORK
 
 # ── Benchmark helpers ────────────────────────────────────────────────────────
 
-function time_exec(facts::AbstractString, prog::AbstractString; trials=3,
-                   steps::Int=typemax(Int)) :: Float64
+function time_exec(
+    facts::AbstractString, prog::AbstractString; trials=3, steps::Int=typemax(Int)
+)::Float64
     times = Float64[]
     for _ in 1:trials
         s = new_space()
@@ -38,12 +39,14 @@ end
 function run_case(label, facts, baseline_prog; trials=3)
     decomposed_prog = decompose_program(baseline_prog)
     n_stages = length(parse_program(decomposed_prog))
-    n_orig   = length(parse_program(baseline_prog))
+    n_orig = length(parse_program(baseline_prog))
 
     # Show what the decomposition produced
     println("\n  [$label]")
     println("    Original:  $n_orig atom(s)")
-    println("    Decomposed: $n_stages atom(s) ($(n_stages - n_orig) intermediate stages added)")
+    println(
+        "    Decomposed: $n_stages atom(s) ($(n_stages - n_orig) intermediate stages added)"
+    )
 
     report = decompose_report(baseline_prog)
     for line in split(report, '\n')
@@ -52,23 +55,31 @@ function run_case(label, facts, baseline_prog; trials=3)
     end
 
     # Correctness check: decomposed output must match baseline
-    s_b = new_space(); space_add_all_sexpr!(s_b, facts)
-    space_add_all_sexpr!(s_b, baseline_prog); space_metta_calculus!(s_b, typemax(Int))
+    s_b = new_space();
+    space_add_all_sexpr!(s_b, facts)
+    space_add_all_sexpr!(s_b, baseline_prog);
+    space_metta_calculus!(s_b, typemax(Int))
     out_b = space_dump_all_sexpr(s_b)
 
-    s_d = new_space(); space_add_all_sexpr!(s_d, facts)
-    space_add_all_sexpr!(s_d, decomposed_prog); space_metta_calculus!(s_d, typemax(Int))
+    s_d = new_space();
+    space_add_all_sexpr!(s_d, facts)
+    space_add_all_sexpr!(s_d, decomposed_prog);
+    space_metta_calculus!(s_d, typemax(Int))
     out_d = space_dump_all_sexpr(s_d)
 
     # Compare non-fact, non-intermediate atoms
-    filter_out(s) = sort(filter(l -> !isempty(strip(l)) &&
-                                     !occursin("edge ", l) && !occursin("_sc_tmp", l),
-                                split(s, '\n')))
+    filter_out(s) =
+        sort(
+            filter(
+                l -> !isempty(strip(l)) && !occursin("edge ", l) && !occursin("_sc_tmp", l),
+                split(s, '\n')
+            )
+        )
     correct = filter_out(out_b) == filter_out(out_d)
     println("    Correctness:     $(correct ? "✓ outputs match" : "✗ MISMATCH")")
 
     # Time with full execution (steps=typemax to complete all stages)
-    bt = time_exec(facts, baseline_prog;  trials=trials, steps=typemax(Int))
+    bt = time_exec(facts, baseline_prog; trials=trials, steps=typemax(Int))
     dt = time_exec(facts, decomposed_prog; trials=trials, steps=typemax(Int))
 
     speedup = bt / max(dt, 1e-9)
@@ -77,8 +88,15 @@ function run_case(label, facts, baseline_prog; trials=3)
     println("    Decomposed exec: $(round(dt; digits=1)) ms")
     println("    Speedup:         $(round(speedup; sigdigits=3))×")
 
-    (label=label, baseline_ms=bt, decomposed_ms=dt, speedup=speedup,
-     n_orig=n_orig, n_stages=n_stages, correct=correct)
+    (
+        label=label,
+        baseline_ms=bt,
+        decomposed_ms=dt,
+        speedup=speedup,
+        n_orig=n_orig,
+        n_stages=n_stages,
+        correct=correct
+    )
 end
 
 # ── Case 1: trans_detect (3-source, K=150 edges) ────────────────────────────
@@ -99,7 +117,7 @@ function rand_edges(nnodes, nedges)
 end
 
 const TRANS_FACTS = rand_edges(50, 150)
-const TRANS_PROG  = raw"""
+const TRANS_PROG = raw"""
 (exec 0 (, (edge $x $y) (edge $y $z) (edge $z $w))
          (, (dtrans $x $y $z $w)))
 """
@@ -170,24 +188,27 @@ function main(; trials=3)
 
     results = []
 
-    push!(results, run_case("trans_detect (3-src K=150)",
-                             TRANS_FACTS, TRANS_PROG; trials=trials))
+    push!(
+        results,
+        run_case("trans_detect (3-src K=150)", TRANS_FACTS, TRANS_PROG; trials=trials)
+    )
 
-    push!(results, run_case("counter_machine (5-src)",
-                             CM_FACTS, CM_PROG; trials=trials))
+    push!(results, run_case("counter_machine (5-src)", CM_FACTS, CM_PROG; trials=trials))
 
-    push!(results, run_case("odd_even_sort (5-src)",
-                             ODD_EVEN_FACTS, ODD_EVEN_PROG; trials=trials))
+    push!(
+        results,
+        run_case("odd_even_sort (5-src)", ODD_EVEN_FACTS, ODD_EVEN_PROG; trials=trials)
+    )
 
     println()
     println("╔═══════════════════════════════════════════════════════╗")
     println("║  Summary — decompose_program vs baseline              ║")
     println("╠═══════════════════════════════════════════════════════╣")
     for r in results
-        lbl    = rpad(r.label, 28)
-        su     = "$(round(r.speedup; sigdigits=3))×"
-        bms    = "$(round(r.baseline_ms; digits=0)) ms"
-        dms    = "$(round(r.decomposed_ms; digits=0)) ms"
+        lbl = rpad(r.label, 28)
+        su = "$(round(r.speedup; sigdigits=3))×"
+        bms = "$(round(r.baseline_ms; digits=0)) ms"
+        dms = "$(round(r.decomposed_ms; digits=0)) ms"
         stages = "$(r.n_orig)→$(r.n_stages) atoms"
         println("║  $lbl  $(rpad(su, 8))  $(rpad(bms,10)) → $(rpad(dms,10))  $stages")
     end

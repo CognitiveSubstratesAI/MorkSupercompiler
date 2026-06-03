@@ -11,7 +11,7 @@ using MorkSupercompiler
 end
 
 @testset "canonical_key — extracts head + shape from graph" begin
-    g    = MCoreGraph()
+    g = MCoreGraph()
     id_l = add_lit!(g, Lit(1))
     id_c = add_con!(g, Con(:pair, [id_l, id_l]))
 
@@ -19,11 +19,11 @@ end
     @test key.head == :pair
     @test key.shape.arities[1] == UInt8(2)   # :pair has 2 fields
     @test :pair in key.tags
-    @test :Lit  in key.tags
+    @test :Lit in key.tags
 end
 
 @testset "Algorithm 10 — KeySubsumption (§6.3.2)" begin
-    g   = MCoreGraph()
+    g = MCoreGraph()
     id1 = add_con!(g, Con(:foo, NodeID[]))
     id2 = add_con!(g, Con(:foo, NodeID[]))
 
@@ -33,23 +33,23 @@ end
     @test subsumes(k2, k1)    # symmetric when identical
 
     # Different head → no subsumption
-    id3  = add_con!(g, Con(:bar, NodeID[]))
-    k3   = canonical_key(g, id3, 0)
+    id3 = add_con!(g, Con(:bar, NodeID[]))
+    k3 = canonical_key(g, id3, 0)
     @test !subsumes(k1, k3)
 
     # Wider shape subsumes narrower (general subsumes specific)
     id_lit = add_lit!(g, Lit(1))
     id_big = add_con!(g, Con(:foo, [id_lit, id_lit, id_lit]))
-    k_big  = canonical_key(g, id_big, 0)
+    k_big = canonical_key(g, id_big, 0)
     @test !subsumes(k_big, k1)   # k_big has arity 3, k1 has 0 → 3 ≰ 0
     @test subsumes(k1, k_big)    # k1 shape (0,0,0) ≤ k_big shape → k1 subsumes k_big
 end
 
 @testset "FoldTable — record and lookup" begin
-    g    = MCoreGraph()
-    ft   = FoldTable()
+    g = MCoreGraph()
+    ft = FoldTable()
     id_c = add_con!(g, Con(:foo, NodeID[]))
-    key  = canonical_key(g, id_c, 0)
+    key = canonical_key(g, id_c, 0)
 
     @test !can_fold(ft, key)     # empty table — nothing to fold
     record!(ft, key, id_c)
@@ -57,8 +57,8 @@ end
     @test lookup_fold(ft, key) == id_c
 
     # A more specific key (same head, bigger shape) is subsumed by the recorded one
-    id_lit  = add_lit!(g, Lit(1))
-    id_big  = add_con!(g, Con(:foo, [id_lit]))
+    id_lit = add_lit!(g, Lit(1))
+    id_big = add_con!(g, Con(:foo, [id_lit]))
     key_big = canonical_key(g, id_big, 0)
     @test can_fold(ft, key_big)  # key (shape 0) subsumes key_big (shape 1)
 end
@@ -78,8 +78,8 @@ end
     # is non-empty with the right predicate + fixed-arg mask.
     g = MCoreGraph()
     sym_alice = add_sym!(g, Sym(:alice))
-    var_x     = add_var!(g, Var(0))
-    sym_bob   = add_sym!(g, Sym(:bob))
+    var_x = add_var!(g, Var(0))
+    sym_bob = add_sym!(g, Sym(:bob))
     # Pattern: (parent alice $x bob) — args 1 and 3 ground, arg 2 var.
     pat = add_con!(g, Con(:parent, [sym_alice, var_x, sym_bob]))
     query = add_prim!(g, Prim(:kb_query, [pat], EffectSet(0x01)))   # Read effect
@@ -118,9 +118,9 @@ end
     var_x = add_var!(g, Var(0))
 
     pat1 = add_con!(g, Con(:foo, [sym_a]))                # arg 1 ground
-    q1   = add_prim!(g, Prim(:kb_query, [pat1], EffectSet(0x01)))
+    q1 = add_prim!(g, Prim(:kb_query, [pat1], EffectSet(0x01)))
     pat2 = add_con!(g, Con(:foo, [sym_a, sym_b]))         # args 1+2 ground
-    q2   = add_prim!(g, Prim(:kb_query, [pat2], EffectSet(0x01)))
+    q2 = add_prim!(g, Prim(:kb_query, [pat2], EffectSet(0x01)))
 
     k1 = canonical_key(g, q1, 0)
     k2 = canonical_key(g, q2, 0)

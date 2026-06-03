@@ -33,11 +33,11 @@ const ENABLE_MULTI_SPACE = Ref{Bool}(false)
 
 Enable or disable the multi-space layer at runtime.
 
-  flag=false (default): zero overhead, exactly current single-space behaviour.
-  flag=true:  SpaceRegistry active, MM2 commands intercepted.
-  use_mpi=true: initialise MPI transport (Stage 2 HPC peer-to-peer).
-               Calls mpi_init!() which sets registry rank/nranks from MPI.
-               Safe to call multiple times (idempotent).
+flag=false (default): zero overhead, exactly current single-space behaviour.
+flag=true:  SpaceRegistry active, MM2 commands intercepted.
+use_mpi=true: initialise MPI transport (Stage 2 HPC peer-to-peer).
+Calls mpi_init!() which sets registry rank/nranks from MPI.
+Safe to call multiple times (idempotent).
 
 Single-node:   enable_multi_space!(true)              → Stage 1 registry only
 Multi-node:    enable_multi_space!(true; use_mpi=true) → Stage 2 MPI peers
@@ -66,30 +66,29 @@ const LOCAL_PEER = Int32(0)
 
 Content-addressable space identifier.
 
-  name    :: String  — user-defined name (e.g. "my-knowledge-base", "my-app")
-  cid     :: UInt64  — content hash of the space's PathMap root (Merkle-ready)
-                       Zero for a freshly created empty space.
-  peer_id :: Int32   — MPI rank of the peer that owns this space.
-                       LOCAL_PEER (0) = local to this process.
-                       No master — every peer is equal (SPMD model).
+name    :: String  — user-defined name (e.g. "my-knowledge-base", "my-app")
+cid     :: UInt64  — content hash of the space's PathMap root (Merkle-ready)
+Zero for a freshly created empty space.
+peer_id :: Int32   — MPI rank of the peer that owns this space.
+LOCAL_PEER (0) = local to this process.
+No master — every peer is equal (SPMD model).
 
 Stage 1: `name` is the primary key.  peer_id = LOCAL_PEER always.
 Stage 2 (HPC): peer_id = MPI rank.  Routing via space_traverse! probability gate.
 Stage 3 (Web3): `cid` becomes the primary key (IPFS/content-addressed).
 """
 struct NamedSpaceID
-    name    :: String
-    cid     :: UInt64
-    peer_id :: Int32
+    name::String
+    cid::UInt64
+    peer_id::Int32
 end
 
-NamedSpaceID(name::AbstractString) =
-    NamedSpaceID(String(name), UInt64(0), LOCAL_PEER)
+NamedSpaceID(name::AbstractString) = NamedSpaceID(String(name), UInt64(0), LOCAL_PEER)
 
 # Equality and hashing by (name, peer_id) — two peers can have same-named spaces
 Base.:(==)(a::NamedSpaceID, b::NamedSpaceID) = a.name == b.name && a.peer_id == b.peer_id
-Base.hash(s::NamedSpaceID, h::UInt)     = hash(s.peer_id, hash(s.name, h))
-Base.show(io::IO, s::NamedSpaceID)      =
+Base.hash(s::NamedSpaceID, h::UInt) = hash(s.peer_id, hash(s.name, h))
+Base.show(io::IO, s::NamedSpaceID) =
     print(io, "NamedSpaceID(\"$(s.name)\", peer=$(s.peer_id))")
 
 # ── SpaceRegistry ─────────────────────────────────────────────────────────────
@@ -99,29 +98,29 @@ Base.show(io::IO, s::NamedSpaceID)      =
 
 Manages a collection of named MORK spaces with role metadata.
 
-  spaces         :: Dict{NamedSpaceID, Space}        — local :app spaces (this peer only)
-  sharded_spaces :: Dict{NamedSpaceID, ShardedSpace} — :common spaces (sharded, no copy)
-  roles          :: Dict{NamedSpaceID, Symbol}        — :common or :app
-  disk_paths     :: Dict{NamedSpaceID, String}        — optional .act file backing
-  rank           :: Int32  — this peer's MPI rank (LOCAL_PEER=0 on single-node)
-  nranks         :: Int32  — total peers (1 = single-node, no MPI)
+spaces         :: Dict{NamedSpaceID, Space}        — local :app spaces (this peer only)
+sharded_spaces :: Dict{NamedSpaceID, ShardedSpace} — :common spaces (sharded, no copy)
+roles          :: Dict{NamedSpaceID, Symbol}        — :common or :app
+disk_paths     :: Dict{NamedSpaceID, String}        — optional .act file backing
+rank           :: Int32  — this peer's MPI rank (LOCAL_PEER=0 on single-node)
+nranks         :: Int32  — total peers (1 = single-node, no MPI)
 
 Role semantics (architect-defined — any symbol is valid):
-  :common — ShardedSpace when MPI active (partitioned, no copies, Topology 2)
-            Falls back to plain Space on single-node (zero overhead).
-  anything else (:genomics, :robotics, :games, :drug-discovery, ...) — local Space.
-  Cognitive algorithms (PLN, ECAN, MOSES) are atoms IN :common, not separate spaces.
-  Domain data lives in domain-named spaces. Roles are architect-defined labels.
+:common — ShardedSpace when MPI active (partitioned, no copies, Topology 2)
+Falls back to plain Space on single-node (zero overhead).
+anything else (:genomics, :robotics, :games, :drug-discovery, ...) — local Space.
+Cognitive algorithms (PLN, ECAN, MOSES) are atoms IN :common, not separate spaces.
+Domain data lives in domain-named spaces. Roles are architect-defined labels.
 
 SPMD: every peer runs the same code, differentiated by rank.
 """
 mutable struct SpaceRegistry
-    spaces         :: Dict{NamedSpaceID, Space}
-    sharded_spaces :: Dict{NamedSpaceID, Any}    # ShardedSpace (forward ref)
-    roles          :: Dict{NamedSpaceID, Symbol}
-    disk_paths     :: Dict{NamedSpaceID, String}
-    rank           :: Int32
-    nranks         :: Int32
+    spaces::Dict{NamedSpaceID, Space}
+    sharded_spaces::Dict{NamedSpaceID, Any}    # ShardedSpace (forward ref)
+    roles::Dict{NamedSpaceID, Symbol}
+    disk_paths::Dict{NamedSpaceID, String}
+    rank::Int32
+    nranks::Int32
 end
 
 SpaceRegistry() = SpaceRegistry(
@@ -147,7 +146,7 @@ end
 
 Return the global SpaceRegistry. Enables multi-space if not already enabled.
 """
-function get_registry() :: SpaceRegistry
+function get_registry()::SpaceRegistry
     enable_multi_space!(true)
     _REGISTRY[]::SpaceRegistry
 end
@@ -159,12 +158,11 @@ end
 
 Create and register a new MORK space with the given name and role.
 
-  :app    — always a local Space (private to this peer)
-  :common — ShardedSpace when MPI active (partitioned, no copies)
-            plain Space when single-node (zero overhead, same API via common_space)
+:app    — always a local Space (private to this peer)
+:common — ShardedSpace when MPI active (partitioned, no copies)
+plain Space when single-node (zero overhead, same API via common_space)
 """
-function new_space!(reg::SpaceRegistry, name::AbstractString,
-                    role::Symbol = :app)
+function new_space!(reg::SpaceRegistry, name::AbstractString, role::Symbol=:app)
     # Any role is valid — architects define their own topology labels.
     # :common is the only role with special backing-store semantics.
     id = NamedSpaceID(name)
@@ -194,7 +192,7 @@ Retrieve a registered space by name. Returns Space or ShardedSpace.
 """
 function get_space(reg::SpaceRegistry, name::AbstractString)
     id = NamedSpaceID(name)
-    haskey(reg.spaces, id)         && return reg.spaces[id]
+    haskey(reg.spaces, id) && return reg.spaces[id]
     haskey(reg.sharded_spaces, id) && return reg.sharded_spaces[id]
     error("space \"$name\" not registered. Use new_space! first.")
 end
@@ -203,14 +201,14 @@ end
     common_space(reg) → Union{Space, ShardedSpace}
 
 Return the :common space.
-  Single-node: returns a plain Space (local, no MPI overhead).
-  Multi-node:  returns a ShardedSpace (partitioned across all peers, no copies).
+Single-node: returns a plain Space (local, no MPI overhead).
+Multi-node:  returns a ShardedSpace (partitioned across all peers, no copies).
 """
 function common_space(reg::SpaceRegistry)
     for (id, role) in reg.roles
         role == :common || continue
         haskey(reg.sharded_spaces, id) && return reg.sharded_spaces[id]
-        haskey(reg.spaces, id)         && return reg.spaces[id]
+        haskey(reg.spaces, id) && return reg.spaces[id]
     end
     error("No :common space registered. Use new_space!(reg, name, :common).")
 end
@@ -220,11 +218,15 @@ end
 
 List all registered spaces with their names, roles, and atom counts.
 """
-function list_spaces(reg::SpaceRegistry) :: Vector{NamedTuple}
-    [(name=id.name, role=reg.roles[id],
-      atoms=space_val_count(reg.spaces[id]),
-      disk=get(reg.disk_paths, id, nothing))
-     for id in keys(reg.spaces)]
+function list_spaces(reg::SpaceRegistry)::Vector{NamedTuple}
+    [
+        (
+            name=id.name,
+            role=reg.roles[id],
+            atoms=space_val_count(reg.spaces[id]),
+            disk=get(reg.disk_paths, id, nothing)
+        ) for id in keys(reg.spaces)
+    ]
 end
 
 # ── Content hash (Stage 1 stub, extensible to Merkle/CID) ────────────────────
@@ -236,7 +238,7 @@ Compute a lightweight content hash of the space's PathMap.
 Stage 1: simple hash of the atom count + first/last paths.
 Stage 3 (Web3): replace with full Merkle root over the trie.
 """
-function compute_cid(s::Space) :: UInt64
+function compute_cid(s::Space)::UInt64
     n = space_val_count(s)
     n == 0 && return UInt64(0)
     hash(n)  # Stage 1 stub — replace with Merkle root in Stage 3

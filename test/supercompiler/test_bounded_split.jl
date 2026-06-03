@@ -2,10 +2,10 @@ using Test
 using MorkSupercompiler
 
 @testset "BoundedSplit — non-splittable node passes through" begin
-    g    = MCoreGraph()
+    g = MCoreGraph()
     id_l = add_lit!(g, Lit(42))
     stats = MORKStatistics()
-    sr   = bounded_split(g, id_l, Env(), stats)
+    sr = bounded_split(g, id_l, Env(), stats)
     @test length(sr.branches) == 1
     @test sr.branches[1].id == id_l
     @test sr.total_prob ≈ 1.0
@@ -13,14 +13,14 @@ using MorkSupercompiler
 end
 
 @testset "BoundedSplit — Choice: selects top branches by probability" begin
-    g    = MCoreGraph()
-    ids  = [add_sym!(g, Sym(Symbol("alt$i"))) for i in 1:5]
+    g = MCoreGraph()
+    ids = [add_sym!(g, Sym(Symbol("alt$i"))) for i in 1:5]
     alts = ChoiceAlt.(ids)
     id_c = add_choice!(g, Choice(alts))
 
     stats = MORKStatistics(
-        Dict("alt1"=>100, "alt2"=>200, "alt3"=>50, "alt4"=>10, "alt5"=>5),
-        365)
+        Dict("alt1"=>100, "alt2"=>200, "alt3"=>50, "alt4"=>10, "alt5"=>5), 365
+    )
 
     sr = bounded_split(g, id_c, Env(), stats; budget=3)
     # Should have selected up to 3 branches + maybe a catchall
@@ -35,12 +35,12 @@ end
 end
 
 @testset "BoundedSplit — budget=1 selects exactly 1 main branch" begin
-    g    = MCoreGraph()
-    ids  = [add_sym!(g, Sym(Symbol("x$i"))) for i in 1:4]
+    g = MCoreGraph()
+    ids = [add_sym!(g, Sym(Symbol("x$i"))) for i in 1:4]
     alts = ChoiceAlt.(ids)
     id_c = add_choice!(g, Choice(alts))
     # Use realistic stats so prob per guard < 1.0
-    stats = MORKStatistics(Dict("x1"=>25,"x2"=>25,"x3"=>25,"x4"=>25), 100)
+    stats = MORKStatistics(Dict("x1"=>25, "x2"=>25, "x3"=>25, "x4"=>25), 100)
 
     sr = bounded_split(g, id_c, Env(), stats; budget=1)
     non_ca = count(b -> !b.is_catchall, sr.branches)

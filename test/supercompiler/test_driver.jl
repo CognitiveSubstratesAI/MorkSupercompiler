@@ -2,7 +2,7 @@ using Test
 using MorkSupercompiler
 
 @testset "drive! — Sym/Lit reach Value in zero steps" begin
-    g  = MCoreGraph()
+    g = MCoreGraph()
     s_id = add_sym!(g, Sym(:foo))
     l_id = add_lit!(g, Lit(42))
 
@@ -17,10 +17,10 @@ using MorkSupercompiler
 end
 
 @testset "drive! — Con with all-value fields reaches Value" begin
-    g  = MCoreGraph()
+    g = MCoreGraph()
     s1 = add_sym!(g, Sym(:hello))
     s2 = add_sym!(g, Sym(:world))
-    c  = add_con!(g, Con(:pair, [s1, s2]))
+    c = add_con!(g, Con(:pair, [s1, s2]))
 
     rs = drive!(g, c)
     @test rs.terminated == :value
@@ -30,7 +30,7 @@ end
 end
 
 @testset "drive! — FoldTable records canonical keys" begin
-    g  = MCoreGraph()
+    g = MCoreGraph()
     ft = FoldTable()
     s_id = add_sym!(g, Sym(:x))
     drive!(g, s_id; ft=ft)
@@ -42,7 +42,7 @@ end
     # Two separate Cons with identical canonical keys (same head + shape)
     # share the same FoldTable. The second call's first key lookup should
     # hit the entry recorded by the first call.
-    g  = MCoreGraph()
+    g = MCoreGraph()
     ft = FoldTable()
     s1 = add_sym!(g, Sym(:p))
     s2 = add_sym!(g, Sym(:q))
@@ -60,7 +60,7 @@ end
     # Build a Choice with two alternatives. Stepper.Choice → Blocked → drive!
     # must invoke bounded_split. With no stats, split picks all alternatives
     # via the catch-all path.
-    g  = MCoreGraph()
+    g = MCoreGraph()
     s1 = add_sym!(g, Sym(:a))
     s2 = add_sym!(g, Sym(:b))
     alt1 = ChoiceAlt(NULL_NODE, s1)   # no guard

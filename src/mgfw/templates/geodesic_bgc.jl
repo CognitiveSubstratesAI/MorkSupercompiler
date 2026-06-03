@@ -37,7 +37,7 @@ The emitted residual is consumed by `space_metta_calculus!` at execution
 time. Each `(exec ...)` block is a separate scheduled rewrite that fires
 when its premise pattern is in the space.
 """
-function geodesic_bgc_lowering(t::GeometryTemplate, region::AbstractString) :: String
+function geodesic_bgc_lowering(t::GeometryTemplate, region::AbstractString)::String
     """
     ;; mgfw:lowering GeodesicBGC_Composite
     ;; §12.2 hybrid: scheduler + guidance + evidence

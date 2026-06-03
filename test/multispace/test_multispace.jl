@@ -10,7 +10,8 @@ end
 
 @testset "enable_multi_space — zero overhead when off" begin
     enable_multi_space!(false)
-    s = new_space(); space_add_all_sexpr!(s, "(edge 0 1)")
+    s = new_space();
+    space_add_all_sexpr!(s, "(edge 0 1)")
     # run! with multi-space OFF — must work exactly as before
     r = run!(s, raw"(exec 0 (, (edge $x $y)) (, (path $x $y)))")
     out = space_dump_all_sexpr(s)
@@ -55,15 +56,15 @@ end
     reg = SpaceRegistry()
     # Cognitive algorithms (PLN, ECAN, MOSES) are atoms IN :common, not separate spaces.
     # Domain data lives in domain-named spaces.
-    new_space!(reg, "shared-kb",      :common)       # PLN/ECAN rules + ontology live here
-    new_space!(reg, "genomics-data",  :genomics)     # domain: bioinformatics facts
-    new_space!(reg, "robotics-data",  :robotics)     # domain: sensor/actuator data
-    new_space!(reg, "games-data",     :games)        # domain: game states/moves
+    new_space!(reg, "shared-kb", :common)       # PLN/ECAN rules + ontology live here
+    new_space!(reg, "genomics-data", :genomics)     # domain: bioinformatics facts
+    new_space!(reg, "robotics-data", :robotics)     # domain: sensor/actuator data
+    new_space!(reg, "games-data", :games)        # domain: game states/moves
     new_space!(reg, "drug-discovery", :drug_discovery)
-    @test reg.roles[NamedSpaceID("shared-kb")]      == :common
-    @test reg.roles[NamedSpaceID("genomics-data")]  == :genomics
-    @test reg.roles[NamedSpaceID("robotics-data")]  == :robotics
-    @test reg.roles[NamedSpaceID("games-data")]     == :games
+    @test reg.roles[NamedSpaceID("shared-kb")] == :common
+    @test reg.roles[NamedSpaceID("genomics-data")] == :genomics
+    @test reg.roles[NamedSpaceID("robotics-data")] == :robotics
+    @test reg.roles[NamedSpaceID("games-data")] == :games
     @test common_space(reg) isa Space
 end
 
@@ -81,8 +82,9 @@ end
 
 @testset "MM2 commands — new-space intercepted" begin
     reg = SpaceRegistry()
-    remaining = process_multispace_commands!(reg,
-        "(new-space my-knowledge common)\n(exec 0 (, (a \$x)) (, (b \$x)))")
+    remaining = process_multispace_commands!(
+        reg, "(new-space my-knowledge common)\n(exec 0 (, (a \$x)) (, (b \$x)))"
+    )
     @test haskey(reg.spaces, NamedSpaceID("my-knowledge"))
     @test reg.roles[NamedSpaceID("my-knowledge")] == :common
     # exec atom remains
@@ -93,8 +95,9 @@ end
 
 @testset "MM2 commands — multiple commands stripped" begin
     reg = SpaceRegistry()
-    remaining = process_multispace_commands!(reg,
-        "(new-space app1 app)\n(new-space shared common)\n(edge 0 1)")
+    remaining = process_multispace_commands!(
+        reg, "(new-space app1 app)\n(new-space shared common)\n(edge 0 1)"
+    )
     @test length(reg.spaces) == 2
     @test occursin("edge", remaining)
     @test !occursin("new-space", remaining)
@@ -117,8 +120,9 @@ end
     space_add_all_sexpr!(s, "(edge 0 1)")
 
     # MM2 command + exec rule in same program
-    run!(s, "(new-space test-domain app)\n" *
-            raw"(exec 0 (, (edge $x $y)) (, (path $x $y)))")
+    run!(
+        s, "(new-space test-domain app)\n" * raw"(exec 0 (, (edge $x $y)) (, (path $x $y)))"
+    )
 
     out = space_dump_all_sexpr(s)
     @test occursin("path", out)
@@ -171,7 +175,7 @@ end
 
 @testset "save/load space round-trip" begin
     reg = SpaceRegistry()
-    s   = new_space!(reg, "persist-test", :app)
+    s = new_space!(reg, "persist-test", :app)
     space_add_all_sexpr!(s, "(fact alpha) (fact beta)")
     @test space_val_count(s) == 2
 
@@ -181,20 +185,20 @@ end
 
     # Load into a new registry
     reg2 = SpaceRegistry()
-    s2   = load_space!(reg2, "persist-test", path)
+    s2 = load_space!(reg2, "persist-test", path)
     @test space_val_count(s2) == 2
     rm(path; force=true)
 end
 
 @testset "load_space! — creates space if missing" begin
     reg = SpaceRegistry()
-    s   = new_space!(reg, "tmp", :app)
+    s = new_space!(reg, "tmp", :app)
     space_add_all_sexpr!(s, "(a 1)")
     path = tempname() * ".act"
     save_space!(reg, "tmp", path)
 
     reg2 = SpaceRegistry()   # empty registry
-    s2   = load_space!(reg2, "new-name", path; create_if_missing=true)
+    s2 = load_space!(reg2, "new-name", path; create_if_missing=true)
     @test space_val_count(s2) == 1
     rm(path; force=true)
 end

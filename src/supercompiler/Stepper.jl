@@ -22,15 +22,19 @@ DepSet tracks which effect resources must be resolved before a step can proceed.
 
 abstract type StepResult end
 
-"""Fully reduced — this node is a value, no further stepping needed."""
+"""
+Fully reduced — this node is a value, no further stepping needed.
+"""
 struct Value <: StepResult
-    id :: NodeID
+    id::NodeID
 end
 
-"""Blocked — the step cannot proceed because `blocking_effect` is unresolved."""
+"""
+Blocked — the step cannot proceed because `blocking_effect` is unresolved.
+"""
 struct Blocked <: StepResult
-    id              :: NodeID
-    blocking_effect :: Effect
+    id::NodeID
+    blocking_effect::Effect
 end
 
 """
@@ -38,7 +42,7 @@ Partial step — the node was partially evaluated; `id` points to the
 rewritten node in the graph.  Caller should step again.
 """
 struct Residual <: StepResult
-    id :: NodeID
+    id::NodeID
 end
 
 # ── Environment ───────────────────────────────────────────────────────────────
@@ -50,18 +54,16 @@ Variable environment for the stepper.  Maps de Bruijn index → NodeID.
 Index 0 = innermost binding (as in standard de Bruijn convention).
 """
 struct Env
-    bindings :: Vector{NodeID}   # index i → NodeID (0-based: bindings[i+1])
+    bindings::Vector{NodeID}   # index i → NodeID (0-based: bindings[i+1])
 end
 Env() = Env(NodeID[])
 
-env_lookup(env::Env, ix::Int) :: NodeID =
+env_lookup(env::Env, ix::Int)::NodeID =
     1 <= ix + 1 <= length(env.bindings) ? env.bindings[ix + 1] : NULL_NODE
 
-env_extend(env::Env, ids::Vector{NodeID}) :: Env =
-    Env([ids; env.bindings])
+env_extend(env::Env, ids::Vector{NodeID})::Env = Env([ids; env.bindings])
 
-env_extend(env::Env, id::NodeID) :: Env =
-    Env([id; env.bindings])
+env_extend(env::Env, id::NodeID)::Env = Env([id; env.bindings])
 
 # ── DepSet — effect dependency tracking ──────────────────────────────────────
 
@@ -73,11 +75,11 @@ Built from analyzing a region's effect footprint (§5.3.1).
 For MORK exec sources: always empty (all Read → no deps → always proceed).
 """
 struct DepSet
-    blocking :: Vector{Effect}
+    blocking::Vector{Effect}
 end
-DepSet()                     = DepSet(Effect[])
-is_empty(d::DepSet)          = isempty(d.blocking)
-can_proceed(d::DepSet)       = is_empty(d)
+DepSet() = DepSet(Effect[])
+is_empty(d::DepSet) = isempty(d.blocking)
+can_proceed(d::DepSet) = is_empty(d)
 add_dep(d::DepSet, e::Effect) = DepSet([d.blocking; e])
 
 # ── Primitive registry ────────────────────────────────────────────────────────
@@ -98,15 +100,14 @@ Maps op::Symbol → PrimHandler.  Pre-populated with standard MM2 primitives;
 user can extend for domain-specific ops.
 """
 mutable struct PrimRegistry
-    handlers :: Dict{Symbol, PrimHandler}
+    handlers::Dict{Symbol, PrimHandler}
 end
 PrimRegistry() = PrimRegistry(Dict{Symbol, PrimHandler}())
 Base.copy(r::PrimRegistry) = PrimRegistry(copy(r.handlers))
 
-register_prim!(r::PrimRegistry, op::Symbol, h::PrimHandler) =
-    (r.handlers[op] = h; r)
+register_prim!(r::PrimRegistry, op::Symbol, h::PrimHandler) = (r.handlers[op]=h; r)
 
-function lookup_prim(r::PrimRegistry, op::Symbol) :: Union{PrimHandler, Nothing}
+function lookup_prim(r::PrimRegistry, op::Symbol)::Union{PrimHandler, Nothing}
     get(r.handlers, op, nothing)
 end
 
@@ -122,16 +123,15 @@ const DEFAULT_PRIM_REGISTRY = PrimRegistry()
 Algorithm 7 (RewriteOnce) from §6.1.  Purely structural — no domain logic here.
 
 Steps:
-  1. Analyze effects of node `id`
-  2. If deps not satisfied → return Blocked
-  3. Dispatch on node kind → step or return Value
-"""
-function rewrite_once(g       :: MCoreGraph,
-                      id      :: NodeID,
-                      env     :: Env,
-                      deps    :: DepSet     = DepSet(),
-                      registry:: PrimRegistry = DEFAULT_PRIM_REGISTRY) :: StepResult
 
+ 1. Analyze effects of node `id`
+ 2. If deps not satisfied → return Blocked
+ 3. Dispatch on node kind → step or return Value
+"""
+function rewrite_once(
+    g::MCoreGraph, id::NodeID, env::Env, deps::DepSet=DepSet(),
+    registry::PrimRegistry=DEFAULT_PRIM_REGISTRY
+)::StepResult
     !isvalid(id) && return Value(id)   # NULL_NODE is trivially a value
 
     # Effect check: can we proceed?
@@ -148,24 +148,24 @@ end
 
 # ── Dispatch on node kind (Algorithm 7 match arms) ────────────────────────────
 
-function _step_node(g, id, node::Sym,      env, deps, reg) :: StepResult
+function _step_node(g, id, node::Sym, env, deps, reg)::StepResult
     Value(id)   # Sym is already a value
 end
 
-function _step_node(g, id, node::Lit,      env, deps, reg) :: StepResult
+function _step_node(g, id, node::Lit, env, deps, reg)::StepResult
     Value(id)   # Lit is already a value
 end
 
-function _step_node(g, id, node::Abs,      env, deps, reg) :: StepResult
+function _step_node(g, id, node::Abs, env, deps, reg)::StepResult
     Value(id)   # Abs (lambda) is a value — not applied yet
 end
 
-function _step_node(g, id, node::Var,      env, deps, reg) :: StepResult
+function _step_node(g, id, node::Var, env, deps, reg)::StepResult
     bound = env_lookup(env, node.ix)
     isvalid(bound) ? Value(bound) : Value(id)   # unbound var = Value(itself)
 end
 
-function _step_node(g, id, node::MCoreRef, env, deps, reg) :: StepResult
+function _step_node(g, id, node::MCoreRef, env, deps, reg)::StepResult
     # Algorithm 7 §6.1: Ref(def) -> unfold_definition(def)
     # Look up def_id in g.defs. If found, return Value(body_id).
     # If not found, return Residual — definition may be loaded later.
@@ -173,7 +173,7 @@ function _step_node(g, id, node::MCoreRef, env, deps, reg) :: StepResult
     body_id !== nothing ? Value(body_id) : Residual(id)
 end
 
-function _step_node(g, id, node::Con,      env, deps, reg) :: StepResult
+function _step_node(g, id, node::Con, env, deps, reg)::StepResult
     # Step each field; if all values → Con is a value
     all_values = true
     new_fields = NodeID[]
@@ -195,7 +195,7 @@ function _step_node(g, id, node::Con,      env, deps, reg) :: StepResult
     all_values ? Value(new_id) : Residual(new_id)
 end
 
-function _step_node(g, id, node::App,      env, deps, reg) :: StepResult
+function _step_node(g, id, node::App, env, deps, reg)::StepResult
     # Step function position first
     f_result = rewrite_once(g, node.fun, env, deps, reg)
     f_result isa Blocked && return f_result
@@ -215,7 +215,7 @@ function _step_node(g, id, node::App,      env, deps, reg) :: StepResult
     Residual(add_app!(g, App(f_id, node.args, node.effects)))
 end
 
-function _step_node(g, id, node::LetNode,  env, deps, reg) :: StepResult
+function _step_node(g, id, node::LetNode, env, deps, reg)::StepResult
     # Evaluate bindings left-to-right, then step body with extended env
     new_ids = NodeID[]
     for (_, val_id) in node.bindings
@@ -227,13 +227,13 @@ function _step_node(g, id, node::LetNode,  env, deps, reg) :: StepResult
     rewrite_once(g, node.body, new_env, deps, reg)
 end
 
-function _step_node(g, id, node::MatchNode, env, deps, reg) :: StepResult
+function _step_node(g, id, node::MatchNode, env, deps, reg)::StepResult
     # Step scrutinee first
     s_result = rewrite_once(g, node.scrut, env, deps, reg)
     s_result isa Blocked && return s_result
     !(s_result isa Value) && return Residual(id)   # scrutinee not yet a value
 
-    scrut_id   = s_result.id
+    scrut_id = s_result.id
     scrut_node = get_node(g, scrut_id)
 
     # Try clauses in order
@@ -252,12 +252,12 @@ function _step_node(g, id, node::MatchNode, env, deps, reg) :: StepResult
     Residual(id)   # no clause matched
 end
 
-function _step_node(g, id, node::Choice,   env, deps, reg) :: StepResult
+function _step_node(g, id, node::Choice, env, deps, reg)::StepResult
     Blocked(id, ReadEffect(DEFAULT_SPACE))
     # Choice requires BoundedSplit — not handled in Stepper
 end
 
-function _step_node(g, id, node::Prim,     env, deps, reg) :: StepResult
+function _step_node(g, id, node::Prim, env, deps, reg)::StepResult
     _call_primitive(g, node, env, deps, reg)
 end
 
@@ -268,16 +268,14 @@ end
 
 Algorithm 8 from §6.1.  Dispatches to registered primitive handlers.
 Standard ops wired at module load:
-  :kb_query    → query_kb_with_stats (reads space, uses QueryPlanner stats)
-  :fitness_eval → evaluate_fitness   (reads data, observes prog)
-  :mm2_exec    → execute_mm2_pattern (reads + appends space)
-  :identity    → returns first arg unchanged
+:kb_query    → query_kb_with_stats (reads space, uses QueryPlanner stats)
+:fitness_eval → evaluate_fitness   (reads data, observes prog)
+:mm2_exec    → execute_mm2_pattern (reads + appends space)
+:identity    → returns first arg unchanged
 """
-function _call_primitive(g       :: MCoreGraph,
-                         node    :: Prim,
-                         env     :: Env,
-                         deps    :: DepSet,
-                         reg     :: PrimRegistry) :: StepResult
+function _call_primitive(
+    g::MCoreGraph, node::Prim, env::Env, deps::DepSet, reg::PrimRegistry
+)::StepResult
 
     # Evaluate all args first (eager — standard for primitives)
     eval_args = _eval_args(g, node.args, env, deps, reg)
@@ -295,7 +293,9 @@ end
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-function _eval_args(g, arg_ids::Vector{NodeID}, env, deps, reg) :: Union{Vector{NodeID}, Nothing}
+function _eval_args(
+    g, arg_ids::Vector{NodeID}, env, deps, reg
+)::Union{Vector{NodeID}, Nothing}
     out = NodeID[]
     for aid in arg_ids
         r = rewrite_once(g, aid, env, deps, reg)
@@ -305,7 +305,7 @@ function _eval_args(g, arg_ids::Vector{NodeID}, env, deps, reg) :: Union{Vector{
     out
 end
 
-function _node_effects(node::MCoreNode) :: Vector{Effect}
+function _node_effects(node::MCoreNode)::Vector{Effect}
     mask = node.effects.mask
     mask == 0 && return Effect[]
     out = Effect[]
@@ -317,8 +317,9 @@ function _node_effects(node::MCoreNode) :: Vector{Effect}
     out
 end
 
-function _try_match(g, scrut_node::MCoreNode, scrut_id::NodeID,
-                    pat_id::NodeID, env::Env) :: Union{Env, Nothing}
+function _try_match(
+    g, scrut_node::MCoreNode, scrut_id::NodeID, pat_id::NodeID, env::Env
+)::Union{Env, Nothing}
     !isvalid(pat_id) && return env   # null pattern = wildcard
 
     pat = get_node(g, pat_id)
@@ -336,7 +337,8 @@ function _try_match(g, scrut_node::MCoreNode, scrut_id::NodeID,
     end
 
     if pat isa Con && scrut_node isa Con
-        pat_con = pat::Con; scrut_con = scrut_node::Con
+        pat_con = pat::Con;
+        scrut_con = scrut_node::Con
         pat_con.head != scrut_con.head && return nothing
         length(pat_con.fields) != length(scrut_con.fields) && return nothing
         cur_env = env
@@ -362,22 +364,35 @@ end
 # ── Standard primitive handlers (Algorithm 8) ─────────────────────────────────
 
 # :identity — returns first arg unchanged
-register_prim!(DEFAULT_PRIM_REGISTRY, :identity,
-    (g, args, env) -> isempty(args) ? Value(NULL_NODE) : Value(args[1]))
+register_prim!(
+    DEFAULT_PRIM_REGISTRY,
+    :identity,
+    (g, args, env) -> isempty(args) ? Value(NULL_NODE) : Value(args[1])
+)
 
 # :kb_query — Algorithm 8 §6.1: query_kb_with_stats(pattern)
 # Default registry: no Space available → returns Residual.
 # Space-aware registry: call register_space_primitives!(reg, space) to wire live Space.
-register_prim!(DEFAULT_PRIM_REGISTRY, :kb_query,
-    (g, args, env) -> Residual(add_prim!(g, Prim(:kb_query, args, EffectSet(UInt8(0x01))))))
+register_prim!(
+    DEFAULT_PRIM_REGISTRY,
+    :kb_query,
+    (g, args, env) -> Residual(add_prim!(g, Prim(:kb_query, args, EffectSet(UInt8(0x01)))))
+)
 
 # :mm2_exec — Algorithm 8 §6.1: execute_mm2_pattern(priority, patterns, templates)
-register_prim!(DEFAULT_PRIM_REGISTRY, :mm2_exec,
-    (g, args, env) -> Residual(add_prim!(g, Prim(:mm2_exec, args, EffectSet(UInt8(0x05))))))
+register_prim!(
+    DEFAULT_PRIM_REGISTRY,
+    :mm2_exec,
+    (g, args, env) -> Residual(add_prim!(g, Prim(:mm2_exec, args, EffectSet(UInt8(0x05)))))
+)
 
 # :fitness_eval — Algorithm 8 §6.1: evaluate_fitness(program, data)
-register_prim!(DEFAULT_PRIM_REGISTRY, :fitness_eval,
-    (g, args, env) -> Residual(add_prim!(g, Prim(:fitness_eval, args, EffectSet(UInt8(0x21))))))
+register_prim!(
+    DEFAULT_PRIM_REGISTRY,
+    :fitness_eval,
+    (g, args, env) ->
+        Residual(add_prim!(g, Prim(:fitness_eval, args, EffectSet(UInt8(0x21)))))
+)
 
 """
     register_space_primitives!(reg, space) → PrimRegistry
@@ -386,76 +401,86 @@ Wire live MORK Space into a PrimRegistry so :kb_query and :mm2_exec
 can interact with the Space during M-Core evaluation (Algorithm 8 §6.1).
 
 :kb_query  — query_kb_with_stats: run space_query_multi on pattern arg,
-             return match count as a Lit node (cardinality estimation).
+return match count as a Lit node (cardinality estimation).
 :mm2_exec  — execute_mm2_pattern: add exec atom to space and run
-             space_metta_calculus! for one step, return Value.
+space_metta_calculus! for one step, return Value.
 """
-function register_space_primitives!(reg::PrimRegistry, space::Space) :: PrimRegistry
+function register_space_primitives!(reg::PrimRegistry, space::Space)::PrimRegistry
     # :kb_query — reads space, returns cardinality as Lit
-    register_prim!(reg, :kb_query, (g, args, env) -> begin
-        isempty(args) && return Value(add_lit!(g, Lit(0)))
-        pat_node = get_node(g, args[1])
-        pat_str  = sprint_mcore_to_mm2(g, args[1])
-        count    = 0
-        try
-            nodes = parse_program(pat_str)
-            if !isempty(nodes)
-                count = dynamic_count(space.btm, only(nodes))
-                count == typemax(Int) && (count = 0)
+    register_prim!(
+        reg,
+        :kb_query,
+        (g, args, env) -> begin
+            isempty(args) && return Value(add_lit!(g, Lit(0)))
+            pat_node = get_node(g, args[1])
+            pat_str = sprint_mcore_to_mm2(g, args[1])
+            count = 0
+            try
+                nodes = parse_program(pat_str)
+                if !isempty(nodes)
+                    count = dynamic_count(space.btm, only(nodes))
+                    count == typemax(Int) && (count = 0)
+                end
+            catch
             end
-        catch
+            Value(add_lit!(g, Lit(count)))
         end
-        Value(add_lit!(g, Lit(count)))
-    end)
+    )
 
     # :mm2_exec — appends exec atom to space and steps one round
-    register_prim!(reg, :mm2_exec, (g, args, env) -> begin
-        isempty(args) && return Value(NULL_NODE)
-        exec_str = sprint_mcore_to_mm2(g, args[1])
-        try
-            space_add_all_sexpr!(space, exec_str)
-            space_metta_calculus!(space, 1)
-        catch
+    register_prim!(
+        reg, :mm2_exec, (g, args, env) -> begin
+            isempty(args) && return Value(NULL_NODE)
+            exec_str = sprint_mcore_to_mm2(g, args[1])
+            try
+                space_add_all_sexpr!(space, exec_str)
+                space_metta_calculus!(space, 1)
+            catch
+            end
+            Value(args[1])
         end
-        Value(args[1])
-    end)
+    )
 
     # Populate g.defs from MORK equality atoms: (= name body) or (= (name $x) body)
     # Called lazily — MCoreGraph is passed per-call so we register a hook that
     # loads definitions on first MCoreRef unfold miss.
-    register_prim!(reg, :load_defs, (g, args, env) -> begin
-        dump = space_dump_all_sexpr(space)
-        for line in split(dump, "\n"; keepempty=false)
-            line = strip(line)
-            startswith(line, "(= ") || continue
-            try
-                nodes = parse_program(line)
-                isempty(nodes) && continue
-                node = only(nodes)
-                # (= name body) or (= (name ...) body)
-                node isa SList && length(node.items) == 3 || continue
-                eq_head = node.items[1]
-                lhs     = node.items[2]
-                rhs_str = sprint_sexpr(node.items[3])
-                # Extract definition name
-                def_name = if lhs isa SAtom
-                    Symbol(lhs.name)
-                elseif lhs isa SList && !isempty(lhs.items) && lhs.items[1] isa SAtom
-                    Symbol((lhs.items[1]::SAtom).name)
-                else
-                    nothing
+    register_prim!(
+        reg,
+        :load_defs,
+        (g, args, env) -> begin
+            dump = space_dump_all_sexpr(space)
+            for line in split(dump, "\n"; keepempty=false)
+                line = strip(line)
+                startswith(line, "(= ") || continue
+                try
+                    nodes = parse_program(line)
+                    isempty(nodes) && continue
+                    node = only(nodes)
+                    # (= name body) or (= (name ...) body)
+                    node isa SList && length(node.items) == 3 || continue
+                    eq_head = node.items[1]
+                    lhs = node.items[2]
+                    rhs_str = sprint_sexpr(node.items[3])
+                    # Extract definition name
+                    def_name = if lhs isa SAtom
+                        Symbol(lhs.name)
+                    elseif lhs isa SList && !isempty(lhs.items) && lhs.items[1] isa SAtom
+                        Symbol((lhs.items[1]::SAtom).name)
+                    else
+                        nothing
+                    end
+                    def_name === nothing && continue
+                    # Parse rhs into MCoreGraph and register
+                    rhs_nodes = parse_program(rhs_str)
+                    isempty(rhs_nodes) && continue
+                    body_id = compile_kb_query(g, only(rhs_nodes))
+                    isvalid(body_id) && def_add!(g, def_name, body_id)
+                catch
                 end
-                def_name === nothing && continue
-                # Parse rhs into MCoreGraph and register
-                rhs_nodes = parse_program(rhs_str)
-                isempty(rhs_nodes) && continue
-                body_id = compile_kb_query(g, only(rhs_nodes))
-                isvalid(body_id) && def_add!(g, def_name, body_id)
-            catch
             end
+            Value(NULL_NODE)
         end
-        Value(NULL_NODE)
-    end)
+    )
 
     reg
 end
@@ -468,14 +493,13 @@ end
 Drive `rewrite_once` until Value or Blocked, up to `max_steps`.
 Returns the last result.
 """
-function step_to_value(g       :: MCoreGraph,
-                       id      :: NodeID,
-                       env     :: Env       = Env();
-                       max_steps :: Int     = 1000,
-                       registry  :: PrimRegistry = DEFAULT_PRIM_REGISTRY) :: StepResult
-    deps   = DepSet()
+function step_to_value(
+    g::MCoreGraph, id::NodeID, env::Env=Env(); max_steps::Int=1000,
+    registry::PrimRegistry=DEFAULT_PRIM_REGISTRY
+)::StepResult
+    deps = DepSet()
     result = rewrite_once(g, id, env, deps, registry)
-    steps  = 1
+    steps = 1
     while result isa Residual && steps < max_steps
         result = rewrite_once(g, result.id, env, deps, registry)
         steps += 1

@@ -12,18 +12,20 @@ Each Ri is a K-node chain with K-1 edges. Expected output: K-N path atoms.
 using MorkSupercompiler
 using MORK
 
-function chain_facts(pred::String, k::Int) :: String
-    join(["($pred $i $(i+1))" for i in 0:k-2], " ")
+function chain_facts(pred::String, k::Int)::String
+    join(["($pred $i $(i+1))" for i in 0:(k - 2)], " ")
 end
 
-function chain_prog(n_sources::Int, k::Int) :: String
-    preds    = ["R$i" for i in 0:n_sources-1]
+function chain_prog(n_sources::Int, k::Int)::String
+    preds = ["R$i" for i in 0:(n_sources - 1)]
     raw_vars = [raw"$" * "x$i" for i in 0:n_sources]
-    raw_srcs = join(["($(preds[i]) $(raw_vars[i]) $(raw_vars[i+1]))" for i in 1:n_sources], " ")
+    raw_srcs = join(
+        ["($(preds[i]) $(raw_vars[i]) $(raw_vars[i+1]))" for i in 1:n_sources], " "
+    )
     "(exec 0 (, $raw_srcs) (, (path $(raw_vars[1]) $(raw_vars[end]))))"
 end
 
-function time_exec(facts::String, prog::String; trials=2) :: Float64
+function time_exec(facts::String, prog::String; trials=2)::Float64
     times = Float64[]
     for _ in 1:trials
         s = new_space()
@@ -37,8 +39,8 @@ function time_exec(facts::String, prog::String; trials=2) :: Float64
 end
 
 function run_case(n_sources::Int, k::Int; trials=2)
-    facts  = join([chain_facts("R$i", k) for i in 0:n_sources-1], "\n")
-    prog   = chain_prog(n_sources, k)
+    facts = join([chain_facts("R$i", k) for i in 0:(n_sources - 1)], "\n")
+    prog = chain_prog(n_sources, k)
     decomp = decompose_program(prog)
     n_stages = length(parse_program(decomp))
 
@@ -46,27 +48,38 @@ function run_case(n_sources::Int, k::Int; trials=2)
     println("    Decomposed into $n_stages stages")
 
     # Run decomposed, verify output
-    s = new_space(); space_add_all_sexpr!(s, facts)
+    s = new_space();
+    space_add_all_sexpr!(s, facts)
     space_add_all_sexpr!(s, decomp)
     space_metta_calculus!(s, typemax(Int))
     out = space_dump_all_sexpr(s)
-    n_path     = count(l -> occursin("(path", l), split(out, "\n"))
+    n_path = count(l -> occursin("(path", l), split(out, "\n"))
     n_expected = max(0, k - n_sources)
-    correct    = (n_path == n_expected)   # _sc_tmp atoms cleaned by execute!, not raw metta_calculus!
+    correct = (n_path == n_expected)   # _sc_tmp atoms cleaned by execute!, not raw metta_calculus!
 
     dt = time_exec(facts, decomp; trials=trials)
 
     # Theoretical baseline cost
-    theory_ms  = (k-1)^n_sources * 24e-3
-    theory_su  = theory_ms / max(dt, 1e-9)
+    theory_ms = (k-1)^n_sources * 24e-3
+    theory_su = theory_ms / max(dt, 1e-9)
 
-    println("    Decomposed: $(round(dt; digits=1)) ms — $n_path/$n_expected path atoms $(correct ? "✓" : "✗ MISMATCH")")
-    println("    Theoretical baseline: O($(k-1)^$n_sources)=$(Int((k-1)^n_sources)) combos ≈ $(round(theory_ms/1000;digits=1)) s")
+    println(
+        "    Decomposed: $(round(dt; digits=1)) ms — $n_path/$n_expected path atoms $(correct ? "✓" : "✗ MISMATCH")"
+    )
+    println(
+        "    Theoretical baseline: O($(k-1)^$n_sources)=$(Int((k-1)^n_sources)) combos ≈ $(round(theory_ms/1000;digits=1)) s"
+    )
     println("    Theoretical speedup:  $(round(theory_su; sigdigits=3))×")
 
-    (n_sources=n_sources, k=k, decomposed_ms=dt,
-     theoretical_ms=theory_ms, speedup_theory=theory_su,
-     correct=correct, n_stages=n_stages)
+    (
+        n_sources=n_sources,
+        k=k,
+        decomposed_ms=dt,
+        theoretical_ms=theory_ms,
+        speedup_theory=theory_su,
+        correct=correct,
+        n_stages=n_stages
+    )
 end
 
 function main(; trials=2)
@@ -79,7 +92,7 @@ function main(; trials=2)
         run_case(3, 50; trials=trials),
         run_case(4, 20; trials=trials),
         run_case(5, 15; trials=trials),
-        run_case(5, 20; trials=trials),
+        run_case(5, 20; trials=trials)
     ]
 
     println()
@@ -88,10 +101,12 @@ function main(; trials=2)
     println("╠══════════════════════════════════════════════════════╣")
     for r in results
         lbl = "$(r.n_sources)-src K=$(r.k)"
-        dt  = "$(round(r.decomposed_ms; digits=0)) ms"
-        su  = "~$(round(r.speedup_theory; sigdigits=3))×"
-        ok  = r.correct ? "✓" : "✗"
-        println("║  $(rpad(lbl,14))  decomposed=$(rpad(dt,10))  theory speedup=$(rpad(su,10))  $ok")
+        dt = "$(round(r.decomposed_ms; digits=0)) ms"
+        su = "~$(round(r.speedup_theory; sigdigits=3))×"
+        ok = r.correct ? "✓" : "✗"
+        println(
+            "║  $(rpad(lbl,14))  decomposed=$(rpad(dt,10))  theory speedup=$(rpad(su,10))  $ok"
+        )
     end
     println("╠══════════════════════════════════════════════════════╣")
     println("║  Empirical baseline: trans_detect 3-src K=150 = 82s  ║")

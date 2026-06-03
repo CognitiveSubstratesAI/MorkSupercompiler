@@ -54,8 +54,8 @@ end
 @testset "MatchWithUncertainty (Algorithm 3, §4.2.2)" begin
     # Use ground atoms (no variables) for clear exact/similar/different tests
     f_exact = parse_sexpr("(parent alice bob)")
-    f_sim   = parse_sexpr("(parent alice carol)")   # similar: same head + first arg
-    f_diff  = parse_sexpr("(ancestor alice carol)")  # different head
+    f_sim = parse_sexpr("(parent alice carol)")   # similar: same head + first arg
+    f_diff = parse_sexpr("(ancestor alice carol)")  # different head
 
     # Exact match → PBox.exact(1.0)
     result_exact = match_with_uncertainty(f_exact, f_exact, 0.1)
@@ -100,10 +100,18 @@ end
     @test width(conc_deep) >= width(conc) - 1e-9
 
     # Correlation sig merges
-    p2 = PBox(premise.intervals, premise.probabilities, premise.confidence,
-              BitVector([true, false]))
-    r2 = PBox(rule_str.intervals, rule_str.probabilities, rule_str.confidence,
-              BitVector([false, true]))
+    p2 = PBox(
+        premise.intervals,
+        premise.probabilities,
+        premise.confidence,
+        BitVector([true, false])
+    )
+    r2 = PBox(
+        rule_str.intervals,
+        rule_str.probabilities,
+        rule_str.confidence,
+        BitVector([false, true])
+    )
     conc2 = apply_rule(p2, r2, 0)
     @test length(conc2.correlation_sig) >= 2
     @test any(conc2.correlation_sig)   # merged sigs

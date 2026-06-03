@@ -3,7 +3,7 @@ using MorkSupercompiler
 
 # §3.1 Cost model
 @testset "CostWeights + total_cost (§3.1)" begin
-    w  = balanced()
+    w = balanced()
     @test w.α ≈ 1/3 atol=1e-9
     @test w.β ≈ 1/3 atol=1e-9
     @test w.γ ≈ 1/3 atol=1e-9
@@ -27,7 +27,7 @@ end
 # §3.2 Algorithm 2 — EstimateCardinalityPBox
 @testset "EstimateCardinalityPBox (Algorithm 2, §3.2)" begin
     stats = MORKStatistics(Dict("edge" => 10, "node" => 5), 15)
-    src   = parse_sexpr("(edge \$x \$y)")
+    src = parse_sexpr("(edge \$x \$y)")
 
     result = estimate_cardinality_pbox(src, stats)
     @test result isa EstimateCardinalityPBox
@@ -43,7 +43,7 @@ end
     s = new_space()
     space_add_all_sexpr!(s, "(edge 0 1) (edge 1 2) (edge 2 3) (edge 3 4)")
     stats = collect_stats(s)
-    src   = parse_sexpr("(edge \$x \$y)")
+    src = parse_sexpr("(edge \$x \$y)")
 
     result = estimate_cardinality_pbox(src, stats, s.btm; confidence=0.95)
     @test result.allows_sampling
@@ -65,7 +65,7 @@ end
     @test result.within_budget
 
     # Total selected prob + pruned prob = 1
-    sel_prob   = sum(b.probability for b in result.selected; init=0.0)
+    sel_prob = sum(b.probability for b in result.selected; init=0.0)
     prune_prob = sum(b.error_contrib for b in result.pruned; init=0.0)
     @test sel_prob + prune_prob ≈ 1.0 atol=1e-9
 end
@@ -73,7 +73,7 @@ end
 @testset "ApproximateSplit — tight tolerance keeps all branches" begin
     nodes = parse_program("(a \$x)\n(b \$y)")
     branches = [(nodes[1], 0.6), (nodes[2], 0.4)]
-    result   = approximate_split(branches, 0.0)   # tolerance=0 → keep all
+    result = approximate_split(branches, 0.0)   # tolerance=0 → keep all
     @test length(result.selected) == 2
     @test isempty(result.pruned)
     @test result.total_error ≈ 0.0
@@ -84,10 +84,10 @@ end
     using MORK
     s = new_space()
     space_add_all_sexpr!(s, "(a 1) (a 2) (a 3) (b 1)")
-    stats   = collect_stats(s)
+    stats = collect_stats(s)
     sources = parse_program("(a \$x)\n(b \$x)")
 
-    order  = plan_join_order_approx(sources, stats, s.btm; weights=balanced())
+    order = plan_join_order_approx(sources, stats, s.btm; weights=balanced())
     @test length(order) == 2
     @test Set(order) == Set(1:2)
     # (b \$x) has fewer atoms → should come first

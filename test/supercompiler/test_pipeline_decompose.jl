@@ -14,7 +14,7 @@ end
 
 @testset "flow_vars — with final_template includes output vars" begin
     srcs = parse_program("(edge \$x \$y) (edge \$y \$z) (edge \$z \$w)")
-    tpl  = only(parse_program("(dtrans \$x \$y \$z \$w)"))
+    tpl = only(parse_program("(dtrans \$x \$y \$z \$w)"))
     # $x is introduced in src 1 and needed in template
     fv = flow_vars(srcs, 1, 3; final_template=tpl)
     @test "\$y" in fv
@@ -116,14 +116,14 @@ end
 
 @testset "decompose_program — small program unchanged" begin
     prog = "(exec 0 (, (a \$x) (b \$x)) (, (r \$x)))"
-    out  = decompose_program(prog)
+    out = decompose_program(prog)
     # 2-source: no decomposition needed
     @test length(parse_program(out)) == 1
 end
 
 @testset "decompose_program — trans_detect 3-source" begin
     prog = raw"(exec 0 (, (edge $x $y) (edge $y $z) (edge $z $w)) (, (dtrans $x $y $z $w)))"
-    out  = decompose_program(prog)
+    out = decompose_program(prog)
     nodes = parse_program(out)
     @test length(nodes) == 2   # 3-source → 2 stages
     # Each node is an exec form starting with "exec"
@@ -139,7 +139,7 @@ end
     (exec 0 (, (a \$x) (b \$x \$y)) (, (p \$x \$y)))
     (exec 1 (, (c \$u) (d \$u \$v) (e \$v \$w)) (, (q \$u \$w)))
     """
-    out   = decompose_program(prog)
+    out = decompose_program(prog)
     nodes = parse_program(out)
     # First atom: 2-source (pass-through), second: 3-source → 2 stages
     @test length(nodes) == 3
@@ -159,7 +159,7 @@ end
 # ── decompose_report ──────────────────────────────────────────────────────────
 
 @testset "decompose_report — no multi-source atoms" begin
-    prog  = "(exec 0 (, (a \$x) (b \$x)) (, (r \$x)))"
+    prog = "(exec 0 (, (a \$x) (b \$x)) (, (r \$x)))"
     report = decompose_report(prog)
     @test occursin("no multi-source atoms", report)
 end
@@ -197,7 +197,7 @@ end
      (, (parity $i $p) (succ $i $si) (A $i $e) (A $si $se) (lt $se $e))
      (O (- (A $i $e)) (- (A $si $se)) (+ (A $i $se)) (+ (A $si $e))))
     """
-    out   = decompose_program(prog)
+    out = decompose_program(prog)
     nodes = parse_program(out)
     @test length(nodes) == 1   # unchanged — not an exec atom
     @test !occursin(SC_TMP_PREFIX, out)
@@ -210,7 +210,7 @@ end
         (if $v (S $i) $j $ni) (state $ts (REG $k $kv)))
      (, (state (S $ts) (IC $ni)) (state (S $ts) (REG $k $kv))))
     """
-    out   = decompose_program(prog)
+    out = decompose_program(prog)
     nodes = parse_program(out)
     @test length(nodes) == 1   # unchanged — not an exec atom
     @test !occursin(SC_TMP_PREFIX, out)
@@ -219,7 +219,7 @@ end
 @testset "decompose_program — exec 5-source IS decomposed" begin
     # An actual exec atom with 5 sources does get decomposed
     prog = raw"(exec 0 (, (a $x $y) (b $y $z) (c $z $u) (d $u $v) (e $v $w)) (, (r $x $w)))"
-    out  = decompose_program(prog)
+    out = decompose_program(prog)
     @test length(parse_program(out)) >= 3
     @test occursin(SC_TMP_PREFIX, out)
 end

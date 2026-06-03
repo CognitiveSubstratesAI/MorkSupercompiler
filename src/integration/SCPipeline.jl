@@ -31,36 +31,50 @@ using MORK: Space, new_space, space_add_all_sexpr!, space_metta_calculus!, space
 Controls which pipeline stages are active and their parameters.
 """
 struct SCOptions
-    collect_stats         :: Bool     # Stage 1: collect MORKStatistics
-    plan_join_order       :: Bool     # Stage 2: QueryPlanner reordering
-    use_approx_pipeline   :: Bool     # Stage 2b: ApproxPipeline error-bounded rewrite
-    error_tolerance       :: Float64  # Stage 2b: max acceptable approximation error
-    decompose_multi_source:: Bool     # Stage 3: PipelineDecompose (Rule-of-64 fix)
-    saturate_kb           :: Bool     # Stage 4: KBSaturation on background
-    use_mm2_compiler      :: Bool     # Stage 5: lower through MM2Compiler
-    supercompile          :: Bool     # Stage 4c: §6 driver (Stepper + CanonicalKeys + BoundedSplit)
-    max_steps             :: Int      # Stage 6: space_metta_calculus! limit
-    stats_sample_frac     :: Float64  # fraction of space to sample for stats
-    split_budget          :: Int      # BoundedSplit branch budget
-    sc_max_drive_steps    :: Int      # §6 driver: per-region rewrite_once iteration cap
-    cleanup_intermediates :: Bool     # Post: remove _sc_tmp* atoms from space
+    collect_stats::Bool     # Stage 1: collect MORKStatistics
+    plan_join_order::Bool     # Stage 2: QueryPlanner reordering
+    use_approx_pipeline::Bool     # Stage 2b: ApproxPipeline error-bounded rewrite
+    error_tolerance::Float64  # Stage 2b: max acceptable approximation error
+    decompose_multi_source::Bool     # Stage 3: PipelineDecompose (Rule-of-64 fix)
+    saturate_kb::Bool     # Stage 4: KBSaturation on background
+    use_mm2_compiler::Bool     # Stage 5: lower through MM2Compiler
+    supercompile::Bool     # Stage 4c: §6 driver (Stepper + CanonicalKeys + BoundedSplit)
+    max_steps::Int      # Stage 6: space_metta_calculus! limit
+    stats_sample_frac::Float64  # fraction of space to sample for stats
+    split_budget::Int      # BoundedSplit branch budget
+    sc_max_drive_steps::Int      # §6 driver: per-region rewrite_once iteration cap
+    cleanup_intermediates::Bool     # Post: remove _sc_tmp* atoms from space
 end
 
-SCOptions(; max_steps     = typemax(Int),
-            plan          = true,
-            stats         = true,
-            use_approx    = false,
-            error_tol     = 0.05,
-            decompose     = true,
-            saturate      = false,
-            mm2_compile   = false,
-            supercompile  = false,
-            sample_frac   = 1.0,
-            budget        = SPLIT_DEFAULT_BUDGET,
-            drive_steps   = 1000,
-            cleanup       = true) =
-    SCOptions(stats, plan, use_approx, error_tol, decompose, saturate, mm2_compile,
-              supercompile, max_steps, sample_frac, budget, drive_steps, cleanup)
+SCOptions(;
+    max_steps=typemax(Int),
+    plan=true,
+    stats=true,
+    use_approx=false,
+    error_tol=0.05,
+    decompose=true,
+    saturate=false,
+    mm2_compile=false,
+    supercompile=false,
+    sample_frac=1.0,
+    budget=SPLIT_DEFAULT_BUDGET,
+    drive_steps=1000,
+    cleanup=true
+) = SCOptions(
+    stats,
+    plan,
+    use_approx,
+    error_tol,
+    decompose,
+    saturate,
+    mm2_compile,
+    supercompile,
+    max_steps,
+    sample_frac,
+    budget,
+    drive_steps,
+    cleanup
+)
 
 const SC_DEFAULTS = SCOptions()
 
@@ -71,26 +85,26 @@ const SC_DEFAULTS = SCOptions()
 
 Output of the supercompiler pipeline.
 
-  steps_executed  — number of metta_calculus! steps taken
-  stats           — MORKStatistics used for planning
-  plan_report_str — human-readable join-plan report (if plan_join_order=true)
-  obligs          — bisimulation obligations from MM2Compiler (if active)
-  timings         — Dict of stage → elapsed seconds
-  program_planned — the reordered program string actually loaded
+steps_executed  — number of metta_calculus! steps taken
+stats           — MORKStatistics used for planning
+plan_report_str — human-readable join-plan report (if plan_join_order=true)
+obligs          — bisimulation obligations from MM2Compiler (if active)
+timings         — Dict of stage → elapsed seconds
+program_planned — the reordered program string actually loaded
 """
 struct SCResult
-    steps_executed    :: Int
-    stats             :: MORKStatistics
-    plan_report_str   :: String
-    obligs            :: Vector{BiSimObligation}
-    timings           :: Dict{Symbol, Float64}
-    program_planned   :: String
-    n_atoms_original  :: Int   # atom count before decomposition
-    n_atoms_decomposed:: Int   # atom count after decomposition (≥ original)
-    drive_results     :: Vector{DriveResult}    # Stage 4c: §6 driver output per region
-    approx_result     :: Union{Nothing, ApproxPipelineResult}  # Stage 2b output (nothing if skipped)
-    n_facts_derived   :: Int   # Stage 4: derived facts from KBSaturation (0 if saturate_kb=false)
-    n_kb_facts        :: Int   # Stage 4: total facts (base + derived) in the saturation KB
+    steps_executed::Int
+    stats::MORKStatistics
+    plan_report_str::String
+    obligs::Vector{BiSimObligation}
+    timings::Dict{Symbol, Float64}
+    program_planned::String
+    n_atoms_original::Int   # atom count before decomposition
+    n_atoms_decomposed::Int   # atom count after decomposition (≥ original)
+    drive_results::Vector{DriveResult}    # Stage 4c: §6 driver output per region
+    approx_result::Union{Nothing, ApproxPipelineResult}  # Stage 2b output (nothing if skipped)
+    n_facts_derived::Int   # Stage 4: derived facts from KBSaturation (0 if saturate_kb=false)
+    n_kb_facts::Int   # Stage 4: total facts (base + derived) in the saturation KB
 end
 
 # ── Main pipeline entry point ─────────────────────────────────────────────────
@@ -104,10 +118,7 @@ and executing up to `opts.max_steps` metta_calculus! steps.
 `program` should contain the exec/rule atoms NOT yet loaded into `s`.
 Background facts should already be in `s` before calling.
 """
-function execute!(s       :: Space,
-                 program :: AbstractString;
-                 opts    :: SCOptions = SC_DEFAULTS) :: SCResult
-
+function execute!(s::Space, program::AbstractString; opts::SCOptions=SC_DEFAULTS)::SCResult
     timings = Dict{Symbol, Float64}()
 
     # Stage 1 — collect statistics
@@ -122,8 +133,8 @@ function execute!(s       :: Space,
     # Stage 2 — plan join order
     program_planned, plan_str = if opts.plan_join_order
         t = @elapsed begin
-            planned  = plan_program(program, stats)
-            pstr     = plan_report(program, stats)
+            planned = plan_program(program, stats)
+            pstr = plan_report(program, stats)
         end
         timings[:plan] = t
         (planned, pstr)
@@ -135,19 +146,20 @@ function execute!(s       :: Space,
     approx_res = nothing
     if opts.use_approx_pipeline
         t = @elapsed begin
-            approx_res      = run_approx_pipeline(s, program_planned;
-                                                   error_tolerance = opts.error_tolerance)
+            approx_res = run_approx_pipeline(
+                s, program_planned; error_tolerance=opts.error_tolerance
+            )
             program_planned = approx_res.program_approx
         end
         timings[:approx] = t
     end
 
     # Stage 3 — pipeline decomposition (Rule-of-64 fix)
-    n_atoms_original   = length(parse_program(program_planned))
+    n_atoms_original = length(parse_program(program_planned))
     n_atoms_decomposed = n_atoms_original
     if opts.decompose_multi_source
         t = @elapsed begin
-            program_planned   = decompose_program(program_planned)
+            program_planned = decompose_program(program_planned)
             n_atoms_decomposed = length(parse_program(program_planned))
         end
         timings[:decompose] = t
@@ -163,10 +175,10 @@ function execute!(s       :: Space,
     # (previously a silent no-op for runtime semantics — see audit
     # 2026-05-30 finding "saturate_kb is silently no-op for runtime").
     n_facts_derived = 0
-    n_kb_facts      = 0
+    n_kb_facts = 0
     if opts.saturate_kb
         t = @elapsed begin
-            g  = MCoreGraph()
+            g = MCoreGraph()
             kb = KBState(g)
             # Enumerate all atoms in space, parse each as an M-Core fact
             dump = space_dump_all_sexpr(s)
@@ -183,7 +195,7 @@ function execute!(s       :: Space,
                 end
             end
             n_facts_derived = saturate!(kb; max_rounds=100)
-            n_kb_facts      = length(kb.facts)
+            n_kb_facts = length(kb.facts)
         end
         timings[:saturate] = t
     end
@@ -212,13 +224,18 @@ function execute!(s       :: Space,
                     continue
                 end
                 isvalid(root_id) || continue
-                push!(drive_results,
-                      drive!(g, root_id;
-                             ft=ft,
-                             max_steps=opts.sc_max_drive_steps,
-                             stats=stats,
-                             split_budget=opts.split_budget,
-                             registry=space_reg))
+                push!(
+                    drive_results,
+                    drive!(
+                        g,
+                        root_id;
+                        ft=ft,
+                        max_steps=opts.sc_max_drive_steps,
+                        stats=stats,
+                        split_budget=opts.split_budget,
+                        registry=space_reg
+                    )
+                )
             end
         end
         timings[:supercompile] = t
@@ -234,7 +251,7 @@ function execute!(s       :: Space,
             space_reg = copy(DEFAULT_PRIM_REGISTRY)
             register_space_primitives!(space_reg, s)
             opts.use_approx_pipeline && register_approx_primitives!(space_reg)
-            nodes    = parse_program(program_planned)
+            nodes = parse_program(program_planned)
             root_ids = _sexpr_nodes_to_mcore(g, nodes)
             program_planned, obligs = compile_program(g, root_ids)
         end
@@ -254,9 +271,20 @@ function execute!(s       :: Space,
         timings[:cleanup] = t_cleanup
     end
 
-    SCResult(steps, stats, plan_str, obligs, timings, program_planned,
-             n_atoms_original, n_atoms_decomposed, drive_results, approx_res,
-             n_facts_derived, n_kb_facts)
+    SCResult(
+        steps,
+        stats,
+        plan_str,
+        obligs,
+        timings,
+        program_planned,
+        n_atoms_original,
+        n_atoms_decomposed,
+        drive_results,
+        approx_res,
+        n_facts_derived,
+        n_kb_facts
+    )
 end
 
 """
@@ -265,42 +293,52 @@ end
 Convenience wrapper: build a fresh space from `facts`, run the pipeline,
 return (space, result).
 """
-function execute(facts   :: AbstractString,
-                program :: AbstractString;
-                opts    :: SCOptions = SC_DEFAULTS,
-                steps   :: Int = typemax(Int)) :: Tuple{Space, SCResult}
+function execute(
+    facts::AbstractString, program::AbstractString; opts::SCOptions=SC_DEFAULTS,
+    steps::Int=typemax(Int)
+)::Tuple{Space, SCResult}
     s = new_space()
     space_add_all_sexpr!(s, facts)
-    opts2 = SCOptions(opts.collect_stats, opts.plan_join_order,
-                      opts.use_approx_pipeline, opts.error_tolerance,
-                      opts.decompose_multi_source, opts.saturate_kb, opts.use_mm2_compiler,
-                      opts.supercompile,
-                      steps, opts.stats_sample_frac, opts.split_budget,
-                      opts.sc_max_drive_steps,
-                      opts.cleanup_intermediates)
+    opts2 = SCOptions(
+        opts.collect_stats,
+        opts.plan_join_order,
+        opts.use_approx_pipeline,
+        opts.error_tolerance,
+        opts.decompose_multi_source,
+        opts.saturate_kb,
+        opts.use_mm2_compiler,
+        opts.supercompile,
+        steps,
+        opts.stats_sample_frac,
+        opts.split_budget,
+        opts.sc_max_drive_steps,
+        opts.cleanup_intermediates
+    )
     result = execute!(s, program; opts=opts2)
     (s, result)
 end
 
 # ── SExpr → M-Core conversion (for MM2Compiler integration) ──────────────────
 
-"""Convert a vector of SNodes to M-Core NodeIDs (shallow; Prim for compound atoms)."""
-function _sexpr_nodes_to_mcore(g::MCoreGraph, nodes::Vector{SNode}) :: Vector{NodeID}
+"""
+Convert a vector of SNodes to M-Core NodeIDs (shallow; Prim for compound atoms).
+"""
+function _sexpr_nodes_to_mcore(g::MCoreGraph, nodes::Vector{SNode})::Vector{NodeID}
     NodeID[_sexpr_to_mcore!(g, n) for n in nodes]
 end
 
-function _sexpr_to_mcore!(g::MCoreGraph, n::SNode) :: NodeID
+function _sexpr_to_mcore!(g::MCoreGraph, n::SNode)::NodeID
     if n isa SAtom
         return add_sym!(g, Sym(Symbol((n::SAtom).name)))
     elseif n isa SVar
         # Variable: parse the index from the name if numeric, else use 0
         name = (n::SVar).name[2:end]  # strip leading $
-        ix   = tryparse(Int, name)
+        ix = tryparse(Int, name)
         return add_var!(g, Var(ix !== nothing ? ix : 0))
     else
         items = (n::SList).items
         isempty(items) && return add_con!(g, Con(:nil))
-        head  = items[1]
+        head = items[1]
 
         if head isa SAtom && (head::SAtom).name == "exec"
             # Compile exec atom as mm2_exec primitive
@@ -308,7 +346,7 @@ function _sexpr_to_mcore!(g::MCoreGraph, n::SNode) :: NodeID
             return add_prim!(g, Prim(:mm2_exec, arg_ids, EffectSet(UInt8(0x05))))
         end
 
-        head_id  = _sexpr_to_mcore!(g, head)
+        head_id = _sexpr_to_mcore!(g, head)
         field_ids = NodeID[_sexpr_to_mcore!(g, items[i]) for i in 2:length(items)]
         if head isa SAtom
             return add_con!(g, Con(Symbol((head::SAtom).name), field_ids))
@@ -338,8 +376,10 @@ end
 
 # ── Timing report ─────────────────────────────────────────────────────────────
 
-"""Human-readable timing summary for an SCResult."""
-function timing_report(r::SCResult) :: String
+"""
+Human-readable timing summary for an SCResult.
+"""
+function timing_report(r::SCResult)::String
     io = IOBuffer()
     total = sum(values(r.timings))
     println(io, "SCPipeline timings:")
@@ -354,7 +394,10 @@ function timing_report(r::SCResult) :: String
         println(io, "  decomposed:   $(r.n_atoms_original) → $(r.n_atoms_decomposed) atoms")
     if r.approx_result !== nothing
         ar = r.approx_result
-        println(io, "  approx:       error_used=$(round(ar.error_budget_used; digits=4))  within_tol=$(ar.within_tolerance)")
+        println(
+            io,
+            "  approx:       error_used=$(round(ar.error_budget_used; digits=4))  within_tol=$(ar.within_tolerance)"
+        )
     end
     String(take!(io))
 end

@@ -2,7 +2,7 @@ using Test
 using MorkSupercompiler
 
 @testset "Effects — Algorithm 1 EffectCommutes (§4.2)" begin
-    sp  = DEFAULT_SPACE
+    sp = DEFAULT_SPACE
     sp2 = SpaceID(:other)
 
     @test commutes(PURE, ReadEffect(sp))

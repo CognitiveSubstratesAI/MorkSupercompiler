@@ -20,7 +20,10 @@ using BenchmarkTools
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 function measure_planning(program::String, label::String)
-    t_static  = @elapsed for _ in 1:1000; plan_static(program); end
+    t_static = @elapsed for _ in 1:1000
+        ;
+        plan_static(program);
+    end
     println("  [static]  $label: $(round(t_static*1000/1000, sigdigits=3)) ms/plan")
 end
 
@@ -43,12 +46,21 @@ function bench_execution(facts::String, program::String, steps::Int, label::Stri
     end
 
     speedup = t_base / max(t_plan, 1e-9)
-    println("  [$label]  baseline: $(round(t_base*1000, sigdigits=4)) ms  " *
-            "planned: $(round(t_plan*1000, sigdigits=4)) ms  " *
-            "speedup: $(round(speedup, sigdigits=3))×")
+    println(
+        "  [$label]  baseline: $(round(t_base*1000, sigdigits=4)) ms  " *
+        "planned: $(round(t_plan*1000, sigdigits=4)) ms  " *
+        "speedup: $(round(speedup, sigdigits=3))×"
+    )
 
     # Report
-    report = plan_report(begin s3=new_space(); space_add_all_sexpr!(s3, facts); s3 end, program)
+    report = plan_report(
+        begin
+            s3=new_space();
+            space_add_all_sexpr!(s3, facts);
+            s3
+        end,
+        program
+    )
     isempty(strip(report)) || print(report)
 end
 

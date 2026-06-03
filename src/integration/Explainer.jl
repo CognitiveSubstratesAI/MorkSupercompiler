@@ -17,19 +17,23 @@ using MORK: Space
     explain(s::Space, program::AbstractString) -> String
 
 Full explanation of what the supercompiler does to `program`:
+
   - Join order for each multi-source conjunction (with cardinality estimates)
   - Which sources were reordered and why
   - Canonical key preview for termination analysis
   - BoundedSplit threshold note for any Choice/multi-source patterns
 """
-function explain(s::Space, program::AbstractString) :: String
-    io    = IOBuffer()
+function explain(s::Space, program::AbstractString)::String
+    io = IOBuffer()
     stats = collect_stats(s)
     nodes = parse_program(program)
 
     println(io, "═══════════════════════════════════════════════════════")
     println(io, "  MorkSupercompiler — Plan Explanation")
-    println(io, "  Space: $(space_val_count(s)) atoms  |  Program: $(length(nodes)) top-level atoms")
+    println(
+        io,
+        "  Space: $(space_val_count(s)) atoms  |  Program: $(length(nodes)) top-level atoms"
+    )
     println(io, "═══════════════════════════════════════════════════════")
 
     any_multi = false
@@ -37,7 +41,7 @@ function explain(s::Space, program::AbstractString) :: String
         node isa SList || continue
         items = (node::SList).items
         length(items) < 3 || !is_conjunction(items[2]) && continue
-        conj    = items[2]::SList
+        conj = items[2]::SList
         sources = conj.items[2:end]
         length(sources) <= 1 && continue
         any_multi = true
@@ -46,14 +50,17 @@ function explain(s::Space, program::AbstractString) :: String
         println(io, "\n[$atom_idx] $(head_str)")
         println(io, "  Sources ($(length(sources)) — Rule-of-64 risk if ≥ 5):")
 
-        jnodes  = build_join_nodes(sources, stats)
-        perm    = plan_join_order(jnodes)
-        scores  = static_score.(sources)
+        jnodes = build_join_nodes(sources, stats)
+        perm = plan_join_order(jnodes)
+        scores = static_score.(sources)
         already_sorted = issorted([jnodes[i].cardinality for i in perm])
 
         for (k, (src, jn)) in enumerate(zip(sources, jnodes))
             marker = k in perm[1:1] ? "→ first (most selective)" : ""
-            println(io, "    [orig $k] card≈$(jn.cardinality)  static=$(round(scores[k]; digits=2))  $(sprint_sexpr(src))  $marker")
+            println(
+                io,
+                "    [orig $k] card≈$(jn.cardinality)  static=$(round(scores[k]; digits=2))  $(sprint_sexpr(src))  $marker"
+            )
         end
 
         println(io, "  Planned order: $(join(["[$i]" for i in perm], " → "))")
@@ -65,7 +72,10 @@ function explain(s::Space, program::AbstractString) :: String
         end
 
         if length(sources) >= 5
-            println(io, "  ⚠ Rule-of-64: $(length(sources)) sources → BoundedSplit will prune at cumulative ≥ $(SPLIT_PROB_THRESHOLD)")
+            println(
+                io,
+                "  ⚠ Rule-of-64: $(length(sources)) sources → BoundedSplit will prune at cumulative ≥ $(SPLIT_PROB_THRESHOLD)"
+            )
         end
     end
 
@@ -79,14 +89,15 @@ function _explain_variable_flow(io, sources, jnodes, perm)
     println(io, "  Variable flow in planned order:")
     bound = Set{String}()
     for (rank, i) in enumerate(perm)
-        jn  = jnodes[i]
+        jn = jnodes[i]
         src = sources[i]
         new_binds = setdiff(jn.vars_out, bound)
         used_bound = intersect(jn.vars_in, bound)
         semi = isempty(used_bound) ? "" : "  semi-join on $(join(collect(used_bound), ","))"
         println(io, "    step $rank: $(sprint_sexpr(src))")
-        !isempty(new_binds) && println(io, "             introduces: $(join(collect(new_binds), ", "))")
-        !isempty(semi)      && println(io, "            $semi")
+        !isempty(new_binds) &&
+            println(io, "             introduces: $(join(collect(new_binds), ", "))")
+        !isempty(semi) && println(io, "            $semi")
         union!(bound, jn.vars_out)
     end
 end
@@ -105,9 +116,10 @@ sources in the planned order.  Node color encodes estimated cardinality
 
 Paste the output into https://dreampuf.github.io/GraphvizOnline/ to visualize.
 """
-function to_dot(program::AbstractString;
-                stats::Union{MORKStatistics, Nothing} = nothing) :: String
-    io    = IOBuffer()
+function to_dot(
+    program::AbstractString; stats::Union{MORKStatistics, Nothing}=nothing
+)::String
+    io = IOBuffer()
     nodes = parse_program(program)
     stats = stats !== nothing ? stats : MORKStatistics()
 
@@ -121,14 +133,14 @@ function to_dot(program::AbstractString;
         node isa SList || continue
         items = (node::SList).items
         length(items) < 3 || !is_conjunction(items[2]) && continue
-        conj    = items[2]::SList
+        conj = items[2]::SList
         sources = conj.items[2:end]
         length(sources) <= 1 && continue
 
         atom_idx += 1
         head_str = _dot_label(sprint_sexpr(items[1]))
-        jnodes   = build_join_nodes(sources, stats)
-        perm     = plan_join_order(jnodes)
+        jnodes = build_join_nodes(sources, stats)
+        perm = plan_join_order(jnodes)
 
         println(io, "\n  subgraph cluster_$atom_idx {")
         println(io, "    label=\"$(head_str)\";")
@@ -136,18 +148,24 @@ function to_dot(program::AbstractString;
 
         # Source nodes
         for (k, (src, jn)) in enumerate(zip(sources, jnodes))
-            color  = _cardinality_color(jn.cardinality, stats.total_atoms)
-            pos    = findfirst(==(k), perm)
-            label  = "$(pos !== nothing ? "step $pos" : "orig $k")\\n$(sprint_sexpr(src))\\ncard≈$(jn.cardinality)"
-            println(io, "    n$(atom_idx)_$k [label=\"$(_dot_label(label))\", fillcolor=$color, style=filled];")
+            color = _cardinality_color(jn.cardinality, stats.total_atoms)
+            pos = findfirst(==(k), perm)
+            label = "$(pos !== nothing ? "step $pos" : "orig $k")\\n$(sprint_sexpr(src))\\ncard≈$(jn.cardinality)"
+            println(
+                io,
+                "    n$(atom_idx)_$k [label=\"$(_dot_label(label))\", fillcolor=$color, style=filled];"
+            )
         end
 
         # Edges showing planned flow
-        for (rank, i) in enumerate(perm[1:end-1])
+        for (rank, i) in enumerate(perm[1:(end - 1)])
             j = perm[rank + 1]
             shared = intersect(jnodes[i].vars_out, jnodes[j].vars_in)
             edge_label = isempty(shared) ? "" : join(collect(shared), ",")
-            println(io, "    n$(atom_idx)_$i -> n$(atom_idx)_$j [label=\"$(_dot_label(edge_label))\"];")
+            println(
+                io,
+                "    n$(atom_idx)_$i -> n$(atom_idx)_$j [label=\"$(_dot_label(edge_label))\"];"
+            )
         end
 
         println(io, "  }")
@@ -159,12 +177,16 @@ end
 
 _dot_label(s::String) = replace(s, "\"" => "'", "\n" => "\\n", "<" => "\\<", ">" => "\\>")
 
-function _cardinality_color(card::Int, total::Int) :: String
+function _cardinality_color(card::Int, total::Int)::String
     total <= 0 && return "white"
     frac = card / total
-    frac < 0.1 ? "\"#90EE90\"" :   # green
-    frac < 0.3 ? "\"#FFFF99\"" :   # yellow
-                 "\"#FFB6C1\""      # red
+    if frac < 0.1
+        "\"#90EE90\""   # green
+    elseif frac < 0.3
+        "\"#FFFF99\""   # yellow
+    else   # yellow
+        "\"#FFB6C1\""      # red
+    end      # red
 end
 
 # ── diff_programs ───────────────────────────────────────────────────────────────────
@@ -174,11 +196,13 @@ end
 
 Show what changed between the original program and its planned version.
 Each changed atom is printed as:
+
   - original source order
-  + planned source order
+
+  - planned source order
 """
-function diff_programs(original::AbstractString, planned::AbstractString) :: String
-    io     = IOBuffer()
+function diff_programs(original::AbstractString, planned::AbstractString)::String
+    io = IOBuffer()
     orig_n = parse_program(original)
     plan_n = parse_program(planned)
 

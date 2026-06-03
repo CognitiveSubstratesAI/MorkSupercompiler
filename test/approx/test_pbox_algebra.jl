@@ -67,7 +67,8 @@ end
     X2, Y2 = mark_dependent(X, Y, 1)
     Z = add_pbox(X2, Y2)
 
-    wX = width(X); wY = width(Y)
+    wX = width(X);
+    wY = width(Y)
     bound = frechet_width_bound(wX, wY)
     @test width(Z) <= bound + 1e-9   # Lemma A.4 satisfied
 
@@ -98,8 +99,7 @@ end
 
 # merge_overlapping
 @testset "merge_overlapping" begin
-    pb = PBox([(0.0, 0.3), (0.2, 0.5), (0.8, 1.0)],
-              [0.4, 0.3, 0.3], 1.0, BitVector())
+    pb = PBox([(0.0, 0.3), (0.2, 0.5), (0.8, 1.0)], [0.4, 0.3, 0.3], 1.0, BitVector())
     merged = merge_overlapping(pb)
     @test length(merged.intervals) == 2   # first two overlap
     @test merged.intervals[1] == (0.0, 0.5)
@@ -121,7 +121,7 @@ end
 # §7 Theoretical guarantees
 @testset "Theorem A.2 — error_composition_bound" begin
     widths = [0.01, 0.02, 0.01]
-    bound  = error_composition_bound(widths)
+    bound = error_composition_bound(widths)
     @test bound >= sum(widths)   # always ≥ linear term
     @test bound > 0.0
 end
@@ -135,8 +135,8 @@ end
     @test hoeffding_bound(100, 0.5) < 0.01
 
     # Epsilon inversely scales with √n (Lemma A.5: ε = √(ln(2/δ)/2n))
-    ε1 = hoeffding_epsilon(100,  0.05)
-    ε2 = hoeffding_epsilon(400,  0.05)
+    ε1 = hoeffding_epsilon(100, 0.05)
+    ε2 = hoeffding_epsilon(400, 0.05)
     @test ε2 < ε1            # more samples → smaller epsilon
     @test ε2 ≈ ε1 / 2 atol=0.01   # ε ∝ 1/√n: 4× samples → ε/2
 end

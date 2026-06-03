@@ -27,7 +27,7 @@ Heuristic selectivity in [0.0, 1.0].  Lower = more selective.
   - Partially variable:        n_vars / (n_vars + n_syms)
   - Fully variable (0 syms):   1.0
 """
-function static_score(src::SNode) :: Float64
+function static_score(src::SNode)::Float64
     nv = count_vars(src)
     nv == 0 && return 0.0
     na = count_atoms(src)
@@ -43,13 +43,13 @@ end
 Count atoms in `btm` whose head arity + head symbol match `src`.
 
 For `(parity \$i \$p)` (arity=3, head="parity"):
-  prefix = [arity_byte(3), sym_size_byte(6), 'p','a','r','i','t','y']
+prefix = [arity_byte(3), sym_size_byte(6), 'p','a','r','i','t','y']
 
 Returns `typemax(Int)` if the head cannot be encoded (too long, nested head, etc.)
 so that unencodable sources sort last (least selective).
 """
-function dynamic_count(btm, src::SNode) :: Int
-    src isa SList    || return 1          # bare atom/var: treat as 1 match
+function dynamic_count(btm, src::SNode)::Int
+    src isa SList || return 1          # bare atom/var: treat as 1 match
     isempty((src::SList).items) && return 0
     items = (src::SList).items
     arity = length(items)
@@ -59,7 +59,7 @@ function dynamic_count(btm, src::SNode) :: Int
 
     if head isa SAtom
         sym = (head::SAtom).name
-        nb  = length(sym)
+        nb = length(sym)
         nb > 63 && return typemax(Int)
         prefix = Vector{UInt8}(undef, 2 + nb)
         prefix[1] = item_byte(ExprArity(UInt8(arity)))
@@ -71,8 +71,7 @@ function dynamic_count(btm, src::SNode) :: Int
         # encode only [outer_arity, inner_arity] as prefix (rough but O(1))
         h_arity = length((head::SList).items)
         h_arity > 63 && return typemax(Int)
-        prefix = [item_byte(ExprArity(UInt8(arity))),
-                  item_byte(ExprArity(UInt8(h_arity)))]
+        prefix = [item_byte(ExprArity(UInt8(arity))), item_byte(ExprArity(UInt8(h_arity)))]
     else
         return typemax(Int)   # variable head — unencodable
     end

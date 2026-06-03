@@ -8,7 +8,7 @@ using MorkSupercompiler
         reordered = reorder_conjunction_static(conj::SList)
         items = reordered.items
         sources = items[2:end]
-        scores  = static_score.(sources)
+        scores = static_score.(sources)
         # Result must be sorted by ascending static_score
         @test issorted(scores)
         # (succ 0 1) is ground → score 0.0 → must be first

@@ -94,7 +94,7 @@ using MorkSupercompiler
         exprs = [
             "(parity \$i \$p)",
             "(exec 0 (, (edge \$x \$y) (edge \$y \$z)) (, (trans \$x \$z)))",
-            "((phase \$p) (, (parity \$i \$p) (succ \$i \$si) (A \$i \$e)) (O x))",
+            "((phase \$p) (, (parity \$i \$p) (succ \$i \$si) (A \$i \$e)) (O x))"
         ]
         for e in exprs
             n = parse_sexpr(e)

@@ -23,18 +23,18 @@ the derivation neither hallucinates nor leaks support.
     FactorNode
 
 A node in a factor graph. Can be either a variable node or a factor node.
-  is_factor  — true = factor node (rule), false = variable node (formula)
-  name       — identifier
-  role       — :premise, :conclusion, or :boundary
-  message    — current outgoing message (a PBox for STV)
-  cache_ver  — version tuple for cache validity
+is_factor  — true = factor node (rule), false = variable node (formula)
+name       — identifier
+role       — :premise, :conclusion, or :boundary
+message    — current outgoing message (a PBox for STV)
+cache_ver  — version tuple for cache validity
 """
 mutable struct FactorNode
-    is_factor :: Bool
-    name      :: Symbol
-    role      :: Symbol         # :premise | :conclusion | :boundary
-    message   :: PBox
-    cache_ver :: Int
+    is_factor::Bool
+    name::Symbol
+    role::Symbol         # :premise | :conclusion | :boundary
+    message::PBox
+    cache_ver::Int
 end
 
 FactorNode(name::Symbol, role::Symbol; is_factor=false) =
@@ -46,9 +46,9 @@ FactorNode(name::Symbol, role::Symbol; is_factor=false) =
 An edge in the factor graph: variable ↔ factor incidence with role label.
 """
 struct FactorEdge
-    var_node    :: Symbol
-    factor_node :: Symbol
-    role_label  :: Symbol   # e.g., :premise_1, :premise_2, :conclusion
+    var_node::Symbol
+    factor_node::Symbol
+    role_label::Symbol   # e.g., :premise_1, :premise_2, :conclusion
 end
 
 """
@@ -58,17 +58,23 @@ A factor graph with variable nodes, factor nodes, and role-labeled edges.
 Presentation of Model(Q, Formula) in the Factor geometry.
 """
 mutable struct FactorGraph
-    var_nodes    :: Dict{Symbol, FactorNode}
-    factor_nodes :: Dict{Symbol, FactorNode}
-    edges        :: Vector{FactorEdge}
-    template     :: GeometryTemplate
-    epoch        :: Int
-    boundary_cache :: Dict{Symbol, PBox}   # frozen boundary values
+    var_nodes::Dict{Symbol, FactorNode}
+    factor_nodes::Dict{Symbol, FactorNode}
+    edges::Vector{FactorEdge}
+    template::GeometryTemplate
+    epoch::Int
+    boundary_cache::Dict{Symbol, PBox}   # frozen boundary values
 end
 
-function FactorGraph(template::GeometryTemplate) :: FactorGraph
-    FactorGraph(Dict{Symbol,FactorNode}(), Dict{Symbol,FactorNode}(),
-                FactorEdge[], template, 0, Dict{Symbol,PBox}())
+function FactorGraph(template::GeometryTemplate)::FactorGraph
+    FactorGraph(
+        Dict{Symbol, FactorNode}(),
+        Dict{Symbol, FactorNode}(),
+        FactorEdge[],
+        template,
+        0,
+        Dict{Symbol, PBox}()
+    )
 end
 
 """
@@ -77,13 +83,13 @@ end
 Result of Algorithm 1 or 2: a query-specialized executable region with metadata.
 """
 struct SpecializedRegion
-    graph           :: FactorGraph
-    active_nodes    :: Set{Symbol}        # nodes in the active subgraph
-    cache_keys      :: Dict{Symbol, UInt64}  # canonical cache keys
-    exactness       :: ErrorLevel
-    error_bound     :: Float64            # 0.0 for EXACT
-    witness         :: Union{Nothing, PBox}  # approximation witness (Alg 2)
-    lowering        :: Symbol             # :factor_runtime | :mm2_worklist | :direct
+    graph::FactorGraph
+    active_nodes::Set{Symbol}        # nodes in the active subgraph
+    cache_keys::Dict{Symbol, UInt64}  # canonical cache keys
+    exactness::ErrorLevel
+    error_bound::Float64            # 0.0 for EXACT
+    witness::Union{Nothing, PBox}  # approximation witness (Alg 2)
+    lowering::Symbol             # :factor_runtime | :mm2_worklist | :direct
 end
 
 # ── Algorithm 1 — Exact factor-geometry specialization (§10.1.3) ─────────────
@@ -93,18 +99,19 @@ end
 
 Algorithm 1 (Exact factor-geometry specialization) from §10.1.3.
 8 steps:
-  1. Infer goal node, relevant role labels, and demand family
-  2. Run backward demand expansion → active subgraph G_act
-  3. Freeze valid boundary caches or attach priors at frontier
-  4. Specialize local factor kernels by rule family, mode, truth-value representation
-  5. Build canonical keys for active region and cache dependencies
-  6. Choose lowering: factor runtime, MM2 worklist, or another exact backend
-  7. Emit residual kernel + cache-contract metadata
-  8. Return specialized executable region
+
+ 1. Infer goal node, relevant role labels, and demand family
+ 2. Run backward demand expansion → active subgraph G_act
+ 3. Freeze valid boundary caches or attach priors at frontier
+ 4. Specialize local factor kernels by rule family, mode, truth-value representation
+ 5. Build canonical keys for active region and cache dependencies
+ 6. Choose lowering: factor runtime, MM2 worklist, or another exact backend
+ 7. Emit residual kernel + cache-contract metadata
+ 8. Return specialized executable region
 """
-function specialize_exact(query   :: Symbol,
-                          graph   :: FactorGraph,
-                          budget  :: Int = 1000) :: SpecializedRegion
+function specialize_exact(
+    query::Symbol, graph::FactorGraph, budget::Int=1000
+)::SpecializedRegion
 
     # Step 1: Infer goal node and demand family
     goal_node = get(graph.var_nodes, query, nothing)
@@ -137,19 +144,22 @@ end
 
 Algorithm 2 (Approximate factor specialization with explicit witness) from §10.1.4.
 7 steps:
-  1. Derive active subgraph by backward demand (same as Algorithm 1 step 2)
-  2. Replace expensive truth families by registered approximate coercions when legal
-  3. Attach approximation witness objects to affected kernels and boundary caches
-  4. Introduce early-stop guards based on total confidence or residual utility
-  5. Compose error witnesses through the active region
-  6. Emit residual kernel with explicit (ε, p) contract
-  7. Return bounded or statistical executable region
+
+ 1. Derive active subgraph by backward demand (same as Algorithm 1 step 2)
+ 2. Replace expensive truth families by registered approximate coercions when legal
+ 3. Attach approximation witness objects to affected kernels and boundary caches
+ 4. Introduce early-stop guards based on total confidence or residual utility
+ 5. Compose error witnesses through the active region
+ 6. Emit residual kernel with explicit (ε, p) contract
+ 7. Return bounded or statistical executable region
 """
-function specialize_approximate(query      :: Symbol,
-                                 graph      :: FactorGraph,
-                                 ε          :: Float64 = 0.05,
-                                 confidence :: Float64 = 0.95,
-                                 budget     :: Int     = 1000) :: SpecializedRegion
+function specialize_approximate(
+    query::Symbol,
+    graph::FactorGraph,
+    ε::Float64=0.05,
+    confidence::Float64=0.95,
+    budget::Int=1000
+)::SpecializedRegion
 
     # Step 1: Active subgraph by backward demand
     active = _backward_demand_expansion(query, graph, budget)
@@ -169,19 +179,28 @@ function specialize_approximate(query      :: Symbol,
     total_error = isempty(widths) ? 0.0 : error_composition_bound(widths)
 
     # Aggregate witness PBox
-    region_witness = isempty(witnesses) ? nothing :
+    region_witness = if isempty(witnesses)
+        nothing
+    else
         pbox_interval(max(0.0, 1.0 - total_error), 1.0, total_conf)
+    end
 
     # Step 6: Exactness class
-    exactness_class = total_error == 0.0 ? EXACT :
-                      confidence == 1.0  ? BOUNDED : STATISTICAL
+    exactness_class = if total_error == 0.0
+        EXACT
+    elseif confidence == 1.0
+        BOUNDED
+    else
+        STATISTICAL
+    end
 
     # Step 7: Return
     cache_keys = _build_cache_keys(graph, active)
-    lowering   = _choose_lowering(graph.template, length(active))
+    lowering = _choose_lowering(graph.template, length(active))
 
-    SpecializedRegion(graph, active, cache_keys,
-                      exactness_class, total_error, region_witness, lowering)
+    SpecializedRegion(
+        graph, active, cache_keys, exactness_class, total_error, region_witness, lowering
+    )
 end
 
 # ── STV (Simple Truth Value) family ──────────────────────────────────────────
@@ -192,14 +211,15 @@ end
 
 STV Heuristic Modus Ponens forward map.
 Computes (strength, confidence) for conclusion B given:
-  A with (strength_a, conf_a) and (A → B) with (strength_impl, conf_impl).
+A with (strength_a, conf_a) and (A → B) with (strength_impl, conf_impl).
 
 Using PLN deduction formula (simplified):
-  strength_B = strength_a * strength_impl
-  conf_B     = conf_a * conf_impl * min(strength_a, strength_impl)
+strength_B = strength_a * strength_impl
+conf_B     = conf_a * conf_impl * min(strength_a, strength_impl)
 """
-function stv_forward_map(strength_a    :: Float64, conf_a    :: Float64,
-                          strength_impl :: Float64, conf_impl :: Float64) :: Tuple{Float64,Float64}
+function stv_forward_map(
+    strength_a::Float64, conf_a::Float64, strength_impl::Float64, conf_impl::Float64
+)::Tuple{Float64, Float64}
     s_b = clamp(strength_a * strength_impl, 0.0, 1.0)
     c_b = clamp(conf_a * conf_impl * min(strength_a, strength_impl), 0.0, 1.0)
     (s_b, c_b)
@@ -211,7 +231,7 @@ end
 Convert an STV (strength, confidence) pair to a PBox.
 Width of the interval encodes uncertainty: lower confidence → wider interval.
 """
-function stv_to_pbox(strength::Float64, confidence::Float64) :: PBox
+function stv_to_pbox(strength::Float64, confidence::Float64)::PBox
     half_width = (1.0 - confidence) / 2.0
     lo = clamp(strength - half_width, 0.0, 1.0)
     hi = clamp(strength + half_width, 0.0, 1.0)
@@ -224,17 +244,21 @@ end
 STV backward demand function: given a goal on B, what do we need from the premises?
 Returns the minimum (strength, confidence) we need on A and (A→B).
 """
-function stv_backward_demand(goal_strength::Float64, goal_conf::Float64) :: Tuple{Float64,Float64}
+function stv_backward_demand(
+    goal_strength::Float64, goal_conf::Float64
+)::Tuple{Float64, Float64}
     # Adjoint: if we need strength s_B with conf c_B, we need at least
     # sqrt(s_B) strength on premises (approximate inverse of product)
     needed_strength = sqrt(max(0.0, goal_strength))
-    needed_conf     = sqrt(max(0.0, goal_conf))
+    needed_conf = sqrt(max(0.0, goal_conf))
     (needed_strength, needed_conf)
 end
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
-function _backward_demand_expansion(query::Symbol, graph::FactorGraph, budget::Int) :: Set{Symbol}
+function _backward_demand_expansion(
+    query::Symbol, graph::FactorGraph, budget::Int
+)::Set{Symbol}
     active = Set{Symbol}([query])
     frontier = [query]
     steps = 0
@@ -275,38 +299,43 @@ function _specialize_kernels!(graph::FactorGraph, active::Set{Symbol}, truth_fam
     end
 end
 
-function _apply_approx_coercions!(graph::FactorGraph, active::Set{Symbol}, ε::Float64) :: Vector{Symbol}
+function _apply_approx_coercions!(
+    graph::FactorGraph, active::Set{Symbol}, ε::Float64
+)::Vector{Symbol}
     approx_nodes = Symbol[]
     for (name, node) in graph.factor_nodes
         name ∉ active && continue
         # Can approximate: widen message by ε
         pb = node.message
-        new_pb = pbox_interval(max(0.0, pb.intervals[1][1] - ε/2),
-                               min(1.0, pb.intervals[end][2] + ε/2), 0.95)
+        new_pb = pbox_interval(
+            max(0.0, pb.intervals[1][1] - ε/2), min(1.0, pb.intervals[end][2] + ε/2), 0.95
+        )
         node.message = new_pb
         push!(approx_nodes, name)
     end
     approx_nodes
 end
 
-function _build_cache_keys(graph::FactorGraph, active::Set{Symbol}) :: Dict{Symbol, UInt64}
-    Dict(name => hash(string(name, graph.epoch, get(graph.boundary_cache, name, nothing)))
-         for name in active)
+function _build_cache_keys(graph::FactorGraph, active::Set{Symbol})::Dict{Symbol, UInt64}
+    Dict(
+        name => hash(string(name, graph.epoch, get(graph.boundary_cache, name, nothing)))
+        for name in active
+    )
 end
 
-function _infer_demand_family(template::GeometryTemplate) :: Symbol
+function _infer_demand_family(template::GeometryTemplate)::Symbol
     # §10.1.3 Step 1: infer demand family from declared operators
     :backward_demand in template.operators && return :backward_demand
-    :adjoint_need    in template.operators && return :adjoint_need
-    :demand_push     in template.operators && return :demand_push
+    :adjoint_need in template.operators && return :adjoint_need
+    :demand_push in template.operators && return :demand_push
     :forward_only
 end
 
-function _get_truth_family(template::GeometryTemplate) :: Symbol
+function _get_truth_family(template::GeometryTemplate)::Symbol
     :STV  # default; would be read from template metadata
 end
 
-function _choose_lowering(template::GeometryTemplate, active_size::Int) :: Symbol
+function _choose_lowering(template::GeometryTemplate, active_size::Int)::Symbol
     affinity = get(template.backend_affinity, :mm2, :medium)
     active_size > 50 ? :mm2_worklist : :factor_runtime
 end
@@ -320,7 +349,7 @@ end
 Invariant: w_end ≤ w_start — derivation neither hallucinates nor leaks.
 Returns the total probability mass in the region's witness PBox (or 1.0 for EXACT).
 """
-function noether_charge(region::SpecializedRegion) :: Float64
+function noether_charge(region::SpecializedRegion)::Float64
     region.witness === nothing && return 1.0
     region.witness.confidence
 end
@@ -330,7 +359,7 @@ end
 
 Check the Noether invariant: evidence mass at end ≤ evidence mass at start.
 """
-conserves_evidence(region::SpecializedRegion, initial_mass::Float64) :: Bool =
+conserves_evidence(region::SpecializedRegion, initial_mass::Float64)::Bool =
     noether_charge(region) <= initial_mass + 1e-9
 
 export FactorNode, FactorEdge, FactorGraph, SpecializedRegion

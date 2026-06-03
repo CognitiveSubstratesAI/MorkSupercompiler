@@ -22,7 +22,7 @@ end
 end
 
 @testset "MM2Compiler — compile_conditional! produces 2 atoms" begin
-    g   = MCoreGraph()
+    g = MCoreGraph()
     ctx = CompileCtx(g)
     id_cond = add_sym!(g, Sym(:cond))
     id_then = add_sym!(g, Sym(:then_val))
@@ -39,10 +39,12 @@ end
 end
 
 @testset "MM2Compiler — compile_program produces loadable s-exprs" begin
-    g   = MCoreGraph()
-    id_pat  = add_con!(g, Con(:edge, [add_var!(g, Var(0)), add_var!(g, Var(1))]))
+    g = MCoreGraph()
+    id_pat = add_con!(g, Con(:edge, [add_var!(g, Var(0)), add_var!(g, Var(1))]))
     id_tmpl = add_con!(g, Con(:node, [add_var!(g, Var(0))]))
-    id_exec = add_prim!(g, Prim(:mm2_exec, [NULL_NODE, id_pat, id_tmpl], EffectSet(UInt8(0x05))))
+    id_exec = add_prim!(
+        g, Prim(:mm2_exec, [NULL_NODE, id_pat, id_tmpl], EffectSet(UInt8(0x05)))
+    )
 
     prog, obligs = compile_program(g, [id_exec])
     @test !isempty(prog)
@@ -50,13 +52,13 @@ end
     @test !isempty(obligs)
     # All three bisimulation obligations recorded
     kinds = Set(o.kind for o in obligs)
-    @test :forward_sim  in kinds
+    @test :forward_sim in kinds
     @test :backward_sim in kinds
-    @test :fairness     in kinds
+    @test :fairness in kinds
 end
 
 @testset "MM2Compiler — sequential compilation preserves order" begin
-    g   = MCoreGraph()
+    g = MCoreGraph()
     ctx = CompileCtx(g)
     ids = [add_prim!(g, Prim(:mm2_exec, NodeID[], EffectSet(UInt8(0x05)))) for _ in 1:3]
     atoms = compile_sequential!(ctx, ids)

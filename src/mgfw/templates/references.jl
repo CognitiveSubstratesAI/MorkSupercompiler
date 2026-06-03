@@ -30,11 +30,11 @@ Truth Value) — strength multiplies, confidence is the weaker of the two
 inputs scaled by the spec's standard 0.9 confidence-decay constant.
 
 Inputs:
-  s_a, c_a       — strength and confidence of premise A
-  s_imp, c_imp   — strength and confidence of `(implies A B)`
+s_a, c_a       — strength and confidence of premise A
+s_imp, c_imp   — strength and confidence of `(implies A B)`
 
 Output:
-  (s_b, c_b)     — strength and confidence of derived conclusion B
+(s_b, c_b)     — strength and confidence of derived conclusion B
 
 This matches the formula emitted by `pln_stv_lowering` exactly, so the
 test in test_mgfw.jl can diff the reference output against the lowered
@@ -62,6 +62,7 @@ This is what `motif_miner_lowering`'s emitted MeTTa rewrite rules should
 produce in aggregate, after MORK executes the seed → grow → score cascade.
 For MVP acceptance: a test fixture supplies a toy dataset (e.g. ["foo a",
 "foo b", "bar c", "foo d", "bar e"]) and asserts that:
+
   - This reference returns [("foo", 3), ("bar", 2)] when k=2.
   - The lowering's emitted MeTTa contains all three pattern-matching stages
     (motif-stage 1 / 2 / 3) so a MORK execution WOULD reproduce these counts.
@@ -81,7 +82,7 @@ function naive_top_k_motifs(atoms::AbstractVector{<:AbstractString}, k::Int)
     end
     # Sort descending by count, take top-k
     pairs = collect(counts)
-    sort!(pairs; by = p -> -p[2])
+    sort!(pairs; by=p -> -p[2])
     pairs[1:min(k, length(pairs))]
 end
 
@@ -98,8 +99,7 @@ log(f) ill-defined cases are caught at the priority step).
 
 `adj`: Dict{Node, Vector{Node}} adjacency list (outgoing edges).
 """
-function bgc_forward_f(adj::Dict{N, Vector{N}}, start::N,
-                        target_depth::Int) where {N}
+function bgc_forward_f(adj::Dict{N, Vector{N}}, start::N, target_depth::Int) where {N}
     f = Dict{N, Float64}(start => 1.0)   # 1 trivial path of length 0
     frontier = [start]
     for _ in 1:target_depth
@@ -124,8 +124,7 @@ Backward usefulness per spec §4.1: g(x, t) = "how easy is x to continue
 to `goal`". Operates on the reversed graph — for each node x, count paths
 from x to `goal` of length ≤ `target_depth`.
 """
-function bgc_backward_g(adj::Dict{N, Vector{N}}, goal::N,
-                         target_depth::Int) where {N}
+function bgc_backward_g(adj::Dict{N, Vector{N}}, goal::N, target_depth::Int) where {N}
     # Reverse the adjacency
     rev = Dict{N, Vector{N}}()
     for (u, vs) in adj, v in vs
@@ -138,7 +137,7 @@ end
     bgc_priority(f, g, x; step_cost=1.0, prev_x=nothing) → Float64
 
 Spec §4.1 priority function used by GeodesicBGC-Worklist:
-    priority(x) = Δ(log f(x) + log g(x)) / step_cost
+priority(x) = Δ(log f(x) + log g(x)) / step_cost
 
 `Δ` = change vs the previous frontier element. If `prev_x === nothing`,
 returns the raw log f + log g (initial frontier item). Returns -Inf for
@@ -149,15 +148,16 @@ The spec's GeodesicBGC-Worklist (§12.2) consumes this priority: pop highest
 first, expand. The function is the heart of the composite's
 "least-effort path" semantic.
 """
-function bgc_priority(f::AbstractDict, g::AbstractDict, x;
-                      step_cost::Real=1.0,
-                      prev_x=nothing) :: Float64
+function bgc_priority(
+    f::AbstractDict, g::AbstractDict, x; step_cost::Real=1.0, prev_x=nothing
+)::Float64
     fx = get(f, x, 0.0)
     gx = get(g, x, 0.0)
     (fx <= 0.0 || gx <= 0.0) && return -Inf
     curr = log(fx) + log(gx)
     prev_x === nothing && return curr / step_cost
-    fp = get(f, prev_x, 0.0); gp = get(g, prev_x, 0.0)
+    fp = get(f, prev_x, 0.0);
+    gp = get(g, prev_x, 0.0)
     (fp <= 0.0 || gp <= 0.0) && return curr / step_cost
     prev = log(fp) + log(gp)
     (curr - prev) / step_cost

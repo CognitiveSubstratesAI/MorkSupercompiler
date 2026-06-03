@@ -10,7 +10,12 @@
 # NEVER cold-start julia for iteration — each restart costs 80s JIT.
 # Use this REPL + Revise for all development.
 
-try; using Revise; catch; end
+try
+    ;
+    using Revise;
+catch
+    ;
+end
 
 using MorkSupercompiler
 using MORK
@@ -18,7 +23,7 @@ using MORK
 # ── Shortcuts ─────────────────────────────────────────────────────────────────
 
 # Test runner
-t(path=joinpath(@__DIR__,"..","test","runtests.jl")) = include(path)
+t(path=joinpath(@__DIR__, "..", "test", "runtests.jl")) = include(path)
 
 # Parse + reorder a program string
 plan(prog) = plan_static(prog)
@@ -62,8 +67,11 @@ else
             result = eval(Meta.parse(line))
             # Only auto-print scalars and strings — suppress Space/large structs
             # that would flood stdout with raw binary trie data.
-            if result !== nothing && (result isa Number || result isa AbstractString ||
-                                      result isa Symbol  || result isa Bool)
+            if result !== nothing &&
+                (
+                result isa Number || result isa AbstractString || result isa Symbol ||
+                result isa Bool
+            )
                 println(result)
             end
         catch e

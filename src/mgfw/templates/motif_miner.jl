@@ -19,24 +19,24 @@ const TEMPLATE_TRIE_MOTIF_MINER = make_template(
     :FactorGraphMotifMiner,
     sem_codec(:EvidenceSet),   # mining outputs are evidence over patterns
     GEOM_TRIE;
-    operators = [:seed_scan,         # §10.3.2 stage 1
-                 :prefix_grow,       # §10.3.2 stage 2
-                 :prefix_counter,    # §10.3.2 stage 3
-                 :topk_select],
-    effects   = [ReadEffect(DEFAULT_SPACE), AppendEffect(DEFAULT_SPACE)],
-    laws      = [:idempotent_merge, :commutative_merge, :evidence_monotone,
-                 :counter_associative],
-    cache     = CacheContract(
+    operators=[:seed_scan,         # §10.3.2 stage 1
+        :prefix_grow,       # §10.3.2 stage 2
+        :prefix_counter,    # §10.3.2 stage 3
+        :topk_select],
+    effects=[ReadEffect(DEFAULT_SPACE), AppendEffect(DEFAULT_SPACE)],
+    laws=[:idempotent_merge, :commutative_merge, :evidence_monotone,
+        :counter_associative],
+    cache=CacheContract(
         [:prefix_root, :motif_template, :support_threshold],
         [:new_token_mint, :prefix_extension]),
-    coercions = [
+    coercions=[
         Coercion(:TrieToTensor, GEOM_TRIE, GEOM_TENSOR_SPARSE,
-                 sem_rel(:Motif, :Count)),
-        Coercion(:TrieToCodec,  GEOM_TRIE, GEOM_TRIE,
-                 sem_codec(:Motif)),
+            sem_rel(:Motif, :Count)),
+        Coercion(:TrieToCodec, GEOM_TRIE, GEOM_TRIE,
+            sem_codec(:Motif))
     ],
-    affinity  = Dict(:mork => :high, :mm2 => :medium, :tensor => :low),
-    noether   = :evidence_mass)   # §12.2: conserved evidence-mass across merges
+    affinity=Dict(:mork => :high, :mm2 => :medium, :tensor => :low),
+    noether=:evidence_mass)   # §12.2: conserved evidence-mass across merges
 
 """
     motif_miner_lowering(t, region) → String
@@ -48,7 +48,7 @@ the `(motif-count ...)` counter. The lowering wires the three stages
 (seed, grow, score) into MORK exec atoms with priorities so MM2 schedules
 them in order (per spec §13.3 PrefixShardPolicy).
 """
-function motif_miner_lowering(t::GeometryTemplate, region::AbstractString) :: String
+function motif_miner_lowering(t::GeometryTemplate, region::AbstractString)::String
     """
     ;; mgfw:lowering FactorGraphMotifMiner
     ;; §10.3 Trie geometry: 3-stage motif miner (seed → grow → score)

@@ -4,14 +4,14 @@ using MORK
 
 # §6.4 ApproximatePathSig — error levels
 @testset "ApproximatePathSig (§6.4)" begin
-    g   = MCoreGraph()
-    id  = add_sym!(g, Sym(:foo))
+    g = MCoreGraph()
+    id = add_sym!(g, Sym(:foo))
     key = canonical_key(g, id, 0)
 
     exact_sig = ApproximatePathSig(key)
     @test exact_sig.error_level == EXACT
     @test exact_sig.error_bound == 0.0
-    @test exact_sig.confidence  == 1.0
+    @test exact_sig.confidence == 1.0
     @test is_cacheable(exact_sig)
 
     bounded_sig = ApproximatePathSig(key, 0.05)
@@ -25,17 +25,17 @@ using MORK
 end
 
 @testset "approx_subsumes (extends Algorithm 10)" begin
-    g    = MCoreGraph()
-    id1  = add_sym!(g, Sym(:foo))
-    id2  = add_sym!(g, Sym(:foo))   # same head
-    id3  = add_sym!(g, Sym(:bar))   # different head
-    k1   = canonical_key(g, id1, 0)
-    k2   = canonical_key(g, id2, 0)
-    k3   = canonical_key(g, id3, 0)
+    g = MCoreGraph()
+    id1 = add_sym!(g, Sym(:foo))
+    id2 = add_sym!(g, Sym(:foo))   # same head
+    id3 = add_sym!(g, Sym(:bar))   # different head
+    k1 = canonical_key(g, id1, 0)
+    k2 = canonical_key(g, id2, 0)
+    k3 = canonical_key(g, id3, 0)
 
-    s_exact   = ApproximatePathSig(k1)
+    s_exact = ApproximatePathSig(k1)
     s_bounded = ApproximatePathSig(k2, 0.05)
-    s_other   = ApproximatePathSig(k3)
+    s_other = ApproximatePathSig(k3)
 
     @test approx_subsumes(s_exact, s_bounded)    # EXACT subsumes BOUNDED (same base)
     @test !approx_subsumes(s_bounded, s_exact)   # BOUNDED doesn't subsume EXACT
@@ -80,17 +80,17 @@ end
     reg = PrimRegistry()
     register_approx_primitives!(reg)
     @test lookup_prim(reg, :approx_kb_query) !== nothing
-    @test lookup_prim(reg, :sample_fitness)  !== nothing
+    @test lookup_prim(reg, :sample_fitness) !== nothing
 end
 
 @testset "approx_kb_query primitive — returns Residual" begin
     reg = PrimRegistry()
     register_approx_primitives!(reg)
-    g   = MCoreGraph()
+    g = MCoreGraph()
     pat = add_sym!(g, Sym(:pattern))
     tol = add_lit!(g, Lit(0.05))
     pid = add_prim!(g, Prim(:approx_kb_query, [pat, tol]))
-    r   = rewrite_once(g, pid, Env(), DepSet(), reg)
+    r = rewrite_once(g, pid, Env(), DepSet(), reg)
     @test r isa Residual   # remains residual until connected to Space
 end
 

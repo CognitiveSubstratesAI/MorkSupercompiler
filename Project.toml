@@ -4,13 +4,17 @@ version = "0.1.0"
 authors = ["PRIMUS Team"]
 
 [deps]
+Aqua = "4c88cf16-eb10-579e-8560-4a9242c79595"
 HPC = "b1c2d3e4-f567-8901-abcd-ef0123456789"
+JET = "c3a54625-cd67-489e-a8e7-0a5a0ff4e31b"
 MORK = "162375cb-4023-4ef9-895b-22c0041d5c13"
 MORKTensorNetworks = "e1f2a3b4-c5d6-7890-abcd-ef1234567890"
 MPI = "da04e1cc-30fd-572f-bb4f-1f8673147195"
 PathMap = "a8b3d4e5-f012-4567-89ab-cdef01234567"
 
 [compat]
+Aqua = "0.8.15"
+JET = "0.11.3"
 MORK = "0.1"
 MORKTensorNetworks = "0.1"
 MPI = "0.20.26"

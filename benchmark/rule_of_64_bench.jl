@@ -116,7 +116,7 @@ const CM_PROG = raw"""
 # This is the control: if we see no speedup here, it confirms plan_static
 # has limited effect when all sources have equal selectivity.
 const TRANS_FACTS = rand_edges(50, 150)
-const TRANS_PROG  = raw"""
+const TRANS_PROG = raw"""
 (exec 0 (, (edge $x $y) (edge $y $z) (edge $z $w))
          (, (dtrans $x $y $z $w)))
 """
@@ -132,16 +132,19 @@ function run_bench(label, facts, prog, steps; trials=3)
     exp_txt = explain(s_tmp, prog)
     # Extract just the "Planned order" lines
     for line in split(exp_txt, '\n')
-        (occursin("Sources (", line) || occursin("Planned order", line) ||
-         occursin("Already optimal", line) || occursin("Reordered", line)) &&
-            println("    ", strip(line))
+        (
+            occursin("Sources (", line) ||
+            occursin("Planned order", line) ||
+            occursin("Already optimal", line) ||
+            occursin("Reordered", line)
+        ) && println("    ", strip(line))
     end
 
     # Measure
     p = profile(facts, prog; steps=steps, trials=trials, sample_frac=1.0)
 
     bt = get(p.baseline_times, PHASE_EXECUTE, 0.0)
-    pt = get(p.planned_times,  PHASE_EXECUTE, 0.0)
+    pt = get(p.planned_times, PHASE_EXECUTE, 0.0)
     plan_overhead = get(p.planned_times, PHASE_PLAN, 0.0)
     speedup = bt > 0 ? bt / max(pt, 1e-9) : 1.0
 
@@ -150,8 +153,13 @@ function run_bench(label, facts, prog, steps; trials=3)
     println("    plan overhead:  $(round(plan_overhead*1000; digits=3)) ms")
     println("    speedup:        $(round(speedup; sigdigits=3))×")
     println("    sources reord:  $(p.n_sources_reordered)")
-    (label=label, speedup=speedup, overhead_ms=plan_overhead*1000,
-     baseline_ms=bt*1000, planned_ms=pt*1000)
+    (
+        label=label,
+        speedup=speedup,
+        overhead_ms=plan_overhead*1000,
+        baseline_ms=bt*1000,
+        planned_ms=pt*1000
+    )
 end
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -165,13 +173,13 @@ function main()
     results = []
 
     # Case 1: odd_even_sort — 5-source phase rule (steps=1: one exec application)
-    push!(results, run_bench("odd_even_sort",    ODD_EVEN_FACTS, ODD_EVEN_PROG, 1; trials=2))
+    push!(results, run_bench("odd_even_sort", ODD_EVEN_FACTS, ODD_EVEN_PROG, 1; trials=2))
 
     # Case 2: counter_machine JZ step — 5-source rule (steps=1)
-    push!(results, run_bench("counter_machine",  CM_FACTS,       CM_PROG,       1; trials=2))
+    push!(results, run_bench("counter_machine", CM_FACTS, CM_PROG, 1; trials=2))
 
     # Case 3: transitive_detect — 3-source control (steps=1)
-    push!(results, run_bench("trans_detect",     TRANS_FACTS,    TRANS_PROG,    1; trials=2))
+    push!(results, run_bench("trans_detect", TRANS_FACTS, TRANS_PROG, 1; trials=2))
 
     println("\n╔═══════════════════════════════════════════════════════╗")
     println("║  Summary                                              ║")

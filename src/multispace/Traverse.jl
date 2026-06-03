@@ -31,16 +31,16 @@ const TRAVERSAL_THRESHOLD = 0.3
 
 Result of a `space_traverse!` call.
 
-  count      — number of matches found
-  p_traverse — traversal probability (cardinality / total_atoms)
-  activated  — whether the space was actually traversed (p ≥ threshold)
-  rank       — traversal depth (0 = seed, 1 = first hop, etc.)
+count      — number of matches found
+p_traverse — traversal probability (cardinality / total_atoms)
+activated  — whether the space was actually traversed (p ≥ threshold)
+rank       — traversal depth (0 = seed, 1 = first hop, etc.)
 """
 struct TraversalResult
-    count      :: Int
-    p_traverse :: Float64
-    activated  :: Bool
-    rank       :: Int
+    count::Int
+    p_traverse::Float64
+    activated::Bool
+    rank::Int
 end
 
 """
@@ -53,26 +53,28 @@ If p < threshold (0.3), returns immediately — sparse activation gate.
 
 Stage 1 (single-node): local traversal only.
 Stage 2 (MPI peers):   if mpi_active() and p ≥ threshold, propagate seed to
-                       remote peer spaces via non-blocking MPI.Isend.
-                       Each peer independently decides whether to activate.
+remote peer spaces via non-blocking MPI.Isend.
+Each peer independently decides whether to activate.
 
 `depth` controls MPI hop count:
-  depth=1 — local + direct peer neighbours
-  depth=N — N-hop propagation (each peer re-traverses with depth-1)
+depth=1 — local + direct peer neighbours
+depth=N — N-hop propagation (each peer re-traverses with depth-1)
 
 `dest_peer`:
-  LOCAL_PEER (default) — local + broadcast to all MPI peers when depth > 0
-  specific Int32 rank  — send only to that peer (point-to-point)
+LOCAL_PEER (default) — local + broadcast to all MPI peers when depth > 0
+specific Int32 rank  — send only to that peer (point-to-point)
 """
-function space_traverse!(space      :: Space,
-                          seed       :: SNode,
-                          depth      :: Int     = 1;
-                          threshold  :: Float64 = TRAVERSAL_THRESHOLD,
-                          on_match   :: Function = (b, e) -> true,
-                          dest_peer  :: Int32    = LOCAL_PEER) :: TraversalResult
-    total   = Float64(max(1, space_val_count(space)))
+function space_traverse!(
+    space::Space,
+    seed::SNode,
+    depth::Int=1;
+    threshold::Float64=TRAVERSAL_THRESHOLD,
+    on_match::Function=(b, e) -> true,
+    dest_peer::Int32=LOCAL_PEER
+)::TraversalResult
+    total = Float64(max(1, space_val_count(space)))
     n_match = dynamic_count(space.btm, seed)
-    p       = Float64(n_match) / total
+    p = Float64(n_match) / total
 
     # Sparse activation gate — mirrors Drosophila 0.3 synapse ratio
     p < threshold && return TraversalResult(0, p, false, 0)
@@ -90,8 +92,8 @@ function space_traverse!(space      :: Space,
     # ── Local on_match callback ────────────────────────────────────────────────
     if on_match !== ((b, e) -> true)
         seed_str = sprint_sexpr(seed)
-        prog     = "(exec 0 (, $seed_str) (, (__traverse_hit__ \$__v__)))"
-        s_tmp    = new_space()
+        prog = "(exec 0 (, $seed_str) (, (__traverse_hit__ \$__v__)))"
+        s_tmp = new_space()
         space_add_all_sexpr!(s_tmp, space_dump_all_sexpr(space))
         space_add_all_sexpr!(s_tmp, prog)
         space_metta_calculus!(s_tmp, typemax(Int))
@@ -107,16 +109,24 @@ Convenience overload accepting a seed as an s-expression string.
 Also used to process incoming MPI traverse requests: pass the string
 received from `mpi_poll_traverse!()` with `depth=0` to prevent re-broadcast.
 """
-function space_traverse!(space     :: Space,
-                          seed_str  :: AbstractString,
-                          depth     :: Int = 1;
-                          threshold :: Float64 = TRAVERSAL_THRESHOLD,
-                          on_match  :: Function = (b, e) -> true,
-                          dest_peer :: Int32    = LOCAL_PEER) :: TraversalResult
+function space_traverse!(
+    space::Space,
+    seed_str::AbstractString,
+    depth::Int=1;
+    threshold::Float64=TRAVERSAL_THRESHOLD,
+    on_match::Function=(b, e) -> true,
+    dest_peer::Int32=LOCAL_PEER
+)::TraversalResult
     nodes = parse_program(seed_str)
     isempty(nodes) && return TraversalResult(0, 0.0, false, 0)
-    space_traverse!(space, only(nodes), depth;
-                    threshold=threshold, on_match=on_match, dest_peer=dest_peer)
+    space_traverse!(
+        space,
+        only(nodes),
+        depth;
+        threshold=threshold,
+        on_match=on_match,
+        dest_peer=dest_peer
+    )
 end
 
 """
@@ -126,13 +136,12 @@ Poll and process all pending MPI traverse requests from peer nodes.
 Returns number of requests handled. Non-blocking — zero overhead when no messages.
 
 Call from the peer main loop:
-    while true
-        space_metta_calculus!(s, 100)
-        process_mpi_traversals!(s)
-    end
+while true
+space_metta_calculus!(s, 100)
+process_mpi_traversals!(s)
+end
 """
-function process_mpi_traversals!(space     :: Space;
-                                  threshold :: Float64 = TRAVERSAL_THRESHOLD) :: Int
+function process_mpi_traversals!(space::Space; threshold::Float64=TRAVERSAL_THRESHOLD)::Int
     mpi_active() || return 0
     count = 0
     while true

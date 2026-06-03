@@ -19,18 +19,18 @@ end
 @testset "EvoSpecializer — Algorithm 13 CanReuseFitnessCache" begin
     g = MCoreGraph()
     # Parent: (f (lit 1))
-    id_f  = add_sym!(g, Sym(:f))
+    id_f = add_sym!(g, Sym(:f))
     id_l1 = add_lit!(g, Lit(1))
-    id_p  = add_app!(g, App(id_f, [id_l1]))
+    id_p = add_app!(g, App(id_f, [id_l1]))
     # Child: (f (lit 2)) — only constant changed
     id_l2 = add_lit!(g, Lit(2))
-    id_c  = add_app!(g, App(id_f, [id_l2]))
+    id_c = add_app!(g, App(id_f, [id_l2]))
 
-    meta  = CacheMetadata(1.0)
+    meta = CacheMetadata(1.0)
     @test can_reuse_cache(g, id_c, id_p, meta)   # 1 constant change ≤ max_changes=3
 
     # Child: (g (lit 1)) — structural change (different head)
-    id_g  = add_sym!(g, Sym(:g))
+    id_g = add_sym!(g, Sym(:g))
     id_c2 = add_app!(g, App(id_g, [id_l1]))
     @test !can_reuse_cache(g, id_c2, id_p, meta)  # structural change
 end
@@ -51,9 +51,9 @@ end
 
 @testset "EvoSpecializer — Algorithm 7 AllocateEvaluations" begin
     pop = [
-        EvolutionaryPBox(1, PBox(0.5, 0.9, 1.0), PBox(0.0,1.0,1.0), 0.8, 1),
-        EvolutionaryPBox(2, PBox(0.1, 0.3, 1.0), PBox(0.0,1.0,1.0), 0.5, 5),
-        EvolutionaryPBox(3, PBox(0.8, 0.95,1.0), PBox(0.0,1.0,1.0), 0.9, 2),
+        EvolutionaryPBox(1, PBox(0.5, 0.9, 1.0), PBox(0.0, 1.0, 1.0), 0.8, 1),
+        EvolutionaryPBox(2, PBox(0.1, 0.3, 1.0), PBox(0.0, 1.0, 1.0), 0.5, 5),
+        EvolutionaryPBox(3, PBox(0.8, 0.95, 1.0), PBox(0.0, 1.0, 1.0), 0.9, 2)
     ]
     alloc = allocate_evaluations(pop, 2)
     @test length(alloc) == 2

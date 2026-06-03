@@ -2,6 +2,7 @@
 MorkSupercompiler — query planner and source-reordering supercompiler for MORK.
 
 Implements Phase 0 of the MM2 Supercompiler design (Goertzel, Oct 2025):
+
   - §3    M-Core IR foundation (SExpr layer)
   - §5    Query planner with MORK-native cardinality estimation
   - §5.3  Effect-aware join ordering (all exec sources are Read → freely reorder)
@@ -9,28 +10,28 @@ Implements Phase 0 of the MM2 Supercompiler design (Goertzel, Oct 2025):
   - §5.2  Incremental statistics under monotonic growth
 
 Usage (static planning, no Space needed):
-  program′ = plan_static(program)
-  space_add_all_sexpr!(s, program′)
-  space_metta_calculus!(s, max_steps)
+program′ = plan_static(program)
+space_add_all_sexpr!(s, program′)
+space_metta_calculus!(s, max_steps)
 
 Usage (dynamic planning, uses btm cardinalities):
-  plan!(s, program)    # adds reordered program to s and runs metta_calculus
-  -- or --
-  program′ = plan_program(s, program)
+plan!(s, program)    # adds reordered program to s and runs metta_calculus
+-- or --
+program′ = plan_program(s, program)
 
 Public API:
-  plan_static(program)          — pure-string reorder (no Space)
-  plan_program(s, program)      — reorder using btm prefix counts
-  plan!(s, program, steps)      — add + run in one call
-  collect_stats(s)              — build MORKStatistics for s
-  plan_report(s, program)       — human-readable join-plan report
+plan_static(program)          — pure-string reorder (no Space)
+plan_program(s, program)      — reorder using btm prefix counts
+plan!(s, program, steps)      — add + run in one call
+collect_stats(s)              — build MORKStatistics for s
+plan_report(s, program)       — human-readable join-plan report
 
 Architecture references:
-  SExpr.jl      — s-expression parser (M-Core surface syntax)
-  Statistics.jl — MORKStatistics + Algorithms 2/3
-  Selectivity.jl — dynamic_count / static_score
-  Rewrite.jl    — source reordering (pure static, backward-compat)
-  QueryPlanner.jl — Algorithm 6 (EffectAwarePlanning) + variable flow
+SExpr.jl      — s-expression parser (M-Core surface syntax)
+Statistics.jl — MORKStatistics + Algorithms 2/3
+Selectivity.jl — dynamic_count / static_score
+Rewrite.jl    — source reordering (pure static, backward-compat)
+QueryPlanner.jl — Algorithm 6 (EffectAwarePlanning) + variable flow
 """
 module MorkSupercompiler
 
@@ -99,10 +100,18 @@ using HPC: sharded_add!, sharded_flush!, sharded_query, sharded_val_count
 using HPC: shard_owner, SHARD_ATOM_TAG
 
 # MORKTensorNetworks — semiring algebra for principled geometry selection (ADR-055)
-using MORKTensorNetworks: AbstractSemiring,
-    BooleanSemiring, MaxPlusSemiring, MinPlusSemiring,
-    SumProductSemiring, PLNSemiring, CostSemiring,
-    semiring_matmul, oplus, otimes, szero
+using MORKTensorNetworks:
+    AbstractSemiring,
+    BooleanSemiring,
+    MaxPlusSemiring,
+    MinPlusSemiring,
+    SumProductSemiring,
+    PLNSemiring,
+    CostSemiring,
+    semiring_matmul,
+    oplus,
+    otimes,
+    szero
 include("mgfw/GeometryTemplate.jl")
 include("mgfw/SchemaRegistry.jl")
 include("mgfw/FactorGeometry.jl")
@@ -128,8 +137,8 @@ function _register_mvp_templates!()
     # walks the composite's components list.
     register!(GLOBAL_REGISTRY, build_geodesic_bgc_composite(GLOBAL_REGISTRY))
     register_lowering!(:PLN_STV_HeuristicModusPonens, pln_stv_lowering)
-    register_lowering!(:FactorGraphMotifMiner,        motif_miner_lowering)
-    register_lowering!(:GeodesicBGC_Composite,        geodesic_bgc_lowering)
+    register_lowering!(:FactorGraphMotifMiner, motif_miner_lowering)
+    register_lowering!(:GeodesicBGC_Composite, geodesic_bgc_lowering)
     nothing
 end
 
@@ -162,8 +171,7 @@ Reorder sources in all conjunction lists using static selectivity only
 (variable-fraction heuristic).  No Space or statistics required.
 Cheapest option; use when no background facts are loaded yet.
 """
-plan_static(program::AbstractString) :: String =
-    reorder_program_static(program)
+plan_static(program::AbstractString)::String = reorder_program_static(program)
 
 """
     plan_program(s::Space, program::AbstractString) -> String
@@ -171,7 +179,7 @@ plan_static(program::AbstractString) :: String =
 Reorder sources using dynamic btm-prefix cardinality counts.
 Dispatches on the first argument: Space → dynamic, MORKStatistics → stats-based.
 """
-plan_program(s::Space, program::AbstractString) :: String =
+plan_program(s::Space, program::AbstractString)::String =
     plan_program_dynamic(program, s.btm)
 
 """
@@ -180,7 +188,7 @@ plan_program(s::Space, program::AbstractString) :: String =
 When multi-space is enabled, strip and execute multi-space MM2 commands.
 Zero overhead when ENABLE_MULTI_SPACE[] = false.
 """
-@inline function _preprocess_program(program::AbstractString) :: String
+@inline function _preprocess_program(program::AbstractString)::String
     ENABLE_MULTI_SPACE[] || return String(program)
     process_multispace_commands!(get_registry(), program)
 end
@@ -189,16 +197,16 @@ end
     plan!(s::Space, program::AbstractString, max_steps::Int=typemax(Int)) -> Int
 
 Plan, decompose, add, and execute in one call:
-  1. Reorder sources using btm prefix counts
-  2. Decompose multi-source exec atoms (Rule-of-64 fix)
-  3. Add the transformed program to `s`
-  4. Run `space_metta_calculus!(s, max_steps)`
-  5. Clean up `_sc_tmp*` intermediate atoms
-  6. Return steps executed.
+
+ 1. Reorder sources using btm prefix counts
+ 2. Decompose multi-source exec atoms (Rule-of-64 fix)
+ 3. Add the transformed program to `s`
+ 4. Run `space_metta_calculus!(s, max_steps)`
+ 5. Clean up `_sc_tmp*` intermediate atoms
+ 6. Return steps executed.
 """
-function plan!(s::Space, program::AbstractString,
-               max_steps::Int=typemax(Int)) :: Int
-    program  = _preprocess_program(program)
+function plan!(s::Space, program::AbstractString, max_steps::Int=typemax(Int))::Int
+    program = _preprocess_program(program)
     program′ = plan_program(s, program)
     program′ = decompose_program(program′)
     space_add_all_sexpr!(s, program′)
@@ -216,10 +224,9 @@ Runs the full supercompiler pipeline: stats → plan → decompose → execute �
 This is the primary entry point from the MM2 spec §10.5.
 Use instead of calling `space_metta_calculus!` directly.
 """
-function run!(s::Space, program::AbstractString,
-              max_steps::Int=typemax(Int)) :: SCResult
+function run!(s::Space, program::AbstractString, max_steps::Int=typemax(Int))::SCResult
     program = _preprocess_program(program)
-    execute!(s, program; opts=SCOptions(max_steps=max_steps))
+    execute!(s, program; opts=SCOptions(; max_steps=max_steps))
 end
 
 # Re-export the most useful lower-level symbols
@@ -276,7 +283,8 @@ export compile_sequential!, compile_conditional!, compile_node!, compile_program
 export sprint_mcore_to_mm2
 # Integration layer (Phase 4)
 export SCOptions, SC_DEFAULTS, SCResult, run!, execute, timing_report
-export ProfilePhase, PHASE_STATS, PHASE_PLAN, PHASE_DECOMPOSE, PHASE_LOAD, PHASE_EXECUTE, PHASE_TOTAL
+export ProfilePhase,
+    PHASE_STATS, PHASE_PLAN, PHASE_DECOMPOSE, PHASE_LOAD, PHASE_EXECUTE, PHASE_TOTAL
 export SCProfile, profile, speedup_report
 export explain, to_dot, diff_programs
 export AdaptivePlan, should_replan, replan!, run_adaptive!, update_stats!
@@ -322,7 +330,8 @@ export TyLADirection, F_DIRECTION, G_DIRECTION
 export PolicyFamily, LOCAL_REWRITE_POLICY, FIXED_POINT_MESSAGE_POLICY
 export PREFIX_SHARD_POLICY, PATCH_LOG_SHARD_POLICY, DEME_AGENT_POLICY, default_policy
 export LocalConcurrencyContract, DistributedExecContract, CacheContract
-export GeometryTemplate, is_valid_template, geometry_of, all_geometries, is_hybrid, policy_families, make_template
+export GeometryTemplate, is_valid_template, geometry_of, all_geometries, is_hybrid,
+    policy_families, make_template
 export TEMPLATE_HEURISTIC_MP, TEMPLATE_EVIDENCE_CAPSULE
 export SchemaRegistry, register!, lookup, search, coercion_path, GLOBAL_REGISTRY
 export DSLForm, AuthoringResult, authoring_workflow

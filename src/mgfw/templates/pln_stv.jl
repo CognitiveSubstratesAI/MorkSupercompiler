@@ -26,21 +26,25 @@ const TEMPLATE_PLN_STV_MP = make_template(
     :PLN_STV_HeuristicModusPonens,
     sem_model(:Q, :Formula),
     GEOM_FACTOR;
-    operators = [:stv_forward_map, :stv_backward_demand, :message_update,
-                 :boundary_refresh, :cache_lookup],
-    effects   = [ReadEffect(DEFAULT_SPACE), AppendEffect(DEFAULT_SPACE)],
-    laws      = [:monotone, :sink_free, :delta_safe, :stv_strength_revisable],
-    cache     = CacheContract(
-        [:schema_id, :factor_id, :subst_shape, :evidence_ver, :rule_ver,
-         :truth_family],
-        [:evidence_change, :rule_change, :truth_family_change]),
-    coercions = [
-        Coercion(:FactorToTrie,   GEOM_FACTOR, GEOM_TRIE,
-                 sem_model(:Q, :Formula)),
-        Coercion(:FactorToTensor, GEOM_FACTOR, GEOM_TENSOR_SPARSE,
-                 sem_model(:Q, :Formula)),
+    operators=[
+        :stv_forward_map,
+        :stv_backward_demand,
+        :message_update,
+        :boundary_refresh,
+        :cache_lookup
     ],
-    affinity  = Dict(:mm2 => :high, :mork => :high, :tensor => :medium))
+    effects=[ReadEffect(DEFAULT_SPACE), AppendEffect(DEFAULT_SPACE)],
+    laws=[:monotone, :sink_free, :delta_safe, :stv_strength_revisable],
+    cache=CacheContract(
+        [:schema_id, :factor_id, :subst_shape, :evidence_ver, :rule_ver, :truth_family],
+        [:evidence_change, :rule_change, :truth_family_change]
+    ),
+    coercions=[
+        Coercion(:FactorToTrie, GEOM_FACTOR, GEOM_TRIE, sem_model(:Q, :Formula)),
+        Coercion(:FactorToTensor, GEOM_FACTOR, GEOM_TENSOR_SPARSE, sem_model(:Q, :Formula))
+    ],
+    affinity=Dict(:mm2 => :high, :mork => :high, :tensor => :medium)
+)
 
 """
     pln_stv_lowering(t, region) → String
@@ -59,7 +63,7 @@ spec's `heuristic-mp-tv` forward map:
 The decay factor 0.9 matches the spec §10.1.2 default for HeuristicModusPonens
 (`adjoint-need` backward demand → tightened confidence).
 """
-function pln_stv_lowering(t::GeometryTemplate, region::AbstractString) :: String
+function pln_stv_lowering(t::GeometryTemplate, region::AbstractString)::String
     # Body is independent of the input region — the template emits its own
     # canonical rewrite rule.  Downstream callers add concrete (A_TV, ...)
     # atoms into the MORK space, then run space_metta_calculus! and observe

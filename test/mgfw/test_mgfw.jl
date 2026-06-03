@@ -58,27 +58,31 @@ end
     @test t.exactness_class == EXACT
     @test !isempty(t.coercions)
     @test t.local_concurrency isa LocalConcurrencyContract
-    @test t.distributed_exec  isa DistributedExecContract
+    @test t.distributed_exec isa DistributedExecContract
     @test !isempty(t.backend_affinity)
     @test is_valid_template(t)
 end
 
 @testset "GeometryTemplate — default_policy per geometry" begin
-    @test default_policy(GEOM_FACTOR)       == FIXED_POINT_MESSAGE_POLICY
-    @test default_policy(GEOM_TRIE)         == PREFIX_SHARD_POLICY
+    @test default_policy(GEOM_FACTOR) == FIXED_POINT_MESSAGE_POLICY
+    @test default_policy(GEOM_TRIE) == PREFIX_SHARD_POLICY
     @test default_policy(GEOM_TENSOR_DENSE) == PATCH_LOG_SHARD_POLICY
-    @test default_policy(GEOM_DAG)          == DEME_AGENT_POLICY
+    @test default_policy(GEOM_DAG) == DEME_AGENT_POLICY
 end
 
 @testset "GeometryTemplate — geometry_of" begin
-    @test geometry_of(TEMPLATE_HEURISTIC_MP)    == GEOM_FACTOR
+    @test geometry_of(TEMPLATE_HEURISTIC_MP) == GEOM_FACTOR
     @test geometry_of(TEMPLATE_EVIDENCE_CAPSULE) == GEOM_TRIE
 end
 
 @testset "GeometryTemplate — make_template with defaults" begin
-    t = make_template(:TestTemplate, sem_rel(:A,:B), GEOM_TRIE;
-                      operators=[:scan, :rank],
-                      laws=[:monotone])
+    t = make_template(
+        :TestTemplate,
+        sem_rel(:A, :B),
+        GEOM_TRIE;
+        operators=[:scan, :rank],
+        laws=[:monotone]
+    )
     @test t.name == :TestTemplate
     @test t.presentation == GEOM_TRIE
     @test is_valid_template(t)
@@ -127,12 +131,16 @@ end
 
 @testset "SchemaRegistry — Algorithm 4 authoring_workflow" begin
     reg = SchemaRegistry()
-    form = DSLForm(:define_factor_rule, Dict{Symbol,Any}(
-        :name => :TransitivityRule,
-        :premises => [:Ancestor_x_y, :Ancestor_y_z],
-        :conclusion => [:Ancestor_x_z],
-        :truth_family => :STV,
-        :forward_map => :transitive_stv))
+    form = DSLForm(
+        :define_factor_rule,
+        Dict{Symbol, Any}(
+            :name => :TransitivityRule,
+            :premises => [:Ancestor_x_y, :Ancestor_y_z],
+            :conclusion => [:Ancestor_x_z],
+            :truth_family => :STV,
+            :forward_map => :transitive_stv
+        )
+    )
 
     result = authoring_workflow(form, reg)
     @test result isa AuthoringResult
@@ -145,11 +153,12 @@ end
 @testset "SchemaRegistry — define_trie_miner" begin
     reg = SchemaRegistry()
     result = define_trie_miner(
-        name        = :MotifMiner,
-        seed_op     = :subtree_scan,
-        growth_op   = :prefix_proximity,
-        support_op  = :prefix_counter,
-        ranking     = :topk_heavy)
+        name=:MotifMiner,
+        seed_op=:subtree_scan,
+        growth_op=:prefix_proximity,
+        support_op=:prefix_counter,
+        ranking=:topk_heavy
+    )
     @test result.template.name == :MotifMiner
     @test geometry_of(result.template) == GEOM_TRIE
 end
@@ -179,11 +188,11 @@ end
     t = TEMPLATE_HEURISTIC_MP
     g = FactorGraph(t)
     # Add some nodes
-    g.var_nodes[:A]   = FactorNode(:A, :premise)
-    g.var_nodes[:B]   = FactorNode(:B, :conclusion)
+    g.var_nodes[:A] = FactorNode(:A, :premise)
+    g.var_nodes[:B] = FactorNode(:B, :conclusion)
     g.factor_nodes[:mp] = FactorNode(:mp, :factor; is_factor=true)
-    push!(g.edges, FactorEdge(:A,  :mp, :premise))
-    push!(g.edges, FactorEdge(:B,  :mp, :conclusion))
+    push!(g.edges, FactorEdge(:A, :mp, :premise))
+    push!(g.edges, FactorEdge(:B, :mp, :conclusion))
 
     region = specialize_exact(:B, g, 100)
     @test region isa SpecializedRegion
@@ -196,8 +205,8 @@ end
 @testset "FactorGeometry — Algorithm 2 specialize_approximate" begin
     t = TEMPLATE_HEURISTIC_MP
     g = FactorGraph(t)
-    g.var_nodes[:Q]  = FactorNode(:Q, :premise)
-    g.var_nodes[:R]  = FactorNode(:R, :conclusion)
+    g.var_nodes[:Q] = FactorNode(:Q, :premise)
+    g.var_nodes[:R] = FactorNode(:R, :conclusion)
     g.factor_nodes[:rule] = FactorNode(:rule, :factor; is_factor=true)
     push!(g.edges, FactorEdge(:Q, :rule, :premise))
     push!(g.edges, FactorEdge(:R, :rule, :conclusion))
@@ -230,9 +239,10 @@ end
         dag_intern!(d.store, :leaf)
     end
 
-    result = evolve_demes!(demes, (store, id) -> begin
-        haskey(store.nodes, id) ? 0.5 + rand() * 0.5 : 0.0
-    end; top_k=2)
+    result = evolve_demes!(demes,
+        (store, id) -> begin
+            haskey(store.nodes, id) ? 0.5 + rand() * 0.5 : 0.0
+        end; top_k=2)
 
     @test result isa DemeEvolutionResult
     @test length(result.updated_demes) == 3
@@ -242,7 +252,9 @@ end
 
 @testset "TrieDAGGeometry — trie mining 3 stages" begin
     t = TEMPLATE_EVIDENCE_CAPSULE
-    atoms = parse_program("(parent alice bob)\n(parent bob carol)\n(parent alice carol)\n(sibling alice dave)")
+    atoms = parse_program(
+        "(parent alice bob)\n(parent bob carol)\n(parent alice carol)\n(sibling alice dave)"
+    )
 
     # Stage 1: seed
     trie = PatternTrie(t; k=5)
@@ -264,7 +276,7 @@ end
 end
 
 @testset "TrieDAGGeometry — run_trie_miner end-to-end" begin
-    t    = TEMPLATE_EVIDENCE_CAPSULE
+    t = TEMPLATE_EVIDENCE_CAPSULE
     data = parse_program("(a x) (a y) (b x) (a z) (b y)")
     top_k = run_trie_miner(t, data; k=3, max_depth=2)
     @test !isempty(top_k)
@@ -279,8 +291,8 @@ end
 @testset "MGCompiler — backend_neutral_optimize (ADR-055 semiring-geometry)" begin
     # Use canonical valid templates (HEURISTIC_MP=FACTOR, EVIDENCE_CAPSULE=TRIE, CAUSAL_DAG=DAG)
     t_factor = TEMPLATE_HEURISTIC_MP       # GEOM_FACTOR, rank 2
-    t_trie   = TEMPLATE_EVIDENCE_CAPSULE   # GEOM_TRIE,   rank 0
-    t_dag    = TEMPLATE_CAUSAL_DAG         # GEOM_DAG,    rank 1
+    t_trie = TEMPLATE_EVIDENCE_CAPSULE   # GEOM_TRIE,   rank 0
+    t_dag = TEMPLATE_CAUSAL_DAG         # GEOM_DAG,    rank 1
 
     # All three should be valid
     @test is_valid_template(t_factor)
@@ -289,13 +301,13 @@ end
 
     # Pass 3: semiring rank — TRIE(0) < DAG(1) < FACTOR(2)
     result = backend_neutral_optimize([t_factor, t_dag, t_trie], MORKStatistics())
-    geoms  = geometry_of.(result)
+    geoms = geometry_of.(result)
     @test geoms[1] == GEOM_TRIE    # rank 0: Boolean/MaxPlus — reachability
     @test geoms[2] == GEOM_DAG     # rank 1: MinPlus — shortest paths
     @test geoms[3] == GEOM_FACTOR  # rank 2: SumProduct — counting/inference
 
     # Pass 4: cost proxy with stats — trie still wins (log n < n)
-    stats   = MORKStatistics(Dict{String,Int}(), 5000)  # immutable struct
+    stats = MORKStatistics(Dict{String, Int}(), 5000)  # immutable struct
     result2 = backend_neutral_optimize([t_factor, t_trie], stats)
     @test geometry_of(result2[1]) == GEOM_TRIE
 
@@ -303,15 +315,16 @@ end
     @test all(is_valid_template, result)
 
     # Empty input guard
-    @test backend_neutral_optimize(GeometryTemplate[], MORKStatistics()) == GeometryTemplate[]
+    @test backend_neutral_optimize(GeometryTemplate[], MORKStatistics()) ==
+        GeometryTemplate[]
 end
 
 @testset "MGCompiler — affinity_analysis" begin
     templates = [TEMPLATE_HEURISTIC_MP, TEMPLATE_EVIDENCE_CAPSULE]
-    profile   = affinity_analysis(templates)
+    profile = affinity_analysis(templates)
     @test profile isa BackendProfile
     # Factor + Trie templates → MM2 and MORK should have some affinity
-    @test profile.mm2  != NONE
+    @test profile.mm2 != NONE
     @test profile.mork != NONE
 end
 
@@ -324,7 +337,7 @@ end
 end
 
 @testset "MGCompiler — Algorithm 5 mg_compile" begin
-    reg  = SchemaRegistry()
+    reg = SchemaRegistry()
     register!(reg, TEMPLATE_HEURISTIC_MP)
     prog = raw"(exec 0 (, (edge $x $y) (edge $y $z)) (, (path $x $z)))"
 
@@ -337,7 +350,7 @@ end
 end
 
 @testset "MGCompiler — build_geodesic_bgc_composite" begin
-    reg  = SchemaRegistry()
+    reg = SchemaRegistry()
     composite = build_geodesic_bgc_composite(reg)
     @test composite.name == :GeodesicBGC_Composite
     @test composite.presentation == GEOM_FACTOR
@@ -346,8 +359,8 @@ end
 end
 
 @testset "MGCompiler — mg_run! end-to-end" begin
-    reg  = SchemaRegistry()
-    s    = new_space()
+    reg = SchemaRegistry()
+    s = new_space()
     space_add_all_sexpr!(s, "(edge 0 1) (edge 1 2)")
     prog = raw"(exec 0 (, (edge $x $y)) (, (node $x)))"
 
@@ -376,14 +389,14 @@ end
     # emits geometry-specific tags. Fix: geometry-aware classifier.
     # All four geometries should classify as a non-default EffectKind now.
     factor_t = make_template(:f_test, sem_model(:Q, :Formula), GEOM_FACTOR)
-    trie_t   = make_template(:t_test, sem_codec(:Set), GEOM_TRIE)
-    dag_t    = make_template(:d_test, sem_prog(:Sig, :T), GEOM_DAG)
+    trie_t = make_template(:t_test, sem_codec(:Set), GEOM_TRIE)
+    dag_t = make_template(:d_test, sem_prog(:Sig, :T), GEOM_DAG)
     tensor_t = make_template(:x_test, sem_rel(:A, :B), GEOM_TENSOR_SPARSE)
     # Factor + Trie are append-like (commutative under their tags)
     @test MorkSupercompiler._template_effect_kind(factor_t) == EFF_APPEND
-    @test MorkSupercompiler._template_effect_kind(trie_t)   == EFF_APPEND
+    @test MorkSupercompiler._template_effect_kind(trie_t) == EFF_APPEND
     # DAG + Tensor require write-confluence/patch-replay
-    @test MorkSupercompiler._template_effect_kind(dag_t)    == EFF_WRITE
+    @test MorkSupercompiler._template_effect_kind(dag_t) == EFF_WRITE
     @test MorkSupercompiler._template_effect_kind(tensor_t) == EFF_WRITE
 end
 
@@ -396,14 +409,14 @@ end
     @test result isa CompilationResult
     # Runtime metadata annotations must be present in the residual
     @test occursin("mgfw:templates", result.residual_code)
-    @test occursin("mgfw:backend",   result.residual_code)
+    @test occursin("mgfw:backend", result.residual_code)
 end
 
 @testset "MVP demo 1: PLN STV factor template registered + lowering wired" begin
     # §15.4 demo 2: register the PLN STV HeuristicModusPonens template; verify
     # its lowering emits a residual that contains the STV-MP rewrite skeleton.
     @test haskey(GLOBAL_REGISTRY.templates, :PLN_STV_HeuristicModusPonens)
-    t  = GLOBAL_REGISTRY.templates[:PLN_STV_HeuristicModusPonens]
+    t = GLOBAL_REGISTRY.templates[:PLN_STV_HeuristicModusPonens]
     @test t.presentation == GEOM_FACTOR
     @test :stv_strength_revisable in t.laws
     fn = get_lowering(:PLN_STV_HeuristicModusPonens)
@@ -418,7 +431,7 @@ end
     # §15.4 demo 3: register the FactorGraphMotifMiner trie template; verify
     # its lowering emits the 3-stage seed→grow→count miner skeleton.
     @test haskey(GLOBAL_REGISTRY.templates, :FactorGraphMotifMiner)
-    t  = GLOBAL_REGISTRY.templates[:FactorGraphMotifMiner]
+    t = GLOBAL_REGISTRY.templates[:FactorGraphMotifMiner]
     @test t.presentation == GEOM_TRIE
     @test :evidence_mass == t.noether_charge
     @test :counter_associative in t.laws
@@ -441,9 +454,9 @@ end
     @test haskey(GLOBAL_REGISTRY.templates, :GeodesicBGC_Composite)
     t = GLOBAL_REGISTRY.templates[:GeodesicBGC_Composite]
     @test :monotone_priority in t.laws
-    @test :anytime_splice    in t.laws
+    @test :anytime_splice in t.laws
     @test :evidence_conserved in t.laws
-    @test get(t.backend_affinity, :mm2,  :low) == :high
+    @test get(t.backend_affinity, :mm2, :low) == :high
     @test get(t.backend_affinity, :mork, :low) == :high
 
     fn = get_lowering(:GeodesicBGC_Composite)
@@ -473,10 +486,10 @@ end
     # The lowering must encode the SAME formula structure (text-level
     # check — full execution-vs-reference diff requires the trie-geometry
     # runtime, queued separately).
-    t  = GLOBAL_REGISTRY.templates[:PLN_STV_HeuristicModusPonens]
+    t = GLOBAL_REGISTRY.templates[:PLN_STV_HeuristicModusPonens]
     fn = get_lowering(:PLN_STV_HeuristicModusPonens)
     residual = fn(t, "")
-    @test occursin("(* \$As \$Is)",          residual)    # strength: As * Is
+    @test occursin("(* \$As \$Is)", residual)    # strength: As * Is
     @test occursin("(* (min \$Ac \$Ic) 0.9)", residual)    # confidence: min * 0.9
 end
 
@@ -499,7 +512,7 @@ end
     # MORK execution comparison against the reference is queued; for now
     # we verify the lowering emits all three stages (so the trie miner
     # downstream consumer KNOWS what to wire).
-    t  = GLOBAL_REGISTRY.templates[:FactorGraphMotifMiner]
+    t = GLOBAL_REGISTRY.templates[:FactorGraphMotifMiner]
     fn = get_lowering(:FactorGraphMotifMiner)
     residual = fn(t, "")
     @test occursin("motif-stage 1", residual)
@@ -514,7 +527,7 @@ end
     # (motif-count X 1) atoms for each distinct symbol. This is the first
     # genuine framework round-trip — previously every demo test was
     # structural-only (read the lowering string).
-    t  = GLOBAL_REGISTRY.templates[:FactorGraphMotifMiner]
+    t = GLOBAL_REGISTRY.templates[:FactorGraphMotifMiner]
     fn = get_lowering(:FactorGraphMotifMiner)
     rules = fn(t, "")
 
@@ -527,10 +540,10 @@ end
     space_add_all_sexpr!(s, rules)
     space_metta_calculus!(s, 100)
 
-    dump  = space_dump_all_sexpr(s)
+    dump = space_dump_all_sexpr(s)
     lines = split(dump, "\n"; keepempty=false)
     for sym in ("a", "b", "c", "d")
-        @test any(l -> occursin("(motif $sym)", l),         lines)
+        @test any(l -> occursin("(motif $sym)", l), lines)
         @test any(l -> occursin("(motif-count $sym 1)", l), lines)
     end
 
@@ -546,7 +559,7 @@ end
     # via MORK against stv_mp_reference) requires arithmetic primitive
     # wiring (`*`, `min`) through the supercompiler's prim registry —
     # queued for the PLN session.
-    t  = GLOBAL_REGISTRY.templates[:PLN_STV_HeuristicModusPonens]
+    t = GLOBAL_REGISTRY.templates[:PLN_STV_HeuristicModusPonens]
     fn = get_lowering(:PLN_STV_HeuristicModusPonens)
     rules = fn(t, "")
     s = new_space()
@@ -562,12 +575,7 @@ end
     #   S -> A -> B -> G          path: S→A→B→G  (length 3)
     #   S -> C -> G               path: S→C→G    (length 2)
     #   S -> D                    dead end (no path to G)
-    adj = Dict(
-        :S => [:A, :C, :D],
-        :A => [:B],
-        :B => [:G],
-        :C => [:G],
-    )
+    adj = Dict(:S => [:A, :C, :D], :A => [:B], :B => [:G], :C => [:G])
 
     f = bgc_forward_f(adj, :S, 5)
     g = bgc_backward_g(adj, :G, 5)
