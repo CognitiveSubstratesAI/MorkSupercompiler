@@ -1,20 +1,34 @@
 using Test
 using MorkSupercompiler
-using Aqua
+
+# Aqua is a test-only [extras] dep: present under Pkg.test/CI, but NOT in a warm
+# `--project=.` REPL (the sanctioned iteration path — `julia --project=. tools/repl.jl`).
+# Load it optionally so the suite runs BOTH ways; the Aqua quality testset runs only
+# when Aqua is loadable. (A hard `using Aqua` here silently broke warm-REPL runs.)
+const _HAS_AQUA = try
+    @eval using Aqua
+    true
+catch
+    false
+end
 
 @testset "MorkSupercompiler" begin
 
-    @testset "Aqua quality" begin
-        # deps_compat check_extras=false: [extras] are dev/test tools; runtime [deps]
-        # carry [compat] (MORK/PathMap/HPC/MORKTensorNetworks dev-linked via Manifest).
-        # unbound_args=false / piracies=false: dynamic MeTTa-style dispatch + Base-type
-        # method extensions on substrate types flagged here are intentional.
-        Aqua.test_all(
-            MorkSupercompiler;
-            deps_compat = (check_extras = false,),
-            unbound_args = false,
-            piracies = false,
-        )
+    if _HAS_AQUA
+        @testset "Aqua quality" begin
+            # deps_compat check_extras=false: [extras] are dev/test tools; runtime [deps]
+            # carry [compat] (MORK/PathMap/HPC/MORKTensorNetworks dev-linked via Manifest).
+            # unbound_args=false / piracies=false: dynamic MeTTa-style dispatch + Base-type
+            # method extensions on substrate types flagged here are intentional.
+            Aqua.test_all(
+                MorkSupercompiler;
+                deps_compat = (check_extras = false,),
+                unbound_args = false,
+                piracies = false,
+            )
+        end
+    else
+        @info "Aqua not loadable (warm REPL --project=.) — Aqua quality runs under Pkg.test/CI"
     end
 
     # ── Frontend ──────────────────────────────────────────────────────────────
