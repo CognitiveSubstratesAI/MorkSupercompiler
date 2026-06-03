@@ -27,6 +27,11 @@ using MorkSupercompiler
     # Single candidate always wins
     single = tournament_with_pbox([pop[1]], 1)
     @test single.individual_id == 1
+
+    # size < count exercises the randperm subsample branch — threw UndefVarError
+    # (`randperm` not imported) before J-1; the default-size path above never hit it.
+    sub = tournament_with_pbox(pop, 1)
+    @test sub.individual_id in (1, 2, 3)
 end
 
 # §5.4 Heritability formula — offspring_fitness_pbox

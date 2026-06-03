@@ -1,7 +1,21 @@
 using Test
 using MorkSupercompiler
+using Aqua
 
 @testset "MorkSupercompiler" begin
+
+    @testset "Aqua quality" begin
+        # deps_compat check_extras=false: [extras] are dev/test tools; runtime [deps]
+        # carry [compat] (MORK/PathMap/HPC/MORKTensorNetworks dev-linked via Manifest).
+        # unbound_args=false / piracies=false: dynamic MeTTa-style dispatch + Base-type
+        # method extensions on substrate types flagged here are intentional.
+        Aqua.test_all(
+            MorkSupercompiler;
+            deps_compat = (check_extras = false,),
+            unbound_args = false,
+            piracies = false,
+        )
+    end
 
     # ── Frontend ──────────────────────────────────────────────────────────────
     include("frontend/test_sexpr.jl")

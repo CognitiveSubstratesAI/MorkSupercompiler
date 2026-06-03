@@ -15,6 +15,8 @@ This file adds the missing pieces: Algorithm 6 (TournamentWithPBox) + §5.4
 heritability + §5.6 convergence. No duplication — each file owns its algorithms.
 """
 
+using Random: randperm   # tournament_with_pbox subsamples candidates when size < count
+
 const MONTE_CARLO_TRIALS = 100   # §5.3: MC trials for tournament selection
 const CONVERGENCE_THETA = 0.5   # §5.6: overlap threshold → converged
 

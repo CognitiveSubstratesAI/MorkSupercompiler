@@ -4,26 +4,29 @@ version = "0.1.0"
 authors = ["PRIMUS Team"]
 
 [deps]
-Aqua = "4c88cf16-eb10-579e-8560-4a9242c79595"
 HPC = "b1c2d3e4-f567-8901-abcd-ef0123456789"
-JET = "c3a54625-cd67-489e-a8e7-0a5a0ff4e31b"
 MORK = "162375cb-4023-4ef9-895b-22c0041d5c13"
 MORKTensorNetworks = "e1f2a3b4-c5d6-7890-abcd-ef1234567890"
 MPI = "da04e1cc-30fd-572f-bb4f-1f8673147195"
 PathMap = "a8b3d4e5-f012-4567-89ab-cdef01234567"
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 
 [compat]
 Aqua = "0.8.15"
+HPC = "0.1"
 JET = "0.11.3"
 MORK = "0.1"
 MORKTensorNetworks = "0.1"
 MPI = "0.20.26"
 PathMap = "0.3"
+Random = "1.11"
 julia = "1.12"
 
 [extras]
+Aqua = "4c88cf16-eb10-579e-8560-4a9242c79595"
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
+JET = "c3a54625-cd67-489e-a8e7-0a5a0ff4e31b"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
-test = ["Test"]
+test = ["Test", "Aqua"]

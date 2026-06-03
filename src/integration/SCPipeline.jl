@@ -21,7 +21,8 @@ Pipeline stages (all optional, controlled via SCOptions):
   6. EXECUTE   — space_add_all_sexpr! + space_metta_calculus!
 """
 
-using MORK: Space, new_space, space_add_all_sexpr!, space_metta_calculus!, space_val_count
+using MORK: Space, new_space, space_add_all_sexpr!, space_metta_calculus!, space_val_count,
+    space_remove_all_sexpr!, space_dump_all_sexpr   # used in _cleanup_sc_tmp!/export (A-1)
 
 # ── Pipeline options ──────────────────────────────────────────────────────────
 

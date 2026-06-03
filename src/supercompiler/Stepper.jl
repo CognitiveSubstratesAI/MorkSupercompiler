@@ -312,6 +312,9 @@ function _node_effects(node::MCoreNode)::Vector{Effect}
     mask & 0x01 != 0 && push!(out, ReadEffect(DEFAULT_SPACE))
     mask & 0x02 != 0 && push!(out, WriteEffect(DEFAULT_SPACE))
     mask & 0x04 != 0 && push!(out, AppendEffect(DEFAULT_SPACE))
+    mask & 0x08 != 0 && push!(out, CreateEffect(DEFAULT_SPACE))   # was omitted — diverged
+    # from CanonicalKeys._effectset_to_effects (6-bit). Latent (no node emits Create
+    # today), aligned defensively so commutativity gating sees Create like fold-subsumption.
     mask & 0x10 != 0 && push!(out, DeleteEffect(DEFAULT_SPACE))
     mask & 0x20 != 0 && push!(out, ObserveEffect(DEFAULT_SPACE))
     out
