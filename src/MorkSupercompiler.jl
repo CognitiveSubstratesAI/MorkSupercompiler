@@ -236,7 +236,7 @@ export estimate_cardinality, prefix_sample_count
 export SNode, SAtom, SVar, SList
 export parse_program, parse_sexpr, sprint_sexpr, sprint_program
 export plan_join_order, plan_join_order_static, plan_report
-export reorder_program_static, reorder_program_dynamic
+export reorder_program_static
 export source_order_report
 export JoinNode, build_join_nodes, build_join_nodes_dynamic
 export effects_commute, EffectKind, EFF_PURE, EFF_READ, EFF_APPEND, EFF_WRITE, EFF_OBSERVE

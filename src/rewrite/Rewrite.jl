@@ -37,22 +37,6 @@ function reorder_conjunction_static(conj::SList)::SList
     SList([head; sources[perm]])
 end
 
-"""
-    reorder_conjunction_dynamic(btm, conj::SList) -> SList
-
-Return a new `(, ...)` list sorted by dynamic_count.
-"""
-function reorder_conjunction_dynamic(btm, conj::SList)::SList
-    items = conj.items
-    head = items[1]
-    sources = items[2:end]
-    length(sources) <= 1 && return conj
-
-    counts = [dynamic_count(btm, s) for s in sources]
-    perm = sortperm(counts; alg=MergeSort)
-    SList([head; sources[perm]])
-end
-
 # ── Atom-level rewriting ──────────────────────────────────────────────────────
 
 """
@@ -70,18 +54,6 @@ function reorder_atom_static(node::SNode)::SNode
     SList([items[1], new_conj, items[3:end]...])
 end
 
-"""
-    reorder_atom_dynamic(btm, node::SNode) -> SNode
-"""
-function reorder_atom_dynamic(btm, node::SNode)::SNode
-    node isa SList || return node
-    items = (node::SList).items
-    length(items) < 3 && return node
-    is_conjunction(items[2]) || return node
-    new_conj = reorder_conjunction_dynamic(btm, items[2]::SList)
-    SList([items[1], new_conj, items[3:end]...])
-end
-
 # ── Program-level rewriting ───────────────────────────────────────────────────
 
 """
@@ -92,19 +64,6 @@ Reorder all conjunction lists in `program` using the static heuristic.
 function reorder_program_static(program::AbstractString)::String
     nodes = parse_program(program)
     sprint_program(SNode[reorder_atom_static(n) for n in nodes])
-end
-
-"""
-    reorder_program_dynamic(btm, program::AbstractString) -> String
-
-Reorder all conjunction lists in `program` using dynamic btm-prefix cardinality.
-`btm` is the `PathMap{UnitVal}` (i.e., `space.btm`) populated with the
-*background* atoms (facts) but NOT yet containing the exec/rule atoms to
-be reordered.
-"""
-function reorder_program_dynamic(btm, program::AbstractString)::String
-    nodes = parse_program(program)
-    sprint_program(SNode[reorder_atom_dynamic(btm, n) for n in nodes])
 end
 
 """
@@ -136,7 +95,7 @@ function source_order_report(program::AbstractString)::String
     String(take!(io))
 end
 
-export reorder_conjunction_static, reorder_conjunction_dynamic
-export reorder_atom_static, reorder_atom_dynamic
-export reorder_program_static, reorder_program_dynamic
+export reorder_conjunction_static
+export reorder_atom_static
+export reorder_program_static
 export source_order_report
