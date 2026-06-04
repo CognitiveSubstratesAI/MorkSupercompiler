@@ -124,8 +124,31 @@ end
 
     k1 = canonical_key(g, q1, 0)
     k2 = canonical_key(g, q2, 0)
-    # Bonus: confirm the keys actually carry kb_sig predicates (proves the
-    # path no longer silently returns empty).
+    # KB-sig path is live (non-empty) — the pre-fix NULL_NODE crash + Con.fields bug
+    # made this always empty, so any assertion here was trivially unreachable.
     @test !isempty(k1.kb_sig.predicates)
     @test !isempty(k2.kb_sig.predicates)
+
+    # The critical assertion: subsumes must enforce the KB rule, not just liveness.
+    # k1 queries (foo a) — fixed-arg mask {1}. k2 queries (foo a b) — mask {1,2}.
+    # Rule: k1 subsumes k2 iff for every pred in k2, k1 has the same pred with
+    # mask1 ⊆ mask2 ("k1 is at least as general"). mask{1} ⊆ mask{1,2} → k1 ⊇ k2.
+    @test subsumes(k1, k2)    # k1 (mask{1}) subsumes k2 (mask{1,2})
+    @test !subsumes(k2, k1)   # k2 (mask{1,2}) does NOT subsume k1 (mask{1}): mask{1,2} ⊄ mask{1}
+
+    # Disjoint predicates: neither subsumes the other.
+    sym_c = add_sym!(g, Sym(:c))
+    pat3 = add_con!(g, Con(:bar, [sym_c]))       # different predicate :bar
+    q3 = add_prim!(g, Prim(:kb_query, [pat3], EffectSet(0x01)))
+    k3 = canonical_key(g, q3, 0)
+    @test !subsumes(k1, k3)   # k1 has :foo, k3 has :bar → k3 pred not in k1 → no subsume
+    @test !subsumes(k3, k1)
+
+    # FoldTable: a more-general key already in the table blocks re-registration.
+    # This is the actual fold-firing test — without the KB fix this never triggered
+    # because kb_sig was always empty (every key looked identical at the KB level).
+    ft = FoldTable()
+    record!(ft, k1, NodeID(1))
+    @test can_fold(ft, k2)    # k2 can fold back to k1 (k1 subsumes k2)
+    @test !can_fold(ft, k3)   # disjoint predicate — no fold available
 end
