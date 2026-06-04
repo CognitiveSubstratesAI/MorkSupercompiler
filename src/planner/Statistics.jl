@@ -319,6 +319,14 @@ end
 
 # ── Algorithm 2 — EstimatePatternCardinality (§5.1.2) ─────────────────────────
 
+# Fallback cardinality when no histogram entry exists for a (predicate, arity) shape:
+# assume it represents 1/CARDINALITY_FALLBACK_DIVISOR of total atoms. The spec leaves
+# this fallback abstract (§5.1.2 "use predicate_counts or a default"); 4 is a
+# conservative prior — less selective than most real predicates, so it errs toward
+# caution (overestimates cost, picks safer join order rather than under-estimating
+# selectivity and picking a bad one).
+const CARDINALITY_FALLBACK_DIVISOR = 4
+
 """
     estimate_cardinality(src::SNode, stats::MORKStatistics) -> Int
 
@@ -344,7 +352,7 @@ function estimate_cardinality(src::SNode, stats::MORKStatistics)::Int
     base = get(
         stats.pattern_shape_histogram,
         shape_key,
-        get(predicate_counts(stats), pred, total ÷ 4)
+        get(predicate_counts(stats), pred, total ÷ CARDINALITY_FALLBACK_DIVISOR)
     )
 
     # Apply argument_selectivity per constrained position (Algorithm 2 lines 7-10)

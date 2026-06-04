@@ -132,6 +132,13 @@ end
 
 # ── Algorithm 6 — EffectAwarePlanning (§5.3.1) ────────────────────────────────
 
+# Semi-join penalty per unbound dependency: cost *= UNBOUND_DEP_PENALTY ^ n_unbound.
+# This is a concretization of the spec's abstract `cost_based_join_order` (§5.3.1) —
+# the 4× figure reflects empirical observation that one unbound join variable typically
+# multiplies required I/O by ~4× (similar to the standard 4× rule-of-thumb in
+# relational cost models). Tune here if profiling shows a different breakeven.
+const UNBOUND_DEP_PENALTY = 4
+
 """
     plan_join_order(nodes::Vector{JoinNode}) -> Vector{Int}
 
@@ -166,8 +173,7 @@ function plan_join_order(nodes::Vector{JoinNode})::Vector{Int}
             n_unbound_deps = length(setdiff(node.vars_in, bound))
             cost = node.cardinality
             if n_unbound_deps > 0
-                # Semi-join penalty: multiply cost by 4 per unbound dependency
-                cost = cost * (4 ^ n_unbound_deps)
+                cost = cost * (UNBOUND_DEP_PENALTY ^ n_unbound_deps)
             end
             if cost < best_cost
                 best_cost = cost

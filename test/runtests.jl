@@ -22,9 +22,9 @@ end
             # method extensions on substrate types flagged here are intentional.
             Aqua.test_all(
                 MorkSupercompiler;
-                deps_compat = (check_extras = false,),
-                unbound_args = false,
-                piracies = false,
+                deps_compat=(check_extras=false,),
+                unbound_args=false,
+                piracies=false
             )
         end
     else
