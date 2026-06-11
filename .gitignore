@@ -10,3 +10,14 @@
 
 # ⚠️  NEVER commit files containing hardcoded local paths.
 # Install hook: git config core.hooksPath .githooks
+# Secrets / credentials — never commit
+.env
+.env.*
+*.key
+*.pem
+*.p12
+*.pfx
+.netrc
+secrets.*
+*.secret
+credentials.json
