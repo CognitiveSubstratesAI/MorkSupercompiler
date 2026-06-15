@@ -12,10 +12,11 @@
 # PLNBook inference oracle — same strength, simplified confidence. Inference uses PLNBook; the
 # demand CONTROLLER uses this table. (Verified against the §3.4 maps, NOT PLNBook.)
 #
-# Part 1 (this file): §3.2-§3.3 framework + the 4 CLOSED-FORM sensitivities (HMP eqs 4-5,
-# conjunction 22-23, disjunction 25-26, negation=1) + the Eq-1 demand adjoint. The 4 rows-only
-# rules (deduction/inversion/induction/abduction — ∞-norm assembled from strength partials, eqs
-# 8-20) and the demand field over `_backward_demand_expansion` are part 2/3.
+# This file (parts 1+2+2b): §3.2-§3.3 framework + Eq-1 demand adjoint; the 4 CLOSED-FORM
+# sensitivities (HMP eqs 4-5, conjunction 22-23, disjunction 25-26, negation=1); and all 4
+# ROWS-ONLY ∞-norms — deduction/inversion (eqs 6-13) and induction/abduction (eqs 14-16, via
+# chain-rule composition). Part 3 (remaining) wires the demand field over
+# `_backward_demand_expansion` (dem/need/expand=dem·need, max-join), retiring stv_backward_demand.
 
 # §3.2 — information need (confidence deficit) of a premise.
 need_stv(c::Real) = 1.0 - c
@@ -108,6 +109,72 @@ function sens_deduction(sB, cB, sC, cC, sAB, cAB, sBC, cBC; w_ded::Real=1.0)
     )
 end
 
+# ── §3.4 rows-only sensitivities (induction, abduction) — inversion∘deduction. ────────────
+# eqs (14),(15) give forward STRENGTH only ("same recipe applies", no partials). Both ARE
+# exact inversion-then-deduction compositions (verified: eq 14 = deduction with sAB=sBA·sB/sA;
+# eq 15 = deduction with sBC=sCB·sC/sB), so the strength partials come from the CHAIN RULE
+# through the inversion intermediate — and are FD-verified against the closed strength formula
+# (a real composition-vs-closed-form cross-check, not FD-vs-FD). Capped at the singularities.
+
+# Deduction strength partials at (sB,sC,sAB,sBC): (∂D/∂sB, ∂D/∂sC, ∂D/∂sAB, ∂D/∂sBC), eqs 8-11.
+function _ded_strength_partials(sB, sC, sAB, sBC)
+    d = 1.0 - sB
+    dB = -(1.0 - sAB) * sBC / d + (1.0 - sAB) * (sC - sB * sBC) / d^2     # eq 8
+    dC = (1.0 - sAB) / d                                                 # eq 9
+    dAB = sBC - (sC - sB * sBC) / d                                      # eq 10
+    dBC = sAB - (1.0 - sAB) * sB / d                                     # eq 11
+    return (dB, dC, dAB, dBC)
+end
+
+"""
+    sens_induction(sA,cA,sB,cB,sC,cC,sBA,cBA,sBC,cBC; w=1.0) -> (sens_A,sens_B,sens_C,sens_BA,sens_BC)
+
+Induction = inversion(→ sAB = sBA·sB/sA) then deduction (eq 14). Strength partials via chain
+rule (sB enters via sAB AND directly). **SPEC GAP**: eq 14 gives no induction confidence;
+c_AC = cBA·cBC·cB·cC·w mirrors abduction eq 16 (flagged assumption). Singular at sA→0, sB→1.
+"""
+function sens_induction(sA, cA, sB, cB, sC, cC, sBA, cBA, sBC, cBC; w::Real=1.0)
+    sAB = sBA * sB / sA                                   # inversion intermediate
+    dB, dC, dAB, dBC = _ded_strength_partials(sB, sC, sAB, sBC)
+    iA, iB, iBA = -sBA * sB / sA^2, sBA / sA, sB / sA     # ∂sAB/∂(sA,sB,sBA), eq 13
+    psA, psBA = dAB * iA, dAB * iBA                       # A, BA enter only via sAB
+    psB = dAB * iB + dB                                   # B enters via sAB AND directly
+    psC, psBC = dC, dBC
+    pcB, pcC = cBA * cBC * cC * w, cBA * cBC * cB * w     # c = cBA·cBC·cB·cC·w (cA absent)
+    pcBA, pcBC = cBC * cB * cC * w, cBA * cB * cC * w
+    return (
+        cap_sens(psA),                                   # cA absent ⇒ block = |psA|
+        max(cap_sens(psB), cap_sens(pcB)),
+        max(cap_sens(psC), cap_sens(pcC)),
+        max(cap_sens(psBA), cap_sens(pcBA)),
+        max(cap_sens(psBC), cap_sens(pcBC))
+    )
+end
+
+"""
+    sens_abduction(sA,cA,sB,cB,sC,cC,sAB,cAB,sCB,cCB; w=1.0) -> (sens_A,sens_B,sens_C,sens_AB,sens_CB)
+
+Abduction = inversion(→ sBC = sCB·sC/sB) then deduction (eq 15). sA does NOT appear (sens_A=0).
+Confidence c_AC = cAB·cCB·cB·cC·w (spec eq 16). Singular at sB→0 (inversion) AND sB→1 (deduction).
+"""
+function sens_abduction(sA, cA, sB, cB, sC, cC, sAB, cAB, sCB, cCB; w::Real=1.0)
+    sBC = sCB * sC / sB                                   # inversion intermediate
+    dB, dC, dAB, dBC = _ded_strength_partials(sB, sC, sAB, sBC)
+    jB, jC, jCB = -sCB * sC / sB^2, sCB / sB, sC / sB     # ∂sBC/∂(sB,sC,sCB)
+    psB = dB + dBC * jB                                   # B enters directly AND via sBC
+    psC = dC + dBC * jC                                   # C enters directly AND via sBC
+    psAB, psCB = dAB, dBC * jCB
+    pcB, pcC = cAB * cCB * cC * w, cAB * cCB * cB * w     # c = cAB·cCB·cB·cC·w (cA absent)
+    pcAB, pcCB = cCB * cB * cC * w, cAB * cB * cC * w
+    return (
+        0.0,                                             # sA, cA both absent ⇒ premise A irrelevant
+        max(cap_sens(psB), cap_sens(pcB)),
+        max(cap_sens(psC), cap_sens(pcC)),
+        max(cap_sens(psAB), cap_sens(pcAB)),
+        max(cap_sens(psCB), cap_sens(pcCB))
+    )
+end
+
 export need_stv, sens_hmp, sens_conjunction, sens_disjunction, sens_negation
 export normalize_sens, demand_adjoint
-export SENS_CAP, sens_inversion, sens_deduction
+export SENS_CAP, sens_inversion, sens_deduction, sens_induction, sens_abduction

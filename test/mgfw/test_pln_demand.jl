@@ -136,3 +136,53 @@ end
         @test s[1] == SENS_CAP
     end
 end
+
+# Closed STRENGTH forms (eqs 14/15) + the product confidence — the INDEPENDENT path the
+# chain-rule sensitivities are FD-verified against (composition vs closed-form, not FD-vs-FD).
+function fwd_induction(sA, cA, sB, cB, sC, cC, sBA, cBA, sBC, cBC; w=1.0)                    # eq 14
+    s = sBA * sBC * sB / sA + (1.0 - sBA * sB / sA) * (sC - sB * sBC) / (1.0 - sB)
+    return (s, cBA * cBC * cB * cC * w)
+end
+function fwd_abduction(sA, cA, sB, cB, sC, cC, sAB, cAB, sCB, cCB; w=1.0)                    # eq 15
+    s = sAB * sCB * sC / sB + sC * (1.0 - sAB) * (1.0 - sCB) / (1.0 - sB)
+    return (s, cAB * cCB * cB * cC * w)
+end
+
+@testset "§3.4 induction/abduction — INTERIOR FD-agreement (chain rule vs closed-form)" begin
+    # Strength-dominated interior point so the FD check actually exercises the CHAIN RULE
+    # (not just the product confidence). Composition (sens_*) vs FD of the closed eq 14/15.
+    let p = [0.6, 0.8, 0.4, 0.85, 0.6, 0.9, 0.5, 0.85, 0.5, 0.8],
+        s = sens_induction(0.6, 0.8, 0.4, 0.85, 0.6, 0.9, 0.5, 0.85, 0.5, 0.8)
+
+        for i in 1:5
+            @test isapprox(
+                s[i], fd_block_infnorm((a...) -> fwd_induction(a...), p, i); atol=1e-3
+            )
+        end
+    end
+    let p = [0.6, 0.8, 0.4, 0.85, 0.6, 0.9, 0.5, 0.85, 0.5, 0.8],
+        s = sens_abduction(0.6, 0.8, 0.4, 0.85, 0.6, 0.9, 0.5, 0.85, 0.5, 0.8)
+
+        @test s[1] == 0.0   # sA absent from abduction ⇒ premise A irrelevant
+        for i in 2:5
+            @test isapprox(
+                s[i], fd_block_infnorm((a...) -> fwd_abduction(a...), p, i); atol=1e-3
+            )
+        end
+    end
+end
+
+@testset "§3.4 induction/abduction — BOUNDARY clamp (chosen value, FD-meaningless)" begin
+    # Induction sA→0 (inversion intermediate sAB=sBA·sB/sA): premise A's strength sens → ∞ ⇒ capped.
+    let s = sens_induction(1.0e-5, 0.8, 0.4, 0.85, 0.6, 0.9, 0.5, 0.85, 0.5, 0.8)
+        @test s[1] == SENS_CAP
+    end
+    # Abduction has TWO singular boundaries in sB (inversion sBC=sCB·sC/sB at sB→0; deduction
+    # 1/(1−sB) at sB→1). sens_B caps at both.
+    let s0 = sens_abduction(1.0e-5, 0.8, 1.0e-5, 0.85, 0.6, 0.9, 0.5, 0.85, 0.5, 0.8),
+        s1 = sens_abduction(0.6, 0.8, 1.0 - 1.0e-5, 0.85, 0.6, 0.9, 0.5, 0.85, 0.5, 0.8)
+
+        @test s0[2] == SENS_CAP   # sB → 0
+        @test s1[2] == SENS_CAP   # sB → 1
+    end
+end
