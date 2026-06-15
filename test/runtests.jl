@@ -70,6 +70,7 @@ end
     # ── Multi-Geometry Framework (Doc 3) ─────────────────────────────────────
     include("mgfw/test_mgfw.jl")
     include("mgfw/test_pln_reference.jl")   # PLN Layer-1 forward-map reference gate
+    include("mgfw/test_pln_demand.jl")      # PLN step 4 — §3.2-§3.4 demand sensitivity
 
     # ── Multi-Space (Stage 1 + Stage 2) ─────────────────────────────────────
     include("multispace/test_multispace.jl")

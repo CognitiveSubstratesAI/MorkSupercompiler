@@ -115,6 +115,7 @@ using MORKTensorNetworks:
 include("mgfw/GeometryTemplate.jl")
 include("mgfw/SchemaRegistry.jl")
 include("mgfw/FactorGeometry.jl")
+include("mgfw/PLNDemand.jl")
 include("mgfw/TrieDAGGeometry.jl")
 include("mgfw/MGCompiler.jl")
 
