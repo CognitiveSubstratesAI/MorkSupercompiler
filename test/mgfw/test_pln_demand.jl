@@ -300,6 +300,42 @@ end
     @test all(isapprox.(marg[:C], (0.8935, 0.456); atol=1e-4))   # the headline marginal Mammal(Lassie)
 end
 
+@testset "§3.4 forward maps — direct VALUE check (the maps, not just their Jacobians)" begin
+    # The FD sensitivity tests cross-check each map's DERIVATIVE; the HMP/deduction/inversion graph
+    # tests check three maps' VALUES. This pins the VALUE of ALL EIGHT directly — closing the gap
+    # that conjunction/disjunction/negation/induction/abduction had NO value check at all (a
+    # value-preserving-derivative error in fwd_disjunction would otherwise slip every green).
+    @test all(isapprox.(fwd_hmp(0.8, 0.9, 0.7, 0.85; pi_b=0.0), (0.56, 0.765); atol=1e-9))
+    @test all(isapprox.(fwd_conjunction(0.8, 0.9, 0.7, 0.85), (0.56, 0.985); atol=1e-9))      # c=1−(.1)(.15)
+    @test all(isapprox.(fwd_disjunction(0.8, 0.9, 0.7, 0.85), (0.94, 0.985); atol=1e-9))      # s=.8+.7−.56
+    @test all(isapprox.(fwd_negation(0.7, 0.85), (0.3, 0.85); atol=1e-9))
+    @test all(
+        isapprox.(
+            fwd_inversion(0.8, 0.9, 0.5, 0.85, 0.99, 0.80), (0.61875, 0.612); atol=1e-6
+        )
+    )
+    @test all(
+        isapprox.(
+            fwd_deduction(0.4, 0.8, 0.6, 0.85, 0.99, 0.80, 0.5, 0.85), (0.501667, 0.4624);
+            atol=1e-5
+        )
+    )
+    @test all(
+        isapprox.(
+            fwd_induction(0.6, 0.8, 0.4, 0.85, 0.6, 0.9, 0.5, 0.85, 0.5, 0.8),
+            (0.61111, 0.5202);
+            atol=1e-4
+        )
+    )
+    @test all(
+        isapprox.(
+            fwd_abduction(0.6, 0.8, 0.4, 0.85, 0.6, 0.9, 0.5, 0.85, 0.5, 0.8),
+            (0.625, 0.5202);
+            atol=1e-4
+        )
+    )
+end
+
 # ── Forward-inference CORRECTNESS close-out: the non-HMP rules through forward_supply on a real
 #    graph, with ADVERSARIAL inputs (clamp/transpose) + INTERMEDIATE assertions. Before this, only
 #    HMP (Mammal/Lassie) had an end-to-end forward test; the other 7 were dispatch-reachable but
