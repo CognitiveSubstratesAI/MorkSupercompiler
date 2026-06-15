@@ -299,3 +299,74 @@ end
     @test all(isapprox.(marg[:B], (0.9405, 0.76); atol=1e-4))    # intermediate Dog(Lassie)
     @test all(isapprox.(marg[:C], (0.8935, 0.456); atol=1e-4))   # the headline marginal Mammal(Lassie)
 end
+
+# ── Forward-inference CORRECTNESS close-out: the non-HMP rules through forward_supply on a real
+#    graph, with ADVERSARIAL inputs (clamp/transpose) + INTERMEDIATE assertions. Before this, only
+#    HMP (Mammal/Lassie) had an end-to-end forward test; the other 7 were dispatch-reachable but
+#    path-unverified — and forward_supply reads 4-5 premises through pbox_to_stv (HMP reads 2), so
+#    a 5-input round-trip/clamp bug would hide. See feedback_adversarial_test_inputs.
+
+@testset "forward_supply — deduction→HMP chain (clamp + scramble + intermediate)" begin
+    t = GLOBAL_REGISTRY.templates[:PLN_STV_HeuristicModusPonens]
+    g = FactorGraph(t)
+    B, C, AB, BC = (0.4, 0.8), (0.6, 0.85), (0.99, 0.80), (0.5, 0.85)   # AB CLAMPS (s=0.99,c=0.80)
+    XY = (0.9, 0.7)
+    for (n, v) in ((:B, B), (:C, C), (:AB, AB), (:BC, BC), (:XY, XY))
+        g.var_nodes[n] = FactorNode(n, :premise)
+        g.var_nodes[n].message = stv_to_pbox(v...)
+    end
+    g.var_nodes[:X] = FactorNode(:X, :conclusion)   # deduction conclusion = HMP premise (intermediate)
+    g.var_nodes[:Y] = FactorNode(:Y, :conclusion)   # query
+    g.factor_nodes[:f1] = FactorNode(:f1, :factor; is_factor=true, rule=:deduction)
+    g.factor_nodes[:f2] = FactorNode(:f2, :factor; is_factor=true, rule=:hmp)
+    # f1 deduction premise edges added SCRAMBLED — extraction must sort by role_label.
+    push!(g.edges, FactorEdge(:AB, :f1, :premise_3))
+    push!(g.edges, FactorEdge(:B, :f1, :premise_1))
+    push!(g.edges, FactorEdge(:X, :f1, :conclusion))
+    push!(g.edges, FactorEdge(:BC, :f1, :premise_4))
+    push!(g.edges, FactorEdge(:C, :f1, :premise_2))
+    push!(g.edges, FactorEdge(:X, :f2, :premise_1))
+    push!(g.edges, FactorEdge(:XY, :f2, :premise_2))
+    push!(g.edges, FactorEdge(:Y, :f2, :conclusion))
+
+    _, marg = forward_supply(:Y, g)
+
+    # HAND-COMPUTED with SEMANTIC assignment (B in sB slot, AB in sAB slot, …):
+    X = fwd_deduction(B..., C..., AB..., BC...)   # (0.501667, 0.4624)
+    Y = fwd_hmp(X..., XY...; pi_b=0.0)            # (0.45150, 0.32368)
+    @test all(isapprox.(marg[:X], X; atol=1e-6))   # INTERMEDIATE pinned (not just terminal)
+    @test all(isapprox.(marg[:Y], Y; atol=1e-6))   # final marginal
+    @test isapprox(marg[:X][1], 0.501667; atol=1e-5)   # explicit value (AB clamp recovered → 0.99)
+    # ASYMMETRY: deduction's term (B) and link (AB) slots are NOT interchangeable — swapping
+    # premise_1↔premise_3 gives a different conclusion, so a mis-extraction would break marg[:X].
+    @test !all(
+        isapprox.(
+            fwd_deduction(B..., C..., AB..., BC...), fwd_deduction(AB..., C..., B..., BC...)
+        )
+    )
+end
+
+@testset "forward_supply — inversion factor (clamp + scramble + asymmetric denominator)" begin
+    t = GLOBAL_REGISTRY.templates[:PLN_STV_HeuristicModusPonens]
+    g = FactorGraph(t)
+    A, Bv, BA = (0.8, 0.9), (0.5, 0.85), (0.99, 0.80)   # BA CLAMPS; sA in the denominator ⇒ asymmetric
+    for (n, v) in ((:A, A), (:Bv, Bv), (:BA, BA))
+        g.var_nodes[n] = FactorNode(n, :premise)
+        g.var_nodes[n].message = stv_to_pbox(v...)
+    end
+    g.var_nodes[:AB] = FactorNode(:AB, :conclusion)   # query
+    g.factor_nodes[:inv] = FactorNode(:inv, :factor; is_factor=true, rule=:inversion)
+    push!(g.edges, FactorEdge(:BA, :inv, :premise_3))   # scrambled
+    push!(g.edges, FactorEdge(:A, :inv, :premise_1))
+    push!(g.edges, FactorEdge(:AB, :inv, :conclusion))
+    push!(g.edges, FactorEdge(:Bv, :inv, :premise_2))
+
+    _, marg = forward_supply(:AB, g)
+    expected = fwd_inversion(A..., Bv..., BA...)   # (0.99·0.5/0.8, 0.9·0.85·0.80) = (0.61875, 0.612)
+    @test all(isapprox.(marg[:AB], expected; atol=1e-6))
+    @test isapprox(marg[:AB][1], 0.61875; atol=1e-6)   # BA clamp recovered → 0.99 in the numerator
+    # ASYMMETRY: sA is the denominator, sBA the numerator — swapping A↔BA changes the answer.
+    @test !all(
+        isapprox.(fwd_inversion(A..., Bv..., BA...), fwd_inversion(BA..., Bv..., A...))
+    )
+end
