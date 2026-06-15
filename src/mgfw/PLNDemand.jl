@@ -26,8 +26,9 @@ need_stv(c::Real) = 1.0 - c
 # §3.4 closed-form block sensitivities  sens_f(i) = ‖J_{f,i}‖_∞  (operator ∞-norm of the 2×2
 # block ∂(s_out,c_out)/∂(s_i,c_i)). Each returns the per-premise sensitivity tuple, in order.
 
-"Heuristic modus ponens (premise A, rule A→B), eqs (4),(5). `pi_b` = contextual default rate."
-sens_hmp(sA, cA, sAB, cAB; pi_b::Real=0.02) = (max(abs(sAB - pi_b), cAB), max(sA, cA))
+"HMP sensitivity (premise A, rule A→B), eqs (4),(5). `pi_b` = contextual default rate (0 = the
+§6 zero-default; MUST match `fwd_hmp`'s π_b for the same factor — §6 sens_{f2}(B)=0.95 needs π_b=0)."
+sens_hmp(sA, cA, sAB, cAB; pi_b::Real=0.0) = (max(abs(sAB - pi_b), cAB), max(sA, cA))
 
 "Conjunction (noisy-confidence), eqs (22),(23)."
 sens_conjunction(s1, c1, s2, c2) = (max(s2, 1.0 - c2), max(s1, 1.0 - c1))
@@ -234,13 +235,18 @@ end
 """
     pbox_to_stv(pb::PBox) -> (s, c)
 
-Recover an STV `(strength, confidence)` from a PBox: strength = interval-envelope midpoint,
-confidence = `pb.confidence`. Inverse of `stv_to_pbox`.
+Recover an STV `(strength, confidence)` from a PBox — the inverse of `stv_to_pbox`, which sets
+`[s−hw, s+hw]` with `hw=(1−c)/2` and CLAMPS to [0,1]. The midpoint is NOT a faithful inverse
+when an endpoint was clamped (e.g. s=0.99,c=0.80 → hi clamped to 1 → midpoint 0.945 ≠ 0.99). So
+recover `s` from the UNCLAMPED bound plus the half-width: `s = lo + hw` if lo>0, else `hi − hw`
+if hi<1, else the midpoint (both clamped ⇒ c→0, s≈0.5). Confidence is stored exactly.
 """
 function pbox_to_stv(pb::PBox)
-    lo = pb.intervals[1][1]
-    hi = pb.intervals[end][2]
-    return ((lo + hi) / 2.0, pb.confidence)
+    c = pb.confidence
+    hw = (1.0 - c) / 2.0
+    lo, hi = pb.intervals[1][1], pb.intervals[end][2]
+    s = lo > 0.0 ? lo + hw : (hi < 1.0 ? hi - hw : (lo + hi) / 2.0)
+    return (clamp(s, 0.0, 1.0), c)
 end
 
 """
@@ -293,7 +299,120 @@ function compute_demand_field(query::Symbol, graph::FactorGraph, budget::Int=100
     return (active, dem)
 end
 
+# ── §3.4 / §4.5 forward supply — the §3.4 forward maps + dispatch + Julia-direct supply ──────
+# DECISION (2026-06-15): forward INFERENCE runs on the §3.4 simplified-confidence maps (per the
+# spec — §4.5 + the §6 worked example use these; one coherent model with the §3.4 demand
+# controller). The lib/pln-book maps (FactorGeometry stv_* + PLNBook) are the lib/pln FAITHFULNESS
+# REFERENCE, NOT the runtime forward family. Each map computes a conclusion STV from premise STVs.
+# (Same maps the sensitivity gate FD-verifies against — single source.)
+
+fwd_hmp(sA, cA, sAB, cAB; pi_b=0.0) = (sA * sAB + pi_b * (1.0 - sA), cA * cAB)       # eq 2 (π_b=0 §6)
+fwd_conjunction(s1, c1, s2, c2) = (s1 * s2, 1.0 - (1.0 - c1) * (1.0 - c2))            # eq 21
+fwd_disjunction(s1, c1, s2, c2) = (s1 + s2 - s1 * s2, c1 + c2 - c1 * c2)              # eq 24
+fwd_negation(s, c) = (1.0 - s, c)                                                     # §3.4
+fwd_inversion(sA, cA, sB, cB, sBA, cBA; w=1.0) = (sBA * sB / sA, cA * cB * cBA * w)   # eq 6/12
+function fwd_deduction(sB, cB, sC, cC, sAB, cAB, sBC, cBC; w=1.0)                      # eq 6/7
+    return (sAB * sBC + (1.0 - sAB) * (sC - sB * sBC) / (1.0 - sB), cB * cC * cAB * cBC * w)
+end
+function fwd_induction(sA, cA, sB, cB, sC, cC, sBA, cBA, sBC, cBC; w=1.0)              # eq 14
+    s = sBA * sBC * sB / sA + (1.0 - sBA * sB / sA) * (sC - sB * sBC) / (1.0 - sB)
+    return (s, cBA * cBC * cB * cC * w)
+end
+function fwd_abduction(sA, cA, sB, cB, sC, cC, sAB, cAB, sCB, cCB; w=1.0)              # eq 15
+    s = sAB * sCB * sC / sB + sC * (1.0 - sAB) * (1.0 - sCB) / (1.0 - sB)
+    return (s, cAB * cCB * cB * cC * w)
+end
+
+"""
+    rule_forward(rule, premises; pi_b=0.0, w=1.0) -> (s, c)
+
+Dispatch a factor's tagged `rule` to its §3.4 forward map, unpacking `premises` (per-premise
+STVs in role order, same convention as `rule_sensitivity`) → the conclusion STV. `pi_b` defaults
+to 0 (the §6 "zero-default heuristic modus ponens"). Errors on :none/unknown.
+"""
+function rule_forward(
+    rule::Symbol, premises::AbstractVector{<:Tuple{Real, Real}}; pi_b::Real=0.0, w::Real=1.0
+)
+    if rule === :hmp
+        (sA, cA), (sAB, cAB) = premises
+        return fwd_hmp(sA, cA, sAB, cAB; pi_b=pi_b)
+    elseif rule === :conjunction
+        (s1, c1), (s2, c2) = premises
+        return fwd_conjunction(s1, c1, s2, c2)
+    elseif rule === :disjunction
+        (s1, c1), (s2, c2) = premises
+        return fwd_disjunction(s1, c1, s2, c2)
+    elseif rule === :negation
+        (s, c) = premises[1]
+        return fwd_negation(s, c)
+    elseif rule === :inversion
+        (sA, cA), (sB, cB), (sBA, cBA) = premises
+        return fwd_inversion(sA, cA, sB, cB, sBA, cBA; w=w)
+    elseif rule === :deduction
+        (sB, cB), (sC, cC), (sAB, cAB), (sBC, cBC) = premises
+        return fwd_deduction(sB, cB, sC, cC, sAB, cAB, sBC, cBC; w=w)
+    elseif rule === :induction
+        (sA, cA), (sB, cB), (sC, cC), (sBA, cBA), (sBC, cBC) = premises
+        return fwd_induction(sA, cA, sB, cB, sC, cC, sBA, cBA, sBC, cBC; w=w)
+    elseif rule === :abduction
+        (sA, cA), (sB, cB), (sC, cC), (sAB, cAB), (sCB, cCB) = premises
+        return fwd_abduction(sA, cA, sB, cB, sC, cC, sAB, cAB, sCB, cCB; w=w)
+    else
+        error("rule_forward: factor must name a PLN rule, got :$(rule)")
+    end
+end
+
+"""
+    forward_supply(query, graph, budget=1000; pi_b=0.0) -> (active, marginals::Dict{Symbol,(s,c)})
+
+§4.5 Algorithm 2 — forward supply on the active subgraph (Julia-direct, NOT routed through MORK's
+calculus). Restricts to `active = _backward_demand_expansion`, then fires factors premises→conclusion
+in topological order: a factor fires when all its premises are settled (a given leaf, or an
+already-computed conclusion), computing its conclusion STV via `rule_forward` and writing it back
+as the node's PBox message. Returns the per-node marginals; `marginals[query]` is the answer.
+Single forward pass over a DAG; cyclic graphs need §4.4 relaxation (deferred).
+"""
+function forward_supply(query::Symbol, graph::FactorGraph, budget::Int=1000; pi_b::Real=0.0)
+    active = _backward_demand_expansion(query, graph, budget)
+    concl = Dict{Symbol, Symbol}()
+    prem = Dict{Symbol, Vector{FactorEdge}}()
+    for e in graph.edges
+        e.factor_node in active || continue
+        if e.role_label === :conclusion
+            concl[e.factor_node] = e.var_node
+        else
+            push!(get!(() -> FactorEdge[], prem, e.factor_node), e)
+        end
+    end
+    concluded = Set(values(concl))
+    settled = Set(v for v in active if haskey(graph.var_nodes, v) && v ∉ concluded)
+    marginals = Dict{Symbol, Tuple{Float64, Float64}}(
+        v => pbox_to_stv(graph.var_nodes[v].message) for v in settled
+    )
+    fired = Set{Symbol}()
+    progress = true
+    while progress && query ∉ settled
+        progress = false
+        for (f, cvar) in concl
+            (f in fired) && continue
+            pes = sort(get(prem, f, FactorEdge[]); by=pe -> string(pe.role_label))
+            (isempty(pes) || !all(pe.var_node in settled for pe in pes)) && continue
+            prem_stvs = [marginals[pe.var_node] for pe in pes]
+            cstv = rule_forward(graph.factor_nodes[f].rule, prem_stvs; pi_b=pi_b)
+            marginals[cvar] = (clamp(cstv[1], 0.0, 1.0), clamp(cstv[2], 0.0, 1.0))
+            graph.var_nodes[cvar].message = stv_to_pbox(marginals[cvar]...)
+            push!(settled, cvar)
+            push!(fired, f)
+            progress = true
+        end
+    end
+    return (active, marginals)
+end
+
 export need_stv, sens_hmp, sens_conjunction, sens_disjunction, sens_negation
 export normalize_sens, demand_adjoint
 export SENS_CAP, sens_inversion, sens_deduction, sens_induction, sens_abduction
 export rule_sensitivity, pbox_to_stv, compute_demand_field
+export fwd_hmp, fwd_conjunction, fwd_disjunction, fwd_negation
+export fwd_inversion, fwd_deduction, fwd_induction, fwd_abduction
+export rule_forward, forward_supply

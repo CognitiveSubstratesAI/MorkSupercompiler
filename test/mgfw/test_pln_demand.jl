@@ -9,12 +9,9 @@
 using Test
 using MorkSupercompiler
 
-# ── §3.4 sensitivity-model forward maps (the maps the closed-form sens are the Jacobian of). ──
-# Premises as (s,c) pairs; output (s_out, c_out).
-fwd_hmp(sA, cA, sAB, cAB; pi_b=0.02) = (sA * sAB + pi_b * (1.0 - sA), cA * cAB)            # eq 2
-fwd_conjunction(s1, c1, s2, c2) = (s1 * s2, 1.0 - (1.0 - c1) * (1.0 - c2))                  # eq 21
-fwd_disjunction(s1, c1, s2, c2) = (s1 + s2 - s1 * s2, c1 + c2 - c1 * c2)                    # eq 24
-fwd_negation(s, c) = (1.0 - s, c)
+# The §3.4 forward maps (fwd_hmp/conjunction/disjunction/negation/inversion/deduction/induction/
+# abduction) are now in src (PLNDemand) — the §4.5 forward-supply family — and reused here as the
+# maps the closed-form sensitivities are the Jacobian of (single source, no duplicate).
 
 # Operator ∞-norm of the 2×2 block ∂(s_out,c_out)/∂(s_i,c_i), by central finite difference.
 # `point` is the flat premise vector (s1,c1,s2,c2,…); premise `i` is 1-based.
@@ -85,13 +82,6 @@ end
     end
 end
 
-# §3.4 rows-only forward maps — used ONLY to FD-verify the INTERIOR sensitivities.
-fwd_inversion(sA, cA, sB, cB, sBA, cBA; w=1.0) = (sBA * sB / sA, cA * cB * cBA * w)   # eq 6/12
-function fwd_deduction(sB, cB, sC, cC, sAB, cAB, sBC, cBC; w=1.0)                      # eq 6/7
-    s = sAB * sBC + (1.0 - sAB) * (sC - sB * sBC) / (1.0 - sB)
-    return (s, cB * cC * cAB * cBC * w)
-end
-
 @testset "§3.4 rows-only sensitivities — INTERIOR FD-agreement" begin
     # SCOPE: this validates transcription of the SPEC CONTROLLER table against the FD Jacobian
     # of the §3.4 (simplified-confidence) map. It is NOT a cross-check against PLNBook — the
@@ -135,17 +125,6 @@ end
     let s = sens_deduction(1.0 - 1.0e-5, 0.8, 0.6, 0.85, 0.7, 0.9, 0.5, 0.85)
         @test s[1] == SENS_CAP
     end
-end
-
-# Closed STRENGTH forms (eqs 14/15) + the product confidence — the INDEPENDENT path the
-# chain-rule sensitivities are FD-verified against (composition vs closed-form, not FD-vs-FD).
-function fwd_induction(sA, cA, sB, cB, sC, cC, sBA, cBA, sBC, cBC; w=1.0)                    # eq 14
-    s = sBA * sBC * sB / sA + (1.0 - sBA * sB / sA) * (sC - sB * sBC) / (1.0 - sB)
-    return (s, cBA * cBC * cB * cC * w)
-end
-function fwd_abduction(sA, cA, sB, cB, sC, cC, sAB, cAB, sCB, cCB; w=1.0)                    # eq 15
-    s = sAB * sCB * sC / sB + sC * (1.0 - sAB) * (1.0 - sCB) / (1.0 - sB)
-    return (s, cAB * cCB * cB * cC * w)
 end
 
 @testset "§3.4 induction/abduction — INTERIOR FD-agreement (chain rule vs closed-form)" begin
@@ -290,4 +269,33 @@ end
     # An UNTAGGED factor (:none) on the demand path errors loudly (no silent wrong answer).
     g.factor_nodes[:mp].rule = :none
     @test_throws ErrorException compute_demand_field(:B, g)
+end
+
+@testset "forward_supply — Mammal/Lassie worked example (§6.1) → marginal (0.8935, 0.456)" begin
+    # The chainer COMPUTING: a 2-step zero-default HMP chain Collie(Lassie) → Dog(Lassie) →
+    # Mammal(Lassie). Forward supply over the activated subgraph must reproduce the spec's headline.
+    t = GLOBAL_REGISTRY.templates[:PLN_STV_HeuristicModusPonens]
+    g = FactorGraph(t)
+    g.var_nodes[:A] = FactorNode(:A, :premise)     # Collie(Lassie)
+    g.var_nodes[:A].message = stv_to_pbox(0.95, 0.95)
+    g.var_nodes[:AB] = FactorNode(:AB, :premise)   # Collie(x)→Dog(x)  — high-s/low-c: exercises the pbox round-trip fix
+    g.var_nodes[:AB].message = stv_to_pbox(0.99, 0.80)
+    g.var_nodes[:BC] = FactorNode(:BC, :premise)   # Dog(x)→Mammal(x)
+    g.var_nodes[:BC].message = stv_to_pbox(0.95, 0.60)
+    g.var_nodes[:B] = FactorNode(:B, :conclusion)  # Dog(Lassie) — unknown
+    g.var_nodes[:B].message = stv_to_pbox(0.5, 0.0)
+    g.var_nodes[:C] = FactorNode(:C, :conclusion)  # Mammal(Lassie) — query
+    g.var_nodes[:C].message = stv_to_pbox(0.5, 0.0)
+    g.factor_nodes[:f1] = FactorNode(:f1, :factor; is_factor=true, rule=:hmp)
+    g.factor_nodes[:f2] = FactorNode(:f2, :factor; is_factor=true, rule=:hmp)
+    push!(g.edges, FactorEdge(:A, :f1, :premise_1))
+    push!(g.edges, FactorEdge(:AB, :f1, :premise_2))
+    push!(g.edges, FactorEdge(:B, :f1, :conclusion))
+    push!(g.edges, FactorEdge(:B, :f2, :premise_1))
+    push!(g.edges, FactorEdge(:BC, :f2, :premise_2))
+    push!(g.edges, FactorEdge(:C, :f2, :conclusion))
+
+    _, marg = forward_supply(:C, g)   # pi_b = 0 (zero-default HMP, §6.1)
+    @test all(isapprox.(marg[:B], (0.9405, 0.76); atol=1e-4))    # intermediate Dog(Lassie)
+    @test all(isapprox.(marg[:C], (0.8935, 0.456); atol=1e-4))   # the headline marginal Mammal(Lassie)
 end
