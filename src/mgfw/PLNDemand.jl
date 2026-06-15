@@ -6,11 +6,12 @@
 # `need` term that step 4 part 2 feeds to `_backward_demand_expansion` (Finding A: that BFS
 # is a structural support set with no demand weights — this is the weight layer).
 #
-# DELIBERATE confidence divergence from PLNBook: §3.4 preserves lib/pln STRENGTHS verbatim but
-# uses "simplified monotone confidence bookkeeping" for the SENSITIVITY (e.g. HMP c_out=cA·cAB,
-# not book w2c(cA·cI)). So the §3.4 sensitivity forward maps are a DISTINCT family from the
-# PLNBook inference oracle — same strength, simplified confidence. Inference uses PLNBook; the
-# demand CONTROLLER uses this table. (Verified against the §3.4 maps, NOT PLNBook.)
+# SYSTEM OF RECORD (decided 2026-06-15): the §3.4 simplified-confidence maps are the runtime
+# family for BOTH forward inference (forward_supply, §4.5) AND demand sensitivity — one coherent
+# model (§3.4 preserves lib/pln STRENGTHS verbatim, simplifies CONFIDENCE, e.g. HMP c_out=cA·cAB
+# not book w2c(cA·cI)). The lib/pln-book maps (FactorGeometry stv_* + PLNBook) are the lib/pln
+# FAITHFULNESS REFERENCE — they validate that §3.4's strengths match lib/pln — NOT the runtime
+# inference family. (Earlier "inference uses PLNBook" was imprecise — corrected.)
 #
 # This file: §3.2-§3.3 framework + Eq-1 demand adjoint; the 4 CLOSED-FORM sensitivities (HMP
 # eqs 4-5, conjunction 22-23, disjunction 25-26, negation=1); all 4 ROWS-ONLY ∞-norms —
