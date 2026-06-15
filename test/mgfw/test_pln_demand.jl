@@ -163,12 +163,17 @@ end
     let p = [0.6, 0.8, 0.4, 0.85, 0.6, 0.9, 0.5, 0.85, 0.5, 0.8],
         s = sens_abduction(0.6, 0.8, 0.4, 0.85, 0.6, 0.9, 0.5, 0.85, 0.5, 0.8)
 
-        @test s[1] == 0.0   # sA absent from abduction ⇒ premise A irrelevant
-        for i in 2:5
+        # FD-exercise ALL 5 premises INCLUDING A: the i=1 check PERTURBS sA (and cA) and confirms
+        # the forward map's ∂/∂A block is genuinely zero — TESTING sens_A=0, not just asserting it
+        # (a dropped-sA transcription error would otherwise be invisible: sens=0, no complaint).
+        # The genuine sA-independence is corroborated three ways: eq 15, the inversion∘deduction
+        # composition, and lib/pln Truth_Abduction all lack any sA term.
+        for i in 1:5
             @test isapprox(
                 s[i], fd_block_infnorm((a...) -> fwd_abduction(a...), p, i); atol=1e-3
             )
         end
+        @test s[1] == 0.0   # the expected value: premise A drops out of eq 15
     end
 end
 
