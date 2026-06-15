@@ -223,3 +223,71 @@ end
     @test_throws ErrorException rule_sensitivity(:none, [(0.8, 0.9), (0.7, 0.85)])
     @test_throws ErrorException rule_sensitivity(:bogus, [(0.8, 0.9)])
 end
+
+@testset "pbox_to_stv round-trips stv_to_pbox" begin
+    let (s, c) = pbox_to_stv(stv_to_pbox(0.7, 0.85))
+        @test isapprox(s, 0.7; atol=1e-9)
+        @test isapprox(c, 0.85; atol=1e-9)
+    end
+end
+
+@testset "compute_demand_field — edge-label-order NON-CIRCULAR validation (deduction)" begin
+    # The premise-order convention (rule_sensitivity unpacks [premise_1, premise_2, …]) is only
+    # validated if premises arrive in GRAPH EDGE-LABEL order and the result matches a sensitivity
+    # hand-computed with SEMANTIC assignment (B in the sB slot, AB in the sAB slot, …). Deduction
+    # is asymmetric, so a premise transposition changes the answer — it can't hide.
+    t = GLOBAL_REGISTRY.templates[:PLN_STV_HeuristicModusPonens]
+    g = FactorGraph(t)
+    B, C, AB, BC = (0.4, 0.8), (0.6, 0.85), (0.7, 0.9), (0.5, 0.85)   # distinct ⇒ asymmetric
+    for (n, stv) in ((:B, B), (:C, C), (:AB, AB), (:BC, BC))
+        g.var_nodes[n] = FactorNode(n, :premise)
+        g.var_nodes[n].message = stv_to_pbox(stv...)
+    end
+    g.var_nodes[:AC] = FactorNode(:AC, :conclusion)
+    g.factor_nodes[:ded] = FactorNode(:ded, :factor; is_factor=true, rule=:deduction)
+    # Edges added in SCRAMBLED order — extraction must sort by role_label, not insertion order.
+    push!(g.edges, FactorEdge(:AB, :ded, :premise_3))
+    push!(g.edges, FactorEdge(:AC, :ded, :conclusion))
+    push!(g.edges, FactorEdge(:BC, :ded, :premise_4))
+    push!(g.edges, FactorEdge(:B, :ded, :premise_1))
+    push!(g.edges, FactorEdge(:C, :ded, :premise_2))
+
+    active, dem = compute_demand_field(:AC, g)
+
+    # HAND-COMPUTED expected: sens with the SEMANTIC assignment, demand from d_v=1 at :AC.
+    sens = sens_deduction(B..., C..., AB..., BC...)   # (sB,cB, sC,cC, sAB,cAB, sBC,cBC)
+    psi = demand_adjoint(1.0, sens, (B[2], C[2], AB[2], BC[2]))
+    @test isapprox(dem[:B], psi[1]; atol=1e-9)
+    @test isapprox(dem[:C], psi[2]; atol=1e-9)
+    @test isapprox(dem[:AB], psi[3]; atol=1e-9)
+    @test isapprox(dem[:BC], psi[4]; atol=1e-9)
+    @test dem[:AC] == 1.0                              # seed
+
+    # NON-CIRCULAR BITE: link (AB) vs term (B) demands differ under deduction → a transposition
+    # in extraction would land demand on the wrong node and break the asserts above.
+    @test !isapprox(dem[:AB], dem[:B]; atol=1e-6)
+    # (a) contract: the support set is IDENTICAL to the unweighted BFS — compute-and-attach only.
+    @test active == MorkSupercompiler._backward_demand_expansion(:AC, g, 1000)
+end
+
+@testset "compute_demand_field — HMP smoke + untagged factor errors" begin
+    t = GLOBAL_REGISTRY.templates[:PLN_STV_HeuristicModusPonens]
+    g = FactorGraph(t)
+    g.var_nodes[:A] = FactorNode(:A, :premise);
+    g.var_nodes[:A].message = stv_to_pbox(0.8, 0.9)
+    g.var_nodes[:AB] = FactorNode(:AB, :premise);
+    g.var_nodes[:AB].message = stv_to_pbox(0.7, 0.85)
+    g.var_nodes[:B] = FactorNode(:B, :conclusion)
+    g.factor_nodes[:mp] = FactorNode(:mp, :factor; is_factor=true, rule=:hmp)
+    push!(g.edges, FactorEdge(:A, :mp, :premise_1))
+    push!(g.edges, FactorEdge(:AB, :mp, :premise_2))
+    push!(g.edges, FactorEdge(:B, :mp, :conclusion))
+    let (_, dem) = compute_demand_field(:B, g)
+        psi = demand_adjoint(1.0, sens_hmp(0.8, 0.9, 0.7, 0.85), (0.9, 0.85))
+        @test isapprox(dem[:A], psi[1]; atol=1e-9)
+        @test isapprox(dem[:AB], psi[2]; atol=1e-9)
+    end
+    # An UNTAGGED factor (:none) on the demand path errors loudly (no silent wrong answer).
+    g.factor_nodes[:mp].rule = :none
+    @test_throws ErrorException compute_demand_field(:B, g)
+end

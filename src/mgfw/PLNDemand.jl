@@ -227,7 +227,71 @@ function rule_sensitivity(
     end
 end
 
+# ── §3.3 demand field over the BFS support set (part 3 — COMPUTE-AND-ATTACH) ────────────────
+
+"""
+    pbox_to_stv(pb::PBox) -> (s, c)
+
+Recover an STV `(strength, confidence)` from a PBox: strength = interval-envelope midpoint,
+confidence = `pb.confidence`. Inverse of `stv_to_pbox`.
+"""
+function pbox_to_stv(pb::PBox)
+    lo = pb.intervals[1][1]
+    hi = pb.intervals[end][2]
+    return ((lo + hi) / 2.0, pb.confidence)
+end
+
+"""
+    compute_demand_field(query, graph, budget=1000) -> (active, dem::Dict{Symbol,Float64})
+
+§3.3 backward demand over the EXISTING BFS support set (COMPUTE-AND-ATTACH, not gating —
+the activation payoff is §4.4 (b)/§4.7). `active` is IDENTICAL to `_backward_demand_expansion`;
+this only ATTACHES per-node demand weights for a (deferred) scheduler to read. Seed `d_v=1` at
+`query`; walk conclusion→premise; for each factor apply Eq (1) via its tagged rule
+(`rule_sensitivity`) to push demand to its premises, accumulated by MAX-JOIN over consumers.
+
+Premises are taken in role_label order (:premise_1, :premise_2, …) → the `rule_sensitivity`
+positional convention. Single backward pass: EXACT on trees; reconvergent/cyclic accumulation
+needs the §4.4 damped relaxation (deferred with the full control field). Factors must be tagged
+(`FactorNode.rule`); an untagged (:none) factor errors loudly via `rule_sensitivity`.
+"""
+function compute_demand_field(query::Symbol, graph::FactorGraph, budget::Int=1000)
+    active = _backward_demand_expansion(query, graph, budget)
+    dem = Dict{Symbol, Float64}(query => 1.0)
+    frontier = [query]
+    steps = 0
+    while !isempty(frontier) && steps < budget
+        v = popfirst!(frontier)
+        steps += 1
+        d_v = get(dem, v, 0.0)
+        for e in graph.edges
+            (e.var_node == v && e.role_label === :conclusion) || continue
+            fnode = get(graph.factor_nodes, e.factor_node, nothing)
+            fnode === nothing && continue
+            prem_edges = sort(
+                [
+                    pe for pe in graph.edges if
+                    pe.factor_node === e.factor_node && pe.role_label !== :conclusion
+                ];
+                by=pe -> string(pe.role_label)
+            )
+            isempty(prem_edges) && continue
+            prem_stvs = [
+                pbox_to_stv(graph.var_nodes[pe.var_node].message) for pe in prem_edges
+            ]
+            sens = rule_sensitivity(fnode.rule, prem_stvs)
+            confs = ntuple(i -> prem_stvs[i][2], length(prem_stvs))
+            psi = demand_adjoint(d_v, sens, confs)
+            for (i, pe) in enumerate(prem_edges)
+                dem[pe.var_node] = max(get(dem, pe.var_node, 0.0), psi[i])
+                push!(frontier, pe.var_node)
+            end
+        end
+    end
+    return (active, dem)
+end
+
 export need_stv, sens_hmp, sens_conjunction, sens_disjunction, sens_negation
 export normalize_sens, demand_adjoint
 export SENS_CAP, sens_inversion, sens_deduction, sens_induction, sens_abduction
-export rule_sensitivity
+export rule_sensitivity, pbox_to_stv, compute_demand_field
