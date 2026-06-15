@@ -50,9 +50,10 @@
 #      grounded form — and settle the GroundedSource `(I (* …))` path, which also did
 #      NOT reduce in a bare MORK space. WHEN it computes 0.765, the testset's
 #      `!occursin("0.765", …)` asserts flip to `== 0.765` and it becomes the real gate.
-#   2. INDUCTION / ABDUCTION goldens — ship in lib/pln with NO doctest `→`, so
-#      pinning PLNBook to its own evaluation would be circular. Their goldens MUST come
-#      from LIVE lib/pln execution (modulo Core issue #1's Truth_w2c leak), not PLNBook.
+#   2. INDUCTION / ABDUCTION goldens — ✅ DONE (3c). No lib/pln doctest `→`, and 3a found
+#      no execute-in-Core mechanism (+ Core issue #1's Truth_w2c leak) ⇒ live-sourcing
+#      unavailable. So the goldens are HAND-DERIVED independently (the pins below) and
+#      PLNBook's induction/abduction are pinned to them — non-circular (NOT PLNBook's eval).
 
 using Test
 using MorkSupercompiler
@@ -87,6 +88,19 @@ const PLNRef = MorkSupercompiler.PLNBook
         @test isapprox(c, 0.3213; atol=1e-3)
     end
 
+    # Induction / Abduction ship in lib/pln with NO doctest `→`, so the goldens below are
+    # HAND-DERIVED independently (computed by hand from the formula at a consistency-
+    # satisfying point), NOT read back from PLNBook's own evaluation — else the pin would
+    # be circular. Inputs: (sA,cA, sB,cB, sC,cC, s?A/AB,c, s?C/CB,c) = (.5,.9,.4,.8,.6,.85,.7,.9,.3,.85)
+    let (s, c) = PLNRef.induction(0.5, 0.9, 0.4, 0.8, 0.6, 0.85, 0.7, 0.9, 0.3, 0.85)   # :216
+        @test isapprox(s, 0.52; atol=1e-3)      # hand: (.7·.3·.4)/.5 + (1−(.7·.4)/.5)·(.6−.4·.3)/.6 = .168+.44·.8
+        @test isapprox(c, 0.18666; atol=1e-3)   # hand: w2c(.3·.85·.9)=0.2295/1.2295
+    end
+    let (s, c) = PLNRef.abduction(0.5, 0.9, 0.4, 0.8, 0.6, 0.85, 0.7, 0.9, 0.3, 0.85)   # :227
+        @test isapprox(s, 0.525; atol=1e-3)     # hand: (.7·.3·.6)/.4 + .6·.3·.7/.6 = .315+.21
+        @test isapprox(c, 0.34875; atol=1e-3)   # hand: w2c(.7·.9·.85)=0.5355/1.5355
+    end
+
     # Singular-boundary behavior (faithful: /safe → nothing, i.e. (empty)):
     @test PLNRef.c2w(1.0) === nothing                 # c→1 ⇒ 1−c=0 ⇒ empty
     @test PLNRef.safe_div(1.0, 0.0) === nothing       # denominator 0 ⇒ empty
@@ -111,16 +125,48 @@ end
         @test isapprox(c_mgfw, c_ref; atol=1e-3)   # 0.4334 == 0.4334
     end
 
-    # ── Rules 2/8 .. 8/8: mgfw forward maps NOT YET BUILT (step 3). ──
-    # The reference is ready (PLNRef.*); step 3 adds each mgfw map and flips
-    # the matching skip to a green `@test … vs PLNRef.<rule>(…)`.
-    @test_skip "SymmetricModusPonens forward map — PLNRef.symmetric_modus_ponens"
-    @test_skip "Deduction forward map (singular Qs→1)   — PLNRef.deduction"
-    @test_skip "Inversion forward map (singular sA→0)   — PLNRef.inversion"
-    @test_skip "Induction forward map (singular sA→0)   — PLNRef.induction (TODO)"
-    @test_skip "Abduction forward map (singular sB→0)   — PLNRef.abduction (TODO)"
-    @test_skip "Revision forward map                    — PLNRef.revision"
-    @test_skip "Negation forward map                    — PLNRef.negation"
+    # ── Rules 2/8 .. 8/8 (3c): each mgfw forward map (independent inline, FactorGeometry)
+    #    diffed against the PLNBook oracle at an interior point. ──
+    @test all(
+        isapprox.(
+            stv_symmetric_mp(0.8, 0.9, 0.7, 0.85),
+            PLNRef.symmetric_modus_ponens(0.8, 0.9, 0.7, 0.85);
+            atol=1e-3
+        )
+    )
+    @test all(
+        isapprox.(
+            stv_deduction(0.8, 0.9, 0.7, 0.85, 0.6, 0.8, 0.7, 0.9, 0.6, 0.85),
+            PLNRef.deduction(0.8, 0.9, 0.7, 0.85, 0.6, 0.8, 0.7, 0.9, 0.6, 0.85);
+            atol=1e-3
+        )
+    )
+    @test all(
+        isapprox.(
+            stv_inversion(0.7, 0.8, 0.6, 0.9), PLNRef.inversion(0.7, 0.8, 0.6, 0.9);
+            atol=1e-3
+        )
+    )
+    @test all(
+        isapprox.(
+            stv_induction(0.5, 0.9, 0.4, 0.8, 0.6, 0.85, 0.7, 0.9, 0.3, 0.85),
+            PLNRef.induction(0.5, 0.9, 0.4, 0.8, 0.6, 0.85, 0.7, 0.9, 0.3, 0.85);
+            atol=1e-3
+        )
+    )
+    @test all(
+        isapprox.(
+            stv_abduction(0.5, 0.9, 0.4, 0.8, 0.6, 0.85, 0.7, 0.9, 0.3, 0.85),
+            PLNRef.abduction(0.5, 0.9, 0.4, 0.8, 0.6, 0.85, 0.7, 0.9, 0.3, 0.85);
+            atol=1e-3
+        )
+    )
+    @test all(
+        isapprox.(
+            stv_revision(0.6, 0.5, 0.8, 0.7), PLNRef.revision(0.6, 0.5, 0.8, 0.7); atol=1e-3
+        )
+    )
+    @test all(isapprox.(stv_negation(0.7, 0.85), PLNRef.negation(0.7, 0.85); atol=1e-3))
 end
 
 @testset "MVP §15.4 demo 2 (EXECUTED) — lowering is INERT, positive-control gated" begin

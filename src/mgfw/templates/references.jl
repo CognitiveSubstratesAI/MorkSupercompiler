@@ -114,6 +114,28 @@ function deduction(sP, cP, sQ, cQ, sR, cR, sPQ, cPQ, sQR, cQR)
     (s, sPQ * sQR * cP * cQR)
 end
 
+# pln_core_logic.metta:216-224 — Truth_Induction (book App. A), 5-input.
+# s = /safe(sBA·sBC·sB, sA) + (1 − /safe(sBA·sB, sA))·/safe(sC−sB·sBC, 1−sB)
+# c = w2c(sBC·cBC·cBA).  SINGULAR at sA→0 (and sB→1). Goldens have NO lib/pln doctest →
+# they are HAND-DERIVED independently in test_pln_reference.jl (not from this eval).
+function induction(sA, cA, sB, cB, sC, cC, sBA, cBA, sBC, cBC)
+    t1 = safe_div(sBA * sBC * sB, sA)
+    t2a = safe_div(sBA * sB, sA)
+    t2b = safe_div(sC - sB * sBC, 1.0 - sB)
+    (t1 === nothing || t2a === nothing || t2b === nothing) && return (nothing, nothing)
+    (t1 + (1.0 - t2a) * t2b, w2c(sBC * cBC * cBA))
+end
+
+# pln_core_logic.metta:227-236 — Truth_Abduction (book App. A), 5-input.
+# s = /safe(sAB·sCB·sC, sB) + /safe(sC·(1−sAB)·(1−sCB), 1−sB);  c = w2c(sAB·cAB·cCB).
+# SINGULAR at sB→0 and sB→1.  (sA, cA, cB, cC are unused by the book formula.)
+function abduction(sA, cA, sB, cB, sC, cC, sAB, cAB, sCB, cCB)
+    t1 = safe_div(sAB * sCB * sC, sB)
+    t2 = safe_div(sC * (1.0 - sAB) * (1.0 - sCB), 1.0 - sB)
+    (t1 === nothing || t2 === nothing) && return (nothing, nothing)
+    (t1 + t2, w2c(sAB * cAB * cCB))
+end
+
 end  # module PLNBook
 
 # ── §10.3 Trie motif miner reference ───────────────────────────────────────────

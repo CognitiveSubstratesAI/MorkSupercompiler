@@ -232,6 +232,57 @@ function stv_forward_map(
     (s_b, c_b)
 end
 
+# ── §10.1 book-PLN STV forward maps — the EXACT-rule family (PLN 3c). ──────────
+# Each is an INDEPENDENT inline transcription of lib/pln (NOT a call into the PLNBook
+# oracle), so the Layer-1 gate's map-vs-oracle diff stays discriminating. Outputs are
+# clamped to [0,1]; singular-boundary clamping (sA→0, sB→0/1, Qs→1) is step 4 — the
+# gate exercises interior points. `w2c(w)=w/(w+1)` is inlined.
+
+"""STV SymmetricModusPonens — lib/pln `Truth_SymmetricModusPonens` (snotAB=0.2)."""
+function stv_symmetric_mp(sA, cA, sAB, cAB)
+    s = sA * sAB + 0.2 * (1.0 - sA) * (1.0 + sAB)
+    c = cA * cAB * (1.0 - (1.0 - sA) * (1.0 - sAB))   # cA·cAB·Truth_or(sA,sAB)
+    (clamp(s, 0.0, 1.0), clamp(c, 0.0, 1.0))
+end
+
+"""STV Negation — lib/pln `Truth_Negation`: strength complemented, confidence kept."""
+stv_negation(s, c) = (clamp(1.0 - s, 0.0, 1.0), clamp(c, 0.0, 1.0))
+
+"""STV Inversion — lib/pln `Truth_inversion`: s=ABs; c=Bc·ABc·0.6."""
+stv_inversion(sB, cB, sAB, cAB) = (clamp(sAB, 0.0, 1.0), clamp(cB * cAB * 0.6, 0.0, 1.0))
+
+"""STV Revision — lib/pln `Truth_Revision`: evidence-weighted; c=max(w2c(w),c1,c2)."""
+function stv_revision(f1, c1, f2, c2)
+    w1 = c1 < 1.0 ? c1 / (1.0 - c1) : Inf
+    w2 = c2 < 1.0 ? c2 / (1.0 - c2) : Inf
+    w = w1 + w2
+    f = (w1 * f1 + w2 * f2) / w
+    (clamp(f, 0.0, 1.0), clamp(max(w / (w + 1.0), c1, c2), 0.0, 1.0))
+end
+
+"""STV Deduction — lib/pln `Truth_Deduction` (book §1.4), 5-input; (1 0) on inconsistency."""
+function stv_deduction(sP, cP, sQ, cQ, sR, cR, sPQ, cPQ, sQR, cQR)
+    ok(a, b, ab) =
+        (a > 0.0) && (clamp((a + b - 1.0) / a, 0.0, 1.0) <= ab <= clamp(b / a, 0.0, 1.0))
+    (ok(sP, sQ, sPQ) && ok(sQ, sR, sQR)) || return (1.0, 0.0)
+    s = sQ > 0.9999 ? sR : sPQ * sQR + (1.0 - sPQ) * (sR - sQ * sQR) / (1.0 - sQ)
+    (clamp(s, 0.0, 1.0), clamp(sPQ * sQR * cP * cQR, 0.0, 1.0))
+end
+
+"""STV Induction — lib/pln `Truth_Induction`, 5-input. Singular at sA→0."""
+function stv_induction(sA, cA, sB, cB, sC, cC, sBA, cBA, sBC, cBC)
+    s = (sBA * sBC * sB) / sA + (1.0 - (sBA * sB) / sA) * (sC - sB * sBC) / (1.0 - sB)
+    wc = sBC * cBC * cBA
+    (clamp(s, 0.0, 1.0), clamp(wc / (wc + 1.0), 0.0, 1.0))
+end
+
+"""STV Abduction — lib/pln `Truth_Abduction`, 5-input. Singular at sB→0,1."""
+function stv_abduction(sA, cA, sB, cB, sC, cC, sAB, cAB, sCB, cCB)
+    s = (sAB * sCB * sC) / sB + sC * (1.0 - sAB) * (1.0 - sCB) / (1.0 - sB)
+    wc = sAB * cAB * cCB
+    (clamp(s, 0.0, 1.0), clamp(wc / (wc + 1.0), 0.0, 1.0))
+end
+
 """
     stv_to_pbox(strength::Float64, confidence::Float64) -> PBox
 
@@ -372,4 +423,6 @@ conserves_evidence(region::SpecializedRegion, initial_mass::Float64)::Bool =
 export FactorNode, FactorEdge, FactorGraph, SpecializedRegion
 export specialize_exact, specialize_approximate
 export stv_forward_map, stv_to_pbox, stv_backward_demand
+export stv_symmetric_mp, stv_negation, stv_inversion, stv_revision
+export stv_deduction, stv_induction, stv_abduction
 export noether_charge, conserves_evidence

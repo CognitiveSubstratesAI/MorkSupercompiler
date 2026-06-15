@@ -339,6 +339,8 @@ export define_factor_rule, define_trie_miner, define_codec_search
 export FactorNode, FactorEdge, FactorGraph, SpecializedRegion
 export specialize_exact, specialize_approximate
 export stv_forward_map, stv_to_pbox, stv_backward_demand
+export stv_symmetric_mp, stv_negation, stv_inversion, stv_revision
+export stv_deduction, stv_induction, stv_abduction
 export noether_charge, conserves_evidence
 export DAGNode, DAGStore, dag_intern!, Deme, DemeEvolutionResult, evolve_demes!
 export PatternTrie, trie_seed!, trie_grow!, trie_score!, run_trie_miner
