@@ -373,8 +373,10 @@ already-computed conclusion), computing its conclusion STV via `rule_forward` an
 as the node's PBox message. Returns the per-node marginals; `marginals[query]` is the answer.
 Single forward pass over a DAG; cyclic graphs need §4.4 relaxation (deferred).
 """
-function forward_supply(query::Symbol, graph::FactorGraph, budget::Int=1000; pi_b::Real=0.0)
-    active = _backward_demand_expansion(query, graph, budget)
+function forward_supply(
+    query::Symbol, graph::FactorGraph, budget::Int=1000; pi_b::Real=0.0, active=nothing
+)
+    active = active === nothing ? _backward_demand_expansion(query, graph, budget) : active
     concl = Dict{Symbol, Symbol}()
     prem = Dict{Symbol, Vector{FactorEdge}}()
     for e in graph.edges
@@ -410,10 +412,77 @@ function forward_supply(query::Symbol, graph::FactorGraph, budget::Int=1000; pi_
     return (active, marginals)
 end
 
+"""
+    gated_demand_expansion(query, graph, budget=1000; tau_expand=0.0, retain_boundary=true)
+        -> (active, dem)
+
+§4.7 — the DEMAND-GATED backward walk. A SIBLING to the ungated `_backward_demand_expansion`
++ `compute_demand_field` (both left intact — the verified baseline can't regress). Computes
+`dem(v)` DURING the walk (Eq-1) and HALTS expansion at a premise whose demand < `tau_expand`
+(expand=dem·need below threshold) — but RETAINS that premise + its edge in the active subgraph
+(§4.4 Design Commitment #2), because a high-confidence boundary still SEEDS forward supply even
+when backward recursion stops there. `tau_expand=0` ⇒ nothing halts ⇒ active == the ungated
+support set. `retain_boundary=false` turns DC#2 OFF (drops halted boundaries) — for testing that
+retention is load-bearing. Reuses `pbox_to_stv` (no second copy of the STV read).
+"""
+function gated_demand_expansion(
+    query::Symbol,
+    graph::FactorGraph,
+    budget::Int=1000;
+    tau_expand::Real=0.0,
+    retain_boundary::Bool=true
+)
+    active = Set{Symbol}([query])
+    dem = Dict{Symbol, Float64}(query => 1.0)
+    frontier = [query]
+    done = Set{Symbol}()
+    steps = 0
+    while !isempty(frontier) && steps < budget
+        v = popfirst!(frontier)
+        push!(done, v)
+        steps += 1
+        d_v = get(dem, v, 0.0)
+        for e in graph.edges
+            (e.var_node == v && e.role_label === :conclusion) || continue
+            fnode = get(graph.factor_nodes, e.factor_node, nothing)
+            fnode === nothing && continue
+            prem_edges = sort(
+                [
+                    pe for pe in graph.edges if
+                    pe.factor_node === e.factor_node && pe.role_label !== :conclusion
+                ];
+                by=pe -> string(pe.role_label)
+            )
+            isempty(prem_edges) && continue
+            prem_stvs = [
+                pbox_to_stv(graph.var_nodes[pe.var_node].message) for pe in prem_edges
+            ]
+            sens = rule_sensitivity(fnode.rule, prem_stvs)
+            confs = ntuple(i -> prem_stvs[i][2], length(prem_stvs))
+            psi = demand_adjoint(d_v, sens, confs)
+            push!(active, e.factor_node)
+            for (i, pe) in enumerate(prem_edges)
+                u = pe.var_node
+                dem[u] = max(get(dem, u, 0.0), psi[i])
+                meets = psi[i] >= tau_expand
+                # DC#2: retain the premise + its edge even when expansion HALTS here (unless toggled).
+                if retain_boundary || meets
+                    push!(active, u)
+                end
+                # HALT: recurse PAST u only if its demand meets the expand threshold.
+                if meets && u ∉ done && u ∉ frontier
+                    push!(frontier, u)
+                end
+            end
+        end
+    end
+    return (active, dem)
+end
+
 export need_stv, sens_hmp, sens_conjunction, sens_disjunction, sens_negation
 export normalize_sens, demand_adjoint
 export SENS_CAP, sens_inversion, sens_deduction, sens_induction, sens_abduction
 export rule_sensitivity, pbox_to_stv, compute_demand_field
 export fwd_hmp, fwd_conjunction, fwd_disjunction, fwd_negation
 export fwd_inversion, fwd_deduction, fwd_induction, fwd_abduction
-export rule_forward, forward_supply
+export rule_forward, forward_supply, gated_demand_expansion

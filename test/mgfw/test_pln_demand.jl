@@ -406,3 +406,104 @@ end
         isapprox.(fwd_inversion(A..., Bv..., BA...), fwd_inversion(BA..., Bv..., A...))
     )
 end
+
+# ── §4.7 demand-gated walk (gated_demand_expansion) — the THREE-graph acceptance gate. Sharpened
+#    so a pass MEANS the scheduler prunes CORRECTLY (selects the query-relevant subgraph), not
+#    merely harmlessly. Small verified graphs are FRIENDLY INPUTS for the scheduler (nothing prunes),
+#    so each test forces the behavior under test.
+
+function _mammal_lassie_graph()
+    t = GLOBAL_REGISTRY.templates[:PLN_STV_HeuristicModusPonens]
+    g = FactorGraph(t)
+    g.var_nodes[:A] = FactorNode(:A, :premise)
+    g.var_nodes[:A].message = stv_to_pbox(0.95, 0.95)
+    g.var_nodes[:AB] = FactorNode(:AB, :premise)
+    g.var_nodes[:AB].message = stv_to_pbox(0.99, 0.80)
+    g.var_nodes[:BC] = FactorNode(:BC, :premise)
+    g.var_nodes[:BC].message = stv_to_pbox(0.95, 0.60)
+    g.var_nodes[:B] = FactorNode(:B, :conclusion)
+    g.var_nodes[:B].message = stv_to_pbox(0.5, 0.0)
+    g.var_nodes[:C] = FactorNode(:C, :conclusion)
+    g.var_nodes[:C].message = stv_to_pbox(0.5, 0.0)
+    g.factor_nodes[:f1] = FactorNode(:f1, :factor; is_factor=true, rule=:hmp)
+    g.factor_nodes[:f2] = FactorNode(:f2, :factor; is_factor=true, rule=:hmp)
+    push!(g.edges, FactorEdge(:A, :f1, :premise_1))
+    push!(g.edges, FactorEdge(:AB, :f1, :premise_2))
+    push!(g.edges, FactorEdge(:B, :f1, :conclusion))
+    push!(g.edges, FactorEdge(:B, :f2, :premise_1))
+    push!(g.edges, FactorEdge(:BC, :f2, :premise_2))
+    push!(g.edges, FactorEdge(:C, :f2, :conclusion))
+    return g
+end
+
+@testset "§4.7 gated walk (1) — NO-OP where it shouldn't prune (gated_active == ungated_active)" begin
+    # Sibling ⇒ the ungated path can't regress (untouched). The real claim is that the GATED walk
+    # returns the SAME support set when nothing should prune (τ=0). Marginal match is a corollary.
+    g = _mammal_lassie_graph()
+    ungated = MorkSupercompiler._backward_demand_expansion(:C, g, 1000)
+    gated, _ = gated_demand_expansion(:C, g; tau_expand=0.0)
+    @test gated == ungated
+    _, marg = forward_supply(:C, g; active=gated)
+    @test all(isapprox.(marg[:C], (0.8935, 0.456); atol=1e-4))   # corollary of equal active sets
+end
+
+@testset "§4.7 gated walk (2) — pruned the RIGHT thing (low dropped, high kept, marginal holds)" begin
+    # Q ← conjunction(X,Y); X ← neg(Xn), Y ← neg(Yn). X high-conf ⇒ LOW demand; Y low-conf ⇒ HIGH
+    # demand. The negation derivations are REDUNDANT (Xn=neg(X)) so pruning fx leaves X — and the
+    # marginal — unchanged. Asserts the LOW branch was pruned and the HIGH branch kept, not just
+    # "something pruned + nothing broke" (which would pass even if a query-relevant node were dropped).
+    t = GLOBAL_REGISTRY.templates[:PLN_STV_HeuristicModusPonens]
+    g = FactorGraph(t)
+    g.var_nodes[:X] = FactorNode(:X, :premise)
+    g.var_nodes[:X].message = stv_to_pbox(0.9, 0.95)     # high-conf ⇒ low demand
+    g.var_nodes[:Y] = FactorNode(:Y, :premise)
+    g.var_nodes[:Y].message = stv_to_pbox(0.6, 0.3)      # low-conf ⇒ high demand
+    g.var_nodes[:Xn] = FactorNode(:Xn, :premise)
+    g.var_nodes[:Xn].message = stv_to_pbox(0.1, 0.95)    # neg(X) ⇒ fx is redundant
+    g.var_nodes[:Yn] = FactorNode(:Yn, :premise)
+    g.var_nodes[:Yn].message = stv_to_pbox(0.4, 0.3)
+    g.var_nodes[:Q] = FactorNode(:Q, :conclusion)
+    g.var_nodes[:Q].message = stv_to_pbox(0.5, 0.0)
+    g.factor_nodes[:f1] = FactorNode(:f1, :factor; is_factor=true, rule=:conjunction)
+    g.factor_nodes[:fx] = FactorNode(:fx, :factor; is_factor=true, rule=:negation)
+    g.factor_nodes[:fy] = FactorNode(:fy, :factor; is_factor=true, rule=:negation)
+    push!(g.edges, FactorEdge(:X, :f1, :premise_1))
+    push!(g.edges, FactorEdge(:Y, :f1, :premise_2))
+    push!(g.edges, FactorEdge(:Q, :f1, :conclusion))
+    push!(g.edges, FactorEdge(:Xn, :fx, :premise_1))
+    push!(g.edges, FactorEdge(:X, :fx, :conclusion))
+    push!(g.edges, FactorEdge(:Yn, :fy, :premise_1))
+    push!(g.edges, FactorEdge(:Y, :fy, :conclusion))
+
+    ungated = MorkSupercompiler._backward_demand_expansion(:Q, g, 1000)
+    gated, dem = gated_demand_expansion(:Q, g; tau_expand=0.20)
+    @test dem[:X] < 0.20 && dem[:Y] >= 0.20      # X correctly deprioritized, Y kept
+    @test :Xn in ungated                          # the pruning is REAL (Xn is reachable)
+    @test !(:Xn in gated)                         # LOW branch pruned (fx + Xn dropped)
+    @test :Yn in gated                            # HIGH branch retained (fy walked to Yn)
+    _, mg = forward_supply(:Q, g; active=gated)
+    _, mu = forward_supply(:Q, g; active=ungated)
+    @test all(isapprox.(mg[:Q], mu[:Q]; atol=1e-9))          # marginal unchanged by pruning
+    @test all(isapprox.(mg[:Q], (0.54, 0.965); atol=1e-6))   # = conjunction(X, Y)
+end
+
+@testset "§4.7 gated walk (3) — DC#2 boundary retention is LOAD-BEARING (delete-it-fails-this)" begin
+    # Mammal/Lassie at τ=0.20: §6.1 — dem(A)=0.05, dem(A→B)=0.192 both < 0.20 ⇒ expansion HALTS at
+    # A and A→B. A=(0.95,0.95) high-conf ⇒ tiny need ⇒ deprioritized — BUT its strength SEEDS the
+    # whole forward chain, so DC#2 must retain its edge or forward supply starves.
+    g = _mammal_lassie_graph()
+    gated, dem = gated_demand_expansion(:C, g; tau_expand=0.20)
+    @test isapprox(dem[:A], 0.05; atol=1e-3)     # A halted (demand < τ)
+    @test :A in gated && :AB in gated            # DC#2 RETAINED the halted boundaries
+    _, marg = forward_supply(:C, g; active=gated)
+    @test all(isapprox.(marg[:C], (0.8935, 0.456); atol=1e-4))   # marginal survives the halt
+
+    # DC#2 OFF (retain_boundary=false): the halted boundaries are DROPPED → f1 loses A/AB → forward
+    # supply can't fire f1 → C is never computed. Retention is the load-bearing term: remove it and
+    # THIS marginal breaks (and only this — tests 1/2 don't halt-then-need a dropped node the same way).
+    g2 = _mammal_lassie_graph()
+    gated_off, _ = gated_demand_expansion(:C, g2; tau_expand=0.20, retain_boundary=false)
+    @test !(:A in gated_off)                     # A dropped without DC#2
+    _, marg_off = forward_supply(:C, g2; active=gated_off)
+    @test !haskey(marg_off, :C)                  # marginal unreachable without boundary retention
+end
