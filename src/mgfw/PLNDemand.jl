@@ -55,5 +55,59 @@ function demand_adjoint(
     return ntuple(i -> clamp(d_v * ns[i] * (1.0 - confidences[i]), 0.0, 1.0), N)
 end
 
+# ── §3.4 rows-only sensitivities (deduction, inversion) — singular, capped. ───────────────
+# For these rules s_out depends only on strengths and (simplified) c_out only on confidences,
+# so the 2×2 block J_{f,i} is DIAGONAL and ‖J_{f,i}‖_∞ = max(|∂s_out/∂s_i|, ∂c_out/∂c_i).
+#
+# SINGULARITY CLAMP (decided, NOT the forward-side /safe→empty analogue): the raw ∞-norm
+# DIVERGES at the boundary (inversion sA→0: ∝ sBA·sB/sA²; deduction sB→1: ∝ 1/(1−sB)²). We
+# CAP it at SENS_CAP — a large FINITE value — rather than returning 0/empty. Rationale: the
+# spec (§3.4 inversion remark) says demand GROWS as sA→0 ("matching the original PLN
+# error-sensitivity"), and §3.2 normalization (÷ S_f=max_j) turns a capped-maximal sensitivity
+# into sens̄→1, so the singular premise absorbs the demand — which is exactly what the spec
+# wants. Empty/zero would KILL demand where it should be maximal. The cap also keeps
+# sens/S_f finite (no Inf/Inf=NaN). The cap's exact magnitude is normalized away; it only
+# needs to exceed any interior sensitivity.
+const SENS_CAP = 1.0e6
+cap_sens(x::Real) = isfinite(x) ? min(abs(x), SENS_CAP) : SENS_CAP
+
+"""
+    sens_inversion(sA, cA, sB, cB, sBA, cBA; w_inv=1.0) -> (sens_A, sens_B, sens_BA)
+
+Inversion (Bayes) block sensitivities, eqs (12)-(13). Strength partials ∂(sBA·sB/sA)/∂·;
+simplified confidence c_AB = cA·cB·cBA·w_inv. **Singular at sA→0 → capped (see SENS_CAP).**
+"""
+function sens_inversion(sA, cA, sB, cB, sBA, cBA; w_inv::Real=1.0)
+    sens_A = max(cap_sens(sBA * sB / sA^2), cap_sens(cB * cBA * w_inv))    # ∂s/∂sA = −sBA·sB/sA²
+    sens_B = max(cap_sens(sBA / sA), cap_sens(cA * cBA * w_inv))          # ∂s/∂sB = sBA/sA
+    sens_BA = max(cap_sens(sB / sA), cap_sens(cA * cB * w_inv))           # ∂s/∂sBA = sB/sA
+    return (sens_A, sens_B, sens_BA)
+end
+
+"""
+    sens_deduction(sB, cB, sC, cC, sAB, cAB, sBC, cBC; w_ded=1.0) -> (sens_B, sens_C, sens_AB, sens_BC)
+
+Deduction block sensitivities, eqs (6)-(11). Strength partials eqs (8)-(11); simplified
+confidence c_AC = cB·cC·cAB·cBC·w_ded. **Singular at sB→1 → capped (see SENS_CAP).**
+"""
+function sens_deduction(sB, cB, sC, cC, sAB, cAB, sBC, cBC; w_ded::Real=1.0)
+    d = 1.0 - sB
+    ps_B = -(1.0 - sAB) * sBC / d + (1.0 - sAB) * (sC - sB * sBC) / d^2     # eq 8
+    ps_C = (1.0 - sAB) / d                                                 # eq 9
+    ps_AB = sBC - (sC - sB * sBC) / d                                      # eq 10
+    ps_BC = sAB - (1.0 - sAB) * sB / d                                     # eq 11
+    pc_B = cC * cAB * cBC * w_ded                                          # ∂c_AC/∂cB
+    pc_C = cB * cAB * cBC * w_ded
+    pc_AB = cB * cC * cBC * w_ded
+    pc_BC = cB * cC * cAB * w_ded
+    return (
+        max(cap_sens(ps_B), cap_sens(pc_B)),
+        max(cap_sens(ps_C), cap_sens(pc_C)),
+        max(cap_sens(ps_AB), cap_sens(pc_AB)),
+        max(cap_sens(ps_BC), cap_sens(pc_BC))
+    )
+end
+
 export need_stv, sens_hmp, sens_conjunction, sens_disjunction, sens_negation
 export normalize_sens, demand_adjoint
+export SENS_CAP, sens_inversion, sens_deduction

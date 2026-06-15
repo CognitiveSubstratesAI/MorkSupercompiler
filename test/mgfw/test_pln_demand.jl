@@ -84,3 +84,55 @@ end
         @test hi <= lo                                           # higher c_1 ⇒ lower demand
     end
 end
+
+# §3.4 rows-only forward maps — used ONLY to FD-verify the INTERIOR sensitivities.
+fwd_inversion(sA, cA, sB, cB, sBA, cBA; w=1.0) = (sBA * sB / sA, cA * cB * cBA * w)   # eq 6/12
+function fwd_deduction(sB, cB, sC, cC, sAB, cAB, sBC, cBC; w=1.0)                      # eq 6/7
+    s = sAB * sBC + (1.0 - sAB) * (sC - sB * sBC) / (1.0 - sB)
+    return (s, cB * cC * cAB * cBC * w)
+end
+
+@testset "§3.4 rows-only sensitivities — INTERIOR FD-agreement" begin
+    # SCOPE: this validates transcription of the SPEC CONTROLLER table against the FD Jacobian
+    # of the §3.4 (simplified-confidence) map. It is NOT a cross-check against PLNBook — the
+    # §3.4 confidence bookkeeping deliberately differs from book, so there is no inference-oracle
+    # agreement here (unlike 3b's forward maps). FD is only meaningful in the SMOOTH interior;
+    # the boundary is asserted separately below.
+    let p = [0.5, 0.9, 0.4, 0.8, 0.7, 0.9], s = sens_inversion(0.5, 0.9, 0.4, 0.8, 0.7, 0.9)
+        @test isapprox(
+            s[1], fd_block_infnorm((a...) -> fwd_inversion(a...), p, 1); atol=1e-3
+        )
+        @test isapprox(
+            s[2], fd_block_infnorm((a...) -> fwd_inversion(a...), p, 2); atol=1e-3
+        )
+        @test isapprox(
+            s[3], fd_block_infnorm((a...) -> fwd_inversion(a...), p, 3); atol=1e-3
+        )
+    end
+    let p = [0.4, 0.8, 0.6, 0.85, 0.7, 0.9, 0.5, 0.85],
+        s = sens_deduction(0.4, 0.8, 0.6, 0.85, 0.7, 0.9, 0.5, 0.85)
+
+        for i in 1:4
+            @test isapprox(
+                s[i], fd_block_infnorm((a...) -> fwd_deduction(a...), p, i); atol=1e-3
+            )
+        end
+    end
+end
+
+@testset "§3.4 rows-only sensitivities — BOUNDARY clamp (FD-meaningless; asserts chosen value)" begin
+    # At the singularity FD and the analytic partial diverge TOGETHER, so FD proves nothing
+    # here — these assertions pin the CHOSEN clamp behavior directly (bounded cap, NOT empty).
+    # Inversion sA→0: raw ∂s/∂sA = sBA·sB/sA² → ∞ ⇒ capped, and demand CONCENTRATES (not killed).
+    let s = sens_inversion(1.0e-5, 0.9, 0.4, 0.8, 0.7, 0.9)
+        @test s[1] == SENS_CAP                                   # capped to a finite value, no Inf/NaN
+        let psi = demand_adjoint(1.0, s, (0.9, 0.8, 0.9))
+            @test psi[1] > 0.0                                   # demand NOT killed at the singularity
+            @test isapprox(psi[1], 1.0 - 0.9; atol=1e-6)         # sens̄_A→1 ⇒ demand ≈ need_A (high)
+        end
+    end
+    # Deduction sB→1: raw ∂s/∂sB ∝ 1/(1−sB)² → ∞ ⇒ same cap decision.
+    let s = sens_deduction(1.0 - 1.0e-5, 0.8, 0.6, 0.85, 0.7, 0.9, 0.5, 0.85)
+        @test s[1] == SENS_CAP
+    end
+end
