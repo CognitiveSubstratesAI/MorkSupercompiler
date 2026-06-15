@@ -206,22 +206,29 @@ end
 # ── STV (Simple Truth Value) family ──────────────────────────────────────────
 
 """
-    stv_forward_map(strength_a::Float64, conf_a::Float64,
-                    strength_impl::Float64, conf_impl::Float64) -> (Float64, Float64)
+    stv_forward_map(strength_a, conf_a, strength_impl, conf_impl) -> (Float64, Float64)
 
-STV Heuristic Modus Ponens forward map.
-Computes (strength, confidence) for conclusion B given:
-A with (strength_a, conf_a) and (A → B) with (strength_impl, conf_impl).
+STV ModusPonens forward map — **faithful to PLN book §5.7.1** (lib/pln `Truth_ModusPonens`),
+the EXACT-rule contract:
 
-Using PLN deduction formula (simplified):
-strength_B = strength_a * strength_impl
-conf_B     = conf_a * conf_impl * min(strength_a, strength_impl)
+    strength_B = strength_a * strength_impl + 0.02 * (1 - strength_a)
+    conf_B     = w2c(conf_a * conf_impl),   w2c(w) = w / (w + 1)
+
+Conclusion B from A `(strength_a, conf_a)` and `(A → B) (strength_impl, conf_impl)`.
+
+Independent INLINE implementation: the Layer-1 gate (test/mgfw/test_pln_reference.jl)
+diffs this against the `PLNBook` oracle, so the two must NOT share code. This replaces the
+earlier "simplified" map (`sA·sI`, `cA·cI·min(sA,sI)`) that matched neither book nor the
+template's own lowering — PLN Layer-1 "Finding B", resolved in step 3b. The MG-Framework
+§10.1.2 heuristic (`min·0.9`) lives separately in `references.jl::stv_mp_reference` as the
+APPROXIMATE family for `specialize_approximate`.
 """
 function stv_forward_map(
     strength_a::Float64, conf_a::Float64, strength_impl::Float64, conf_impl::Float64
 )::Tuple{Float64, Float64}
-    s_b = clamp(strength_a * strength_impl, 0.0, 1.0)
-    c_b = clamp(conf_a * conf_impl * min(strength_a, strength_impl), 0.0, 1.0)
+    s_b = clamp(strength_a * strength_impl + 0.02 * (1.0 - strength_a), 0.0, 1.0)
+    w = conf_a * conf_impl
+    c_b = clamp(w / (w + 1.0), 0.0, 1.0)
     (s_b, c_b)
 end
 

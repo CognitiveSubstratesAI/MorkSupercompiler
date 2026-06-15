@@ -100,15 +100,15 @@ const PLNRef = MorkSupercompiler.PLNBook
 end
 
 @testset "mgfw forward maps vs PLNRef — Layer-1 gate" begin
-    # ── Rule 1/8: HeuristicModusPonens — mgfw map EXISTS (stv_forward_map). ──
-    # FINDING B: currently disagrees with the faithful reference on BOTH coords.
-    # `@test_broken` → reports an "unexpected pass" once step 3 makes mgfw
-    # faithful, at which point promote these to `@test`.
+    # ── Rule 1/8: ModusPonens — mgfw `stv_forward_map` now book-faithful (3b). ──
+    # Finding B RESOLVED: `stv_forward_map` was made book-faithful (FactorGeometry.jl),
+    # so it now agrees with the `PLNBook` oracle on BOTH coords. (Independent inline impl
+    # vs oracle — the diff stays discriminating.)
     let (s_mgfw, c_mgfw) = stv_forward_map(0.8, 0.9, 0.7, 0.85),
         (s_ref, c_ref) = PLNRef.modus_ponens(0.8, 0.9, 0.7, 0.85)
 
-        @test_broken isapprox(s_mgfw, s_ref; atol=1e-3)   # 0.56  vs 0.564
-        @test_broken isapprox(c_mgfw, c_ref; atol=1e-3)   # 0.5355 vs 0.4334
+        @test isapprox(s_mgfw, s_ref; atol=1e-3)   # 0.564 == 0.564
+        @test isapprox(c_mgfw, c_ref; atol=1e-3)   # 0.4334 == 0.4334
     end
 
     # ── Rules 2/8 .. 8/8: mgfw forward maps NOT YET BUILT (step 3). ──
