@@ -177,11 +177,6 @@ end
     lo, hi = pb.intervals[1]
     @test lo < 0.7 < hi
     @test pb.probabilities[1] ≈ 0.9
-
-    # stv_backward_demand
-    ns, nc = stv_backward_demand(0.81, 0.64)
-    @test ns ≈ 0.9 atol=0.01
-    @test nc ≈ 0.8 atol=0.01
 end
 
 @testset "FactorGeometry — Algorithm 1 specialize_exact" begin

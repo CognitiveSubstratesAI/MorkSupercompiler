@@ -28,7 +28,7 @@ const TEMPLATE_PLN_STV_MP = make_template(
     GEOM_FACTOR;
     operators=[
         :stv_forward_map,
-        :stv_backward_demand,
+        :compute_demand_field,
         :message_update,
         :boundary_refresh,
         :cache_lookup

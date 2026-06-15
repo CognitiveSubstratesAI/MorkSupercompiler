@@ -12,11 +12,13 @@
 # PLNBook inference oracle — same strength, simplified confidence. Inference uses PLNBook; the
 # demand CONTROLLER uses this table. (Verified against the §3.4 maps, NOT PLNBook.)
 #
-# This file (parts 1+2+2b): §3.2-§3.3 framework + Eq-1 demand adjoint; the 4 CLOSED-FORM
-# sensitivities (HMP eqs 4-5, conjunction 22-23, disjunction 25-26, negation=1); and all 4
-# ROWS-ONLY ∞-norms — deduction/inversion (eqs 6-13) and induction/abduction (eqs 14-16, via
-# chain-rule composition). Part 3 (remaining) wires the demand field over
-# `_backward_demand_expansion` (dem/need/expand=dem·need, max-join), retiring stv_backward_demand.
+# This file: §3.2-§3.3 framework + Eq-1 demand adjoint; the 4 CLOSED-FORM sensitivities (HMP
+# eqs 4-5, conjunction 22-23, disjunction 25-26, negation=1); all 4 ROWS-ONLY ∞-norms —
+# deduction/inversion (eqs 6-13) and induction/abduction (eqs 14-16, chain-rule composition);
+# per-factor `rule_sensitivity` dispatch; and `compute_demand_field` — the §3.3 demand field
+# over `_backward_demand_expansion` (COMPUTE-AND-ATTACH: seed d_v=1, Eq-1 backward, max-join;
+# the support set is unchanged — activation/gating is §4.4 (b)/§4.7, deferred). The orphan
+# `stv_backward_demand` has been retired in favor of this.
 
 # §3.2 — information need (confidence deficit) of a premise.
 need_stv(c::Real) = 1.0 - c

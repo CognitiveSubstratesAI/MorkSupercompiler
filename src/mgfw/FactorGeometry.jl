@@ -301,21 +301,8 @@ function stv_to_pbox(strength::Float64, confidence::Float64)::PBox
     pbox_interval(lo, hi, confidence)
 end
 
-"""
-    stv_backward_demand(goal_strength::Float64, goal_conf::Float64) -> (Float64, Float64)
-
-STV backward demand function: given a goal on B, what do we need from the premises?
-Returns the minimum (strength, confidence) we need on A and (A→B).
-"""
-function stv_backward_demand(
-    goal_strength::Float64, goal_conf::Float64
-)::Tuple{Float64, Float64}
-    # Adjoint: if we need strength s_B with conf c_B, we need at least
-    # sqrt(s_B) strength on premises (approximate inverse of product)
-    needed_strength = sqrt(max(0.0, goal_strength))
-    needed_conf = sqrt(max(0.0, goal_conf))
-    (needed_strength, needed_conf)
-end
+# (stv_backward_demand removed — the orphan sqrt heuristic that was never wired into the
+#  activation; superseded by PLNDemand.compute_demand_field, the real §3.3 demand field.)
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
@@ -427,7 +414,7 @@ conserves_evidence(region::SpecializedRegion, initial_mass::Float64)::Bool =
 
 export FactorNode, FactorEdge, FactorGraph, SpecializedRegion
 export specialize_exact, specialize_approximate
-export stv_forward_map, stv_to_pbox, stv_backward_demand
+export stv_forward_map, stv_to_pbox
 export stv_symmetric_mp, stv_negation, stv_inversion, stv_revision
 export stv_deduction, stv_induction, stv_abduction
 export noether_charge, conserves_evidence
