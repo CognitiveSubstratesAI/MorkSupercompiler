@@ -31,7 +31,7 @@
 # ── FINDING B (recorded as `@test_broken`) ────────────────────────────────────
 # THREE MP-confidence formulas coexist on (0.8,0.9,0.7,0.85), cross-checked by
 # nothing:
-#   stv_forward_map (LIVE specialize_exact)     : cA·cI·min(sA,sI) = 0.5355
+#   stv_forward_map (specialize_exact, TEST-ONLY) : cA·cI·min(sA,sI) = 0.5355
 #   pln_stv_lowering + stv_mp_reference (approx): min(cA,cI)·0.9   = 0.765
 #   lib/pln Truth_ModusPonens = PLNRef (book)   : w2c(cA·cI)       = 0.4334
 # The sharp form: `stv_forward_map` matches NEITHER its own template's lowering
