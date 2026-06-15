@@ -1,0 +1,67 @@
+name: CI
+on:
+  push:
+    branches:
+      - main
+    tags: ['*']
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  test:
+    name: Julia ${{ matrix.version }} - ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        version: ['1.12']
+        os: [ubuntu-latest]
+        arch: [x64]
+    steps:
+      - uses: actions/checkout@v4
+      # MorkSupercompiler dev-links HPC + MORKTensorNetworks + MORK + PathMap via [sources]
+      # (../HPC, ../MORKTensorNetworks, ../MORK, ../PathMap); MORKTensorNetworks + MORK in turn
+      # dev-link ../MORK / ../PathMap. Clone all four siblings before instantiation.
+      # TODO: clone HPC from CognitiveSubstratesAI once HPC is migrated to the org (currently
+      # only on sivaji1012/HPC — the last unmigrated [sources] dep).
+      - name: Clone path [sources] dependencies (siblings)
+        run: |
+          git clone --depth 1 https://github.com/CognitiveSubstratesAI/PathMap.git ../PathMap
+          git clone --depth 1 https://github.com/CognitiveSubstratesAI/MORK.git ../MORK
+          git clone --depth 1 https://github.com/CognitiveSubstratesAI/MORKTensorNetworks.git ../MORKTensorNetworks
+          git clone --depth 1 https://github.com/sivaji1012/HPC.git ../HPC
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: ${{ matrix.version }}
+          arch: ${{ matrix.arch }}
+      - uses: julia-actions/cache@v2
+      - uses: julia-actions/julia-buildpkg@v1
+      - uses: julia-actions/julia-runtest@v1
+
+  format:
+    name: Format (Blue)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: '1.12'
+      # No julia-actions/cache here — a cached Manifest can pin an older
+      # JuliaFormatter than the pinned version, causing local/CI drift.
+      - name: Check formatting
+        run: |
+          julia -e 'using Pkg; Pkg.add(PackageSpec(name="JuliaFormatter", version="2.5.2"))'
+          julia -e 'using JuliaFormatter; println("JuliaFormatter ", pkgversion(JuliaFormatter))'
+          julia -e 'using JuliaFormatter; format(".")'
+          if ! git diff --quiet; then
+            echo "::error::Formatting check failed — files below are not Blue-formatted:"
+            git --no-pager diff --stat
+            git --no-pager diff
+            exit 1
+          fi
+          echo "All files Blue-formatted."

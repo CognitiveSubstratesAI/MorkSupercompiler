@@ -96,7 +96,9 @@ inversion(sB, cB, sAB, cAB) = (sAB, cB * cAB * 0.6)
 # pln_core_logic.metta:272-279 — Truth_Revision:
 #   w1=c2w(c1) w2=c2w(c2) w=w1+w2; f=(w1·f1+w2·f2)/w; c=max(w2c(w),c1,c2)
 function revision(f1, c1, f2, c2)
-    w1 = c2w(c1); w2 = c2w(c2); w = w1 + w2
+    w1 = c2w(c1);
+    w2 = c2w(c2);
+    w = w1 + w2
     f = safe_div(w1 * f1 + w2 * f2, w)
     f === nothing && return (nothing, nothing)
     (min(1.0, f), min(1.0, max(c1, c2, w2c(w))))
@@ -109,7 +111,8 @@ end
 #   s = Qs>0.9999 ? Rs : PQs·QRs + /safe((1−PQs)(Rs−Qs·QRs), 1−Qs)
 #   c = PQs·QRs·PQc·QRc
 function deduction(sP, cP, sQ, cQ, sR, cR, sPQ, cPQ, sQR, cQR)
-    cons(as, bs, abs_) = (0 < as) && (clamp((as + bs - 1) / as, 0, 1) <= abs_ <= clamp(bs / as, 0, 1))
+    cons(as, bs, abs_) =
+        (0 < as) && (clamp((as + bs - 1) / as, 0, 1) <= abs_ <= clamp(bs / as, 0, 1))
     (cons(sP, sQ, sPQ) && cons(sQ, sR, sQR)) || return (1.0, 0.0)
     s = sQ > 0.9999 ? sR : begin
         d = safe_div((1.0 - sPQ) * (sR - sQ * sQR), 1.0 - sQ)
@@ -123,8 +126,14 @@ end  # module PLNRef
 @testset "PLNRef pins to lib/pln doctest goldens" begin
     # These goldens are the recorded `→` doctest values in pln_core_logic.metta.
     # Asserting PLNRef ≈ golden pins the analytic transcription to Core's spec.
-    @test all(isapprox.(PLNRef.modus_ponens(0.8, 0.9, 0.7, 0.85), (0.564, 0.4334); atol=1e-3))           # :243
-    @test all(isapprox.(PLNRef.symmetric_modus_ponens(0.8, 0.9, 0.7, 0.85), (0.628, 0.7191); atol=1e-3)) # :258
+    @test all(
+        isapprox.(PLNRef.modus_ponens(0.8, 0.9, 0.7, 0.85), (0.564, 0.4334); atol=1e-3)
+    )           # :243
+    @test all(
+        isapprox.(
+            PLNRef.symmetric_modus_ponens(0.8, 0.9, 0.7, 0.85), (0.628, 0.7191); atol=1e-3
+        )
+    ) # :258
     @test all(isapprox.(PLNRef.inversion(0.7, 0.8, 0.6, 0.9), (0.6, 0.432); atol=1e-3))                  # :291
     @test all(isapprox.(PLNRef.revision(0.6, 0.5, 0.8, 0.7), (0.74, 0.7692); atol=1e-3))                 # :271
     @test PLNRef.negation(0.7, 0.85) == (1.0 - 0.7, 0.85)                                                # :283
@@ -154,7 +163,8 @@ end
     # `@test_broken` → reports an "unexpected pass" once step 3 makes mgfw
     # faithful, at which point promote these to `@test`.
     let (s_mgfw, c_mgfw) = stv_forward_map(0.8, 0.9, 0.7, 0.85),
-        (s_ref, c_ref)   = PLNRef.modus_ponens(0.8, 0.9, 0.7, 0.85)
+        (s_ref, c_ref) = PLNRef.modus_ponens(0.8, 0.9, 0.7, 0.85)
+
         @test_broken isapprox(s_mgfw, s_ref; atol=1e-3)   # 0.56  vs 0.564
         @test_broken isapprox(c_mgfw, c_ref; atol=1e-3)   # 0.5355 vs 0.4334
     end
