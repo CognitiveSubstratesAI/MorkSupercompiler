@@ -493,7 +493,12 @@ end
     # whole forward chain, so DC#2 must retain its edge or forward supply starves.
     g = _mammal_lassie_graph()
     gated, dem = gated_demand_expansion(:C, g; tau_expand=0.20)
-    @test isapprox(dem[:A], 0.05; atol=1e-3)     # A halted (demand < τ)
+    # HALT FIRED: both f1 premises were reached, their demand computed, and BOTH are below the τ
+    # passed ⇒ neither was enqueued. A/AB are leaves, so their only path into `active` is the DC#2
+    # retain line (meets=false here) — which the retain_boundary=false branch confirms by dropping
+    # them. So retention is the REASON A survives, not walk-order coincidence.
+    @test isapprox(dem[:A], 0.05; atol=1e-3) && dem[:A] < 0.20    # §6.1 dem(A)=0.05, below τ
+    @test isapprox(dem[:AB], 0.192; atol=1e-3) && dem[:AB] < 0.20 # §6.1 dem(A→B)=0.192, below τ
     @test :A in gated && :AB in gated            # DC#2 RETAINED the halted boundaries
     _, marg = forward_supply(:C, g; active=gated)
     @test all(isapprox.(marg[:C], (0.8935, 0.456); atol=1e-4))   # marginal survives the halt

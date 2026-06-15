@@ -200,9 +200,11 @@ reachable from a graph (vs the template-level single rule). Premise-order CONVEN
 Errors on `:none`/unknown — a factor whose demand is computed MUST name a PLN rule.
 """
 function rule_sensitivity(
-    rule::Symbol, premises::AbstractVector{<:Tuple{Real, Real}}; pi_b::Real=0.02,
-    w::Real=1.0
+    rule::Symbol, premises::AbstractVector{<:Tuple{Real, Real}}; pi_b::Real=0.0, w::Real=1.0
 )
+    # pi_b default MUST be 0.0 to match rule_forward / sens_hmp / §6.1 — the demand controller
+    # and forward supply for the SAME HMP factor must share π_b (else gating computes with a
+    # different rate than inference; §6.1's dem(A→B)=0.192 + sens_{f1}(A)=0.99 both need π_b=0).
     if rule === :hmp
         (sA, cA), (sAB, cAB) = premises
         return sens_hmp(sA, cA, sAB, cAB; pi_b=pi_b)
