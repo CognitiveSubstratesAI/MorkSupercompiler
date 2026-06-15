@@ -40,21 +40,23 @@
 # surfaces (forward_map vs book); the lowering's EXECUTED output is closed by
 # OPEN ITEM 1, not here.
 #
-# ── OPEN ITEMS (the work this gate does NOT do; step 3) ────────────────────────
-#   1. LIVE LOWERING DIFF — the actual never-run diff pln_stv.jl flags and
-#      test_mgfw.jl's §15.4 smoke test calls "queued for the PLN session":
-#      execute `pln_stv_lowering`'s MeTTa via `space_metta_calculus!` and diff
-#      its EXECUTED B against the contract. Blocked on wiring `*`/`min`/`0.9`
-#      prims through the supercompiler prim registry. The existing §15.4
-#      "demo 2" acceptance (test_mgfw.jl:475-494) is a TAUTOLOGY (reference vs
-#      its own formula) + an `occursin` text-match — de-vacuate it.
+# ── OPEN ITEMS ────────────────────────────────────────────────────────────────
+#   1. LIVE LOWERING DIFF — ✅ RAN (testset "MVP §15.4 demo 2 (EXECUTED)" below).
+#      FINDING: the lowering is INERT and the §15.4 "reference interpreter" MVP was
+#      claimed on an UNEXECUTABLE lowering. Cause = SYNTAX/FORM: `pln_stv_lowering`
+#      emits `(=`/`:where`, not the `(exec source product)` triple the calculus fires
+#      (positive control proves the mechanism works; grounding `*`/`min` doesn't rescue
+#      it ⇒ not siting). FIX (still open) = rewrite the lowering into the `(exec …)`
+#      grounded form — and settle the GroundedSource `(I (* …))` path, which also did
+#      NOT reduce in a bare MORK space. WHEN it computes 0.765, the testset's
+#      `!occursin("0.765", …)` asserts flip to `== 0.765` and it becomes the real gate.
 #   2. INDUCTION / ABDUCTION goldens — ship in lib/pln with NO doctest `→`, so
-#      pinning PLNRef to its own evaluation would be circular. Their goldens
-#      MUST come from LIVE lib/pln execution (recorded at a consistency-
-#      satisfying point), not from PLNRef.
+#      pinning PLNBook to its own evaluation would be circular. Their goldens MUST come
+#      from LIVE lib/pln execution (modulo Core issue #1's Truth_w2c leak), not PLNBook.
 
 using Test
 using MorkSupercompiler
+using MORK: new_space, register_grounded!
 
 # PLNRef = the consolidated book-PLN reference family, which now lives in the package
 # as `MorkSupercompiler.PLNBook` (src/mgfw/templates/references.jl) alongside the
@@ -119,4 +121,72 @@ end
     @test_skip "Abduction forward map (singular sB→0)   — PLNRef.abduction (TODO)"
     @test_skip "Revision forward map                    — PLNRef.revision"
     @test_skip "Negation forward map                    — PLNRef.negation"
+end
+
+@testset "MVP §15.4 demo 2 (EXECUTED) — lowering is INERT, positive-control gated" begin
+    # De-vacuates OPEN ITEM 1. The old §15.4 "STV factor path == reference interpreter"
+    # acceptance (test_mgfw.jl:475-494) diffed `stv_mp_reference` against its OWN formula
+    # (a tautology) and only checked the lowering PARSES. This RUNS the lowering through
+    # `space_metta_calculus!` and reads the result — distinguishing the two inertness causes
+    # (syntax vs siting) with an EXPECTED value pinned per branch (not "any output passes").
+
+    # ── POSITIVE CONTROL (so "no B_TV" can't pass for the wrong reason) ──
+    # A known-firing `(exec source product)` rule proves the calculus mechanism works in
+    # this space. Without this, "inert" could silently mean "harness miswired".
+    let sc = new_space()
+        space_add_all_sexpr!(sc, "(ping a)")
+        space_add_all_sexpr!(sc, "(exec (pc 1) (, (ping \$x)) (, (ponged \$x)))")
+        space_metta_calculus!(sc, 100)
+        @test occursin("(ponged a)", space_dump_all_sexpr(sc))   # mechanism REACHED
+    end
+
+    t = GLOBAL_REGISTRY.templates[:PLN_STV_HeuristicModusPonens]
+    rules = get_lowering(:PLN_STV_HeuristicModusPonens)(t, "")
+    run_lowering =
+        () -> begin
+            s = new_space()
+            space_add_all_sexpr!(s, "(apply-mp (A (stv 0.8 0.9)) (AimpB (stv 0.7 0.85)))")
+            space_add_all_sexpr!(s, rules)
+            space_metta_calculus!(s, 100)
+            space_dump_all_sexpr(s)
+        end
+
+    # ── BARE MORK: inert. The (=/:where) rules sit as literals, the trigger is untouched,
+    #    and NO computed B_TV (0.765 = min(0.9,0.85)·0.9, 0.56 = 0.8·0.7) is produced. ──
+    let bare = run_lowering()
+        @test !occursin("0.765", bare)                      # no executed confidence
+        @test !occursin("(B (stv 0.5", bare)                # no executed B atom
+        @test occursin("(apply-mp (A (stv 0.8 0.9))", bare) # trigger untouched ⇒ rule never fired
+    end
+
+    # ── CORE-LOADED (grounded * / min): STILL inert ⇒ the defect is the FORM, not siting.
+    #    (NB: global GROUNDED_REGISTRY mutation — these are correct arithmetic, benign.) ──
+    for (n, o) in (("*", *), ("min", min))
+        register_grounded!(
+            n,
+            a -> begin
+                length(a) < 2 && return nothing
+                x = tryparse(Float64, a[1])
+                y = tryparse(Float64, a[2])
+                (x === nothing || y === nothing) && return nothing
+                r = o(x, y)
+                isinteger(r) ? string(Int(r)) : string(r)
+            end
+        )
+    end
+    @test !occursin("0.765", run_lowering())   # grounding doesn't rescue it ⇒ SYNTAX/FORM branch
+
+    # ── STRUCTURAL proof of the FORM defect: the lowering emits `(=` / `:where`, NOT the
+    #    `(exec source product)` triple the calculus actually fires (cf. the positive control). ──
+    @test occursin("(=", rules) && occursin(":where", rules) && !occursin("(exec", rules)
+
+    # FINDING (PLN 3a, 2026-06-15): the §15.4 "reference interpreter" MVP was claimed on an
+    # UNEXECUTABLE lowering. Cause = SYNTAX/FORM (`(=`/`:where`, not `(exec …)`); grounding is
+    # moot (the rule never engages the rewrite engine to reach arithmetic). FIX = rewrite
+    # `pln_stv_lowering` into the `(exec source product)` grounded form (like
+    # `motif_miner_lowering`). ⚠ the `(I (* …))` grounded-arith path did NOT reduce in a bare
+    # MORK space either — the rewrite must settle the correct GroundedSource invocation /
+    # Core wiring. WHEN the rewrite computes 0.765, flip the two `!occursin("0.765", …)`
+    # asserts to `== 0.765` (pinned to the APPROX `stv_mp_reference` contract) — this testset
+    # then becomes the real reference-interpreter gate.
 end
