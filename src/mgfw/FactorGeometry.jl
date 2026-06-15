@@ -28,6 +28,10 @@ name       — identifier
 role       — :premise, :conclusion, or :boundary
 message    — current outgoing message (a PBox for STV)
 cache_ver  — version tuple for cache validity
+rule       — for factor nodes: which PLN rule (:hmp/:deduction/:inversion/:induction/
+             :abduction/:conjunction/:disjunction/:negation); :none otherwise. This is the
+             per-factor rule tag that lets the demand field pick the right §3.4 sensitivity
+             (PLNDemand.rule_sensitivity) — without it the graph can only express one rule.
 """
 mutable struct FactorNode
     is_factor::Bool
@@ -35,10 +39,11 @@ mutable struct FactorNode
     role::Symbol         # :premise | :conclusion | :boundary
     message::PBox
     cache_ver::Int
+    rule::Symbol         # PLN rule tag for factor nodes; :none for variable/untagged nodes
 end
 
-FactorNode(name::Symbol, role::Symbol; is_factor=false) =
-    FactorNode(is_factor, name, role, pbox_exact(0.5), 0)
+FactorNode(name::Symbol, role::Symbol; is_factor=false, rule::Symbol=:none) =
+    FactorNode(is_factor, name, role, pbox_exact(0.5), 0, rule)
 
 """
     FactorEdge

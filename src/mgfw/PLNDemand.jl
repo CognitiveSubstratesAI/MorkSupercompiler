@@ -175,6 +175,59 @@ function sens_abduction(sA, cA, sB, cB, sC, cC, sAB, cAB, sCB, cCB; w::Real=1.0)
     )
 end
 
+# ── Per-factor rule dispatch ──────────────────────────────────────────────────────────────
+"""
+    rule_sensitivity(rule::Symbol, premises; pi_b=0.02, w=1.0) -> NTuple
+
+Dispatch a factor's PLN `rule` tag (FactorNode.rule) to its §3.4 sensitivity function,
+unpacking `premises` — the per-premise STVs `(s,c)` in role order (:premise_1, :premise_2, …)
+— into that function's positional args. This is what makes all 8 verified sensitivities
+reachable from a graph (vs the template-level single rule). Premise-order CONVENTION per rule
+(matches the sens_* signatures exactly):
+
+    :hmp         → [A, A→B]
+    :conjunction → [1, 2]            :disjunction → [1, 2]
+    :negation    → [premise]         (sens = 1 regardless of the premise value)
+    :inversion   → [A, B, B→A]
+    :deduction   → [B, C, A→B, B→C]
+    :induction   → [A, B, C, B→A, B→C]
+    :abduction   → [A, B, C, A→B, C→B]
+
+Errors on `:none`/unknown — a factor whose demand is computed MUST name a PLN rule.
+"""
+function rule_sensitivity(
+    rule::Symbol, premises::AbstractVector{<:Tuple{Real, Real}}; pi_b::Real=0.02,
+    w::Real=1.0
+)
+    if rule === :hmp
+        (sA, cA), (sAB, cAB) = premises
+        return sens_hmp(sA, cA, sAB, cAB; pi_b=pi_b)
+    elseif rule === :conjunction
+        (s1, c1), (s2, c2) = premises
+        return sens_conjunction(s1, c1, s2, c2)
+    elseif rule === :disjunction
+        (s1, c1), (s2, c2) = premises
+        return sens_disjunction(s1, c1, s2, c2)
+    elseif rule === :negation
+        return sens_negation()
+    elseif rule === :inversion
+        (sA, cA), (sB, cB), (sBA, cBA) = premises
+        return sens_inversion(sA, cA, sB, cB, sBA, cBA; w_inv=w)
+    elseif rule === :deduction
+        (sB, cB), (sC, cC), (sAB, cAB), (sBC, cBC) = premises
+        return sens_deduction(sB, cB, sC, cC, sAB, cAB, sBC, cBC; w_ded=w)
+    elseif rule === :induction
+        (sA, cA), (sB, cB), (sC, cC), (sBA, cBA), (sBC, cBC) = premises
+        return sens_induction(sA, cA, sB, cB, sC, cC, sBA, cBA, sBC, cBC; w=w)
+    elseif rule === :abduction
+        (sA, cA), (sB, cB), (sC, cC), (sAB, cAB), (sCB, cCB) = premises
+        return sens_abduction(sA, cA, sB, cB, sC, cC, sAB, cAB, sCB, cCB; w=w)
+    else
+        error("rule_sensitivity: factor must name a PLN rule, got :$(rule)")
+    end
+end
+
 export need_stv, sens_hmp, sens_conjunction, sens_disjunction, sens_negation
 export normalize_sens, demand_adjoint
 export SENS_CAP, sens_inversion, sens_deduction, sens_induction, sens_abduction
+export rule_sensitivity

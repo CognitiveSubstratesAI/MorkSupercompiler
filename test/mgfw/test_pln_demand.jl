@@ -191,3 +191,35 @@ end
         @test s1[2] == SENS_CAP   # sB → 1
     end
 end
+
+@testset "per-factor rule tagging: FactorNode.rule + rule_sensitivity dispatch" begin
+    # Backward-compat: the new `rule` field defaults to :none, so existing constructors are unbroken.
+    @test FactorNode(:x, :premise).rule === :none                       # var node, untagged
+    @test FactorNode(:f, :factor; is_factor=true).rule === :none        # factor, no rule given
+    @test FactorNode(:f, :factor; is_factor=true, rule=:deduction).rule === :deduction
+
+    # rule_sensitivity dispatches a factor's tag to its §3.4 sens_*, unpacking premises in role
+    # order. Verified == the direct sens_* call → all 8 verified sensitivities reachable via a tag.
+    @test rule_sensitivity(:hmp, [(0.8, 0.9), (0.7, 0.85)]) == sens_hmp(0.8, 0.9, 0.7, 0.85)
+    @test rule_sensitivity(:conjunction, [(0.8, 0.9), (0.7, 0.85)]) ==
+        sens_conjunction(0.8, 0.9, 0.7, 0.85)
+    @test rule_sensitivity(:disjunction, [(0.8, 0.9), (0.7, 0.85)]) ==
+        sens_disjunction(0.8, 0.9, 0.7, 0.85)
+    @test rule_sensitivity(:negation, [(0.7, 0.85)]) == sens_negation()
+    @test rule_sensitivity(:inversion, [(0.5, 0.9), (0.4, 0.8), (0.7, 0.9)]) ==
+        sens_inversion(0.5, 0.9, 0.4, 0.8, 0.7, 0.9)
+    @test rule_sensitivity(
+        :deduction, [(0.4, 0.8), (0.6, 0.85), (0.7, 0.9), (0.5, 0.85)]
+    ) ==
+        sens_deduction(0.4, 0.8, 0.6, 0.85, 0.7, 0.9, 0.5, 0.85)
+    let prem = [(0.6, 0.8), (0.4, 0.85), (0.6, 0.9), (0.5, 0.85), (0.5, 0.8)]
+        @test rule_sensitivity(:induction, prem) ==
+            sens_induction(0.6, 0.8, 0.4, 0.85, 0.6, 0.9, 0.5, 0.85, 0.5, 0.8)
+        @test rule_sensitivity(:abduction, prem) ==
+            sens_abduction(0.6, 0.8, 0.4, 0.85, 0.6, 0.9, 0.5, 0.85, 0.5, 0.8)
+    end
+
+    # A factor whose demand is computed MUST name a rule — :none / unknown errors loudly.
+    @test_throws ErrorException rule_sensitivity(:none, [(0.8, 0.9), (0.7, 0.85)])
+    @test_throws ErrorException rule_sensitivity(:bogus, [(0.8, 0.9)])
+end
