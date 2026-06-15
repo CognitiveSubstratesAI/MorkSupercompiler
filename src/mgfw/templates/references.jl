@@ -25,27 +25,96 @@ the same input, then compare.
 """
     stv_mp_reference(s_a, c_a, s_imp, c_imp) → (s_b, c_b)
 
-Apply the spec §10.1 HeuristicModusPonens forward map under STV (Simple
-Truth Value) — strength multiplies, confidence is the weaker of the two
-inputs scaled by the spec's standard 0.9 confidence-decay constant.
+**Family: APPROXIMATE — MG-Framework §10.1.2 HeuristicModusPonens.** This is the
+*heuristic* MP that `specialize_approximate` uses (strength multiplies; confidence is
+the weaker of the two scaled by the §10.1.2 standard 0.9 `adjoint-need` decay). It is
+deliberately NOT the book PLN ModusPonens — for the faithful family (the contract for
+the EXACT rules) see the `PLNBook` submodule below.
 
-Inputs:
-s_a, c_a       — strength and confidence of premise A
-s_imp, c_imp   — strength and confidence of `(implies A B)`
+It matches the formula emitted by `pln_stv_lowering` exactly, so a test can diff this
+against the lowered rule's *executed* output. (NB: as of 2026-06-15 that executed diff
+has never run — the `:where` lowering is inert on a bare MORK space; see
+test/mgfw/test_pln_reference.jl OPEN ITEM 1 / PLN step 3a.)
 
-Output:
-(s_b, c_b)     — strength and confidence of derived conclusion B
-
-This matches the formula emitted by `pln_stv_lowering` exactly, so the
-test in test_mgfw.jl can diff the reference output against the lowered
-rule's evaluation. The 0.9 decay is the spec §10.1.2 default for
-`HeuristicModusPonens` / `adjoint-need` backward demand.
+Inputs: `s_a, c_a` (premise A); `s_imp, c_imp` (`(implies A B)`). Output: `(s_b, c_b)` for B.
 """
 function stv_mp_reference(s_a::Real, c_a::Real, s_imp::Real, c_imp::Real)
     s_b = s_a * s_imp
     c_b = min(c_a, c_imp) * 0.9
     (s_b, c_b)
 end
+
+# ── §10.1 PLN BOOK truth-value family (the EXACT-rule contract) ────────────────
+"""
+    PLNBook — faithful analytic transcription of lib/pln/pln_core_logic.metta.
+
+The second of two reference families in this module (the first being the APPROXIMATE
+`stv_mp_reference` above). `PLNBook` is the **book PLN** contract that the mgfw forward
+maps (FactorGeometry) are made faithful against — analytic (not a call into Core) so it
+is immune to Core's live `Truth_w2c` Channel leak (CognitiveSubstratesAI/Core issue #1).
+Each fn cites its lib/pln source line. `/safe` returns `nothing` (the MeTTa `(empty)`) at
+the singular boundary — NOT a clamped number — so callers see "no truth value" exactly
+where lib/pln would. Pinned to the lib/pln doctest goldens by test_pln_reference.jl.
+
+Induction/abduction are intentionally absent here — they ship in lib/pln with no doctest
+`→`, so their goldens must come from live execution (or hand-derivation if issue #1's leak
+is live); added in PLN step 3c.
+"""
+module PLNBook
+
+# pln_core_logic.metta:40-43 — (/safe A B) = (if (> B 0) (/ A B) (empty))
+safe_div(a, b) = b > 0.0 ? a / b : nothing
+# pln_core_logic.metta:46-47 — (negate x) = (- 1 x)
+negate(x) = 1.0 - x
+# pln_core_logic.metta:176-177 — Truth_c2w(c) = /safe c (1-c)
+c2w(c) = safe_div(c, 1.0 - c)
+# pln_core_logic.metta:180-181 — Truth_w2c(w) = /safe w (w+1)   [⚠ Core issue #1 leak root]
+w2c(w) = safe_div(w, w + 1.0)
+# pln_core_logic.metta:70-71 — Truth_or(a,b) = 1 - (1-a)(1-b)
+t_or(a, b) = 1.0 - (1.0 - a) * (1.0 - b)
+
+# pln_core_logic.metta:249-251 — Truth_ModusPonens (book §5.7.1)
+modus_ponens(sP, cP, sPQ, cPQ) = (sP * sPQ + 0.02 * (1.0 - sP), w2c(cP * cPQ))
+
+# pln_core_logic.metta:259-263 — Truth_SymmetricModusPonens (snotAB=0.2)
+function symmetric_modus_ponens(sA, cA, sAB, cAB)
+    snotAB = 0.2
+    s = sA * sAB + snotAB * negate(sA) * (1.0 + sAB)
+    c = cA * cAB * t_or(sA, sAB)
+    (s, c)
+end
+
+# pln_core_logic.metta:283-284 — Truth_Negation: s = 1−s; c unchanged
+negation(s, c) = (1.0 - s, c)
+
+# pln_core_logic.metta:292-295 — Truth_inversion (B, AB): s = ABs; c = Bc·ABc·0.6
+inversion(sB, cB, sAB, cAB) = (sAB, cB * cAB * 0.6)
+
+# pln_core_logic.metta:272-279 — Truth_Revision
+function revision(f1, c1, f2, c2)
+    w1 = c2w(c1)
+    w2 = c2w(c2)
+    w = w1 + w2
+    f = safe_div(w1 * f1 + w2 * f2, w)
+    f === nothing && return (nothing, nothing)
+    (min(1.0, f), min(1.0, max(c1, c2, w2c(w))))
+end
+
+# pln_core_logic.metta:192-213 — Truth_Deduction (book §1.4), 5-input.
+# SINGULAR at Qs→1 (guarded: Qs>0.9999 ⇒ Rs); biting boundary is the consistency
+# precondition → (1 0) fallback. s = Qs>0.9999 ? Rs : PQs·QRs + /safe((1−PQs)(Rs−Qs·QRs),1−Qs)
+function deduction(sP, cP, sQ, cQ, sR, cR, sPQ, cPQ, sQR, cQR)
+    cons(as, bs, abs_) =
+        (0 < as) && (clamp((as + bs - 1) / as, 0, 1) <= abs_ <= clamp(bs / as, 0, 1))
+    (cons(sP, sQ, sPQ) && cons(sQ, sR, sQR)) || return (1.0, 0.0)
+    s = sQ > 0.9999 ? sR : begin
+        d = safe_div((1.0 - sPQ) * (sR - sQ * sQR), 1.0 - sQ)
+        d === nothing ? nothing : sPQ * sQR + d
+    end
+    (s, sPQ * sQR * cP * cQR)
+end
+
+end  # module PLNBook
 
 # ── §10.3 Trie motif miner reference ───────────────────────────────────────────
 
@@ -163,5 +232,5 @@ function bgc_priority(
     (curr - prev) / step_cost
 end
 
-export stv_mp_reference, naive_top_k_motifs
+export stv_mp_reference, naive_top_k_motifs, PLNBook
 export bgc_forward_f, bgc_backward_g, bgc_priority

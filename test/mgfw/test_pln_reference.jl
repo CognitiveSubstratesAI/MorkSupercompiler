@@ -56,72 +56,12 @@
 using Test
 using MorkSupercompiler
 
-# ── PLNRef — faithful analytic transcription of lib/pln/pln_core_logic.metta ──
-# Each helper cites its source line. `/safe` returns `nothing` (the MeTTa
-# `(empty)`) at the singular boundary — NOT a clamped number — so callers see
-# "no truth value" exactly where lib/pln would.
-module PLNRef
-
-# pln_core_logic.metta:40-43 — (/safe A B) = (if (> B 0) (/ A B) (empty))
-safe_div(a, b) = b > 0.0 ? a / b : nothing
-# pln_core_logic.metta:46-47 — (negate x) = (- 1 x)
-negate(x) = 1.0 - x
-# pln_core_logic.metta:176-177 — Truth_c2w(c) = /safe c (1-c)
-c2w(c) = safe_div(c, 1.0 - c)
-# pln_core_logic.metta:180-181 — Truth_w2c(w) = /safe w (w+1)
-w2c(w) = safe_div(w, w + 1.0)
-# pln_core_logic.metta:70-71 — Truth_or(a,b) = 1 - (1-a)(1-b)
-t_or(a, b) = 1.0 - (1.0 - a) * (1.0 - b)
-
-# pln_core_logic.metta:249-251 — Truth_ModusPonens (book §5.7.1)
-#   s = Ps·PQs + 0.02·(1−Ps);  c = w2c(Pc·PQc)
-modus_ponens(sP, cP, sPQ, cPQ) = (sP * sPQ + 0.02 * (1.0 - sP), w2c(cP * cPQ))
-
-# pln_core_logic.metta:259-263 — Truth_SymmetricModusPonens (snotAB=0.2)
-#   s = sA·sAB + snotAB·(1−sA)·(1+sAB);  c = cA·cAB·t_or(sA,sAB)
-function symmetric_modus_ponens(sA, cA, sAB, cAB)
-    snotAB = 0.2
-    s = sA * sAB + snotAB * negate(sA) * (1.0 + sAB)
-    c = cA * cAB * t_or(sA, sAB)
-    (s, c)
-end
-
-# pln_core_logic.metta:283-284 — Truth_Negation: s = 1−s; c unchanged
-negation(s, c) = (1.0 - s, c)
-
-# pln_core_logic.metta:292-295 — Truth_inversion (B, AB):
-#   s = ABs;  c = Bc·ABc·0.6   (confidence-attenuated swap; singular nowhere)
-inversion(sB, cB, sAB, cAB) = (sAB, cB * cAB * 0.6)
-
-# pln_core_logic.metta:272-279 — Truth_Revision:
-#   w1=c2w(c1) w2=c2w(c2) w=w1+w2; f=(w1·f1+w2·f2)/w; c=max(w2c(w),c1,c2)
-function revision(f1, c1, f2, c2)
-    w1 = c2w(c1);
-    w2 = c2w(c2);
-    w = w1 + w2
-    f = safe_div(w1 * f1 + w2 * f2, w)
-    f === nothing && return (nothing, nothing)
-    (min(1.0, f), min(1.0, max(c1, c2, w2c(w))))
-end
-
-# pln_core_logic.metta:192-213 — Truth_Deduction (book §1.4), 5-input.
-#   SINGULAR at Qs→1: the (1−Qs) denominator. lib/pln branches `Qs>0.9999 ⇒ Rs`
-#   BEFORE the /safe; the boundary therefore returns Rs, not empty. The
-#   consistency preconditions gate the whole rule → (1 0) fallback when unmet.
-#   s = Qs>0.9999 ? Rs : PQs·QRs + /safe((1−PQs)(Rs−Qs·QRs), 1−Qs)
-#   c = PQs·QRs·PQc·QRc
-function deduction(sP, cP, sQ, cQ, sR, cR, sPQ, cPQ, sQR, cQR)
-    cons(as, bs, abs_) =
-        (0 < as) && (clamp((as + bs - 1) / as, 0, 1) <= abs_ <= clamp(bs / as, 0, 1))
-    (cons(sP, sQ, sPQ) && cons(sQ, sR, sQR)) || return (1.0, 0.0)
-    s = sQ > 0.9999 ? sR : begin
-        d = safe_div((1.0 - sPQ) * (sR - sQ * sQR), 1.0 - sQ)
-        d === nothing ? nothing : sPQ * sQR + d
-    end
-    (s, sPQ * sQR * cP * cQR)  # note: lib/pln uses (PQs·QRs)·(PQc·QRc)
-end
-
-end  # module PLNRef
+# PLNRef = the consolidated book-PLN reference family, which now lives in the package
+# as `MorkSupercompiler.PLNBook` (src/mgfw/templates/references.jl) alongside the
+# APPROXIMATE `stv_mp_reference` — ONE reference module, two delineated families. This
+# test pins PLNBook to the lib/pln doctest goldens; the mgfw forward maps (step 3) are
+# then diffed against the same module, so test and runtime share one contract.
+const PLNRef = MorkSupercompiler.PLNBook
 
 @testset "PLNRef pins to lib/pln doctest goldens" begin
     # These goldens are the recorded `→` doctest values in pln_core_logic.metta.
