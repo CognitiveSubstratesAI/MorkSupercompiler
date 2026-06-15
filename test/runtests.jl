@@ -69,6 +69,7 @@ end
 
     # ── Multi-Geometry Framework (Doc 3) ─────────────────────────────────────
     include("mgfw/test_mgfw.jl")
+    include("mgfw/test_pln_reference.jl")   # PLN Layer-1 forward-map reference gate
 
     # ── Multi-Space (Stage 1 + Stage 2) ─────────────────────────────────────
     include("multispace/test_multispace.jl")
