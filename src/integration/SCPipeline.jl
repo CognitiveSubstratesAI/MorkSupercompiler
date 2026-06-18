@@ -119,7 +119,39 @@ and executing up to `opts.max_steps` metta_calculus! steps.
 `program` should contain the exec/rule atoms NOT yet loaded into `s`.
 Background facts should already be in `s` before calling.
 """
+# §10.3 MeTTa→MM2 lowering (MeTTa-MM2-Supercompiler_v1_spec.md:502, "Basic pattern matching").
+# The supercompiler executes `(exec …)` programs; the whole downstream (plan/decompose/space_add/
+# calculus) only FIRES `exec` atoms — a `match` atom added verbatim is inert. So we rewrite a
+# top-level `(match SPACE PAT TMPL)` query into `(exec 0 (, PAT) (, TMPL))` at entry, before any
+# stage. This is the missing bridge: the algorithm library's `match` joins can now feed the pipeline
+# (previously only hand-written `exec` worked). SPACE is dropped (exec runs against the one trie
+# sc_execute! targets). A single pattern → 1-source `(, PAT)`; a `(, s₁ … sₙ)` pattern passes through
+# as the multi-source join (where reorder + Rule-of-64 decomposition pay off).
+function _lower_match_snode(n::SNode)::SNode
+    n isa SList || return n
+    items = (n::SList).items
+    if length(items) == 4 && items[1] isa SAtom && (items[1]::SAtom).name == "match"
+        pat = items[3]
+        sources = (pat isa SList && !isempty((pat::SList).items) &&
+                   (pat::SList).items[1] isa SAtom && ((pat::SList).items[1]::SAtom).name == ",") ?
+                  pat : SList(SNode[SAtom(","), pat])
+        template = SList(SNode[SAtom(","), items[4]])
+        return SList(SNode[SAtom("exec"), SAtom("0"), sources, template])
+    end
+    return n
+end
+
+_is_match_node(n::SNode) = n isa SList && length((n::SList).items) == 4 &&
+    (n::SList).items[1] isa SAtom && ((n::SList).items[1]::SAtom).name == "match"
+
+function _lower_match_program(program::AbstractString)::String
+    nodes = parse_program(program)
+    any(_is_match_node, nodes) || return String(program)          # no match → untouched (fast path)
+    return sprint_program(SNode[_lower_match_snode(n) for n in nodes])
+end
+
 function execute!(s::Space, program::AbstractString; opts::SCOptions=SC_DEFAULTS)::SCResult
+    program = _lower_match_program(program)        # §10.3: top-level (match …) → (exec …) before any stage
     timings = Dict{Symbol, Float64}()
 
     # Stage 1 — collect statistics
