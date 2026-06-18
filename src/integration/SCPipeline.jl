@@ -150,6 +150,17 @@ function _lower_match_program(program::AbstractString)::String
     return sprint_program(SNode[_lower_match_snode(n) for n in nodes])
 end
 
+# Body of a saturation rule `(==> BODY HEAD)`: a `(, p₁ … pₙ)` conjunction → all premises;
+# a single pattern → one premise.
+function _sat_body_ids!(g::MCoreGraph, body::SNode, vm::Dict{String,Int})::Vector{NodeID}
+    if body isa SList && !isempty((body::SList).items) &&
+       (body::SList).items[1] isa SAtom && ((body::SList).items[1]::SAtom).name == ","
+        its = (body::SList).items
+        return NodeID[_sexpr_to_mcore!(g, its[i], vm) for i in 2:length(its)]
+    end
+    return NodeID[_sexpr_to_mcore!(g, body, vm)]
+end
+
 function execute!(s::Space, program::AbstractString; opts::SCOptions=SC_DEFAULTS)::SCResult
     program = _lower_match_program(program)        # §10.3: top-level (match …) → (exec …) before any stage
     timings = Dict{Symbol, Float64}()
@@ -198,30 +209,55 @@ function execute!(s::Space, program::AbstractString; opts::SCOptions=SC_DEFAULTS
         timings[:decompose] = t
     end
 
-    # Stage 4 — optional KB saturation on background facts (Algorithm 11 §7.1)
-    # Implements IncrementalSaturation: enumerate MORK atoms → MCoreGraph facts
-    # → saturate! until fixed point with semi-naive evaluation.
+    # Stage 4 — KB saturation on the LIVE Space (Algorithm 11 §7.1, IncrementalSaturation).
+    # Enumerate the Space: a `(==> BODY HEAD)` atom becomes a forward RULE, everything else a base
+    # FACT; run semi-naive saturation to a fixed point; then SERIALIZE the DERIVED facts back to the
+    # Space (sprint_mcore → s-expr → space_add_all_sexpr!).
     #
-    # NOTE: derived facts live on the local MCoreGraph; they are NOT written
-    # back to the MORK Space (would require M-Core → s-expr serialization).
-    # We surface the counts so callers can verify saturation actually fired
-    # (previously a silent no-op for runtime semantics — see audit
-    # 2026-05-30 finding "saturate_kb is silently no-op for runtime").
+    # This closes the long-standing write-back gap (saturation was observability-only). MORK's
+    # KBSaturation already IS the seminaive forward-saturation engine (the PFC/Datalog fixpoint), so
+    # nothing is ported — we only wire it onto the live path. The uniqueness gate in saturate! gives
+    # termination, so a recursive rule like `(==> (, (path $x $y) (edge $y $z)) (path $x $z))` that
+    # would loop the tree-walker converges here and materializes its transitive closure.
+    # (Two genuine Prolog deltas — TMS retraction cascade + negation-under-maintenance — are NOT
+    # added: saturation here is monotone add-only, sufficient until a non-monotonic workload needs them.)
     n_facts_derived = 0
     n_kb_facts = 0
     if opts.saturate_kb
         t = @elapsed begin
             g = MCoreGraph()
             kb = KBState(g)
-            # Enumerate all atoms in space, parse each as an M-Core fact
-            dump = space_dump_all_sexpr(s)
-            for line in split(dump, "\n"; keepempty=false)
+            rule_ctr = 0
+            _is_rule(sn) = sn isa SList && length((sn::SList).items) == 3 &&
+                (sn::SList).items[1] isa SAtom && ((sn::SList).items[1]::SAtom).name == "==>"
+            # RULES come from the `program` text — variables are PRESERVED there. (The space DUMP
+            # renders each atom's vars positionally/anonymously, which destroys the cross-pattern
+            # var sharing a join needs, so rules can't be recovered from the dump.) One fresh varmap
+            # per rule so its body+head share variables; numeric/named distinct via _sexpr_to_mcore!.
+            for sn in parse_program(program)
+                _is_rule(sn) || continue
+                try
+                    items = (sn::SList).items                        # (==> BODY HEAD)
+                    vm = Dict{String,Int}()
+                    body_ids = _sat_body_ids!(g, items[2], vm)
+                    head_id  = _sexpr_to_mcore!(g, items[3], vm)
+                    rule_ctr += 1
+                    rid = add_sym!(g, Sym(Symbol("__sat_rule_$rule_ctr")))
+                    kb_add_rule!(kb, Rule(head_id, body_ids, rid))
+                catch
+                end
+            end
+            # Base FACTS come from the live Space (ground atoms — no vars to mangle). Skip any `==>`
+            # stored in the space (its vars are mangled by the dump; rules are taken from `program`).
+            for line in split(space_dump_all_sexpr(s), "\n"; keepempty=false)
                 line = strip(line)
                 isempty(line) && continue
                 try
                     nodes = parse_program(line)
                     isempty(nodes) && continue
-                    fid = _sexpr_to_mcore!(g, only(nodes))
+                    sn = only(nodes)
+                    _is_rule(sn) && continue
+                    fid = _sexpr_to_mcore!(g, sn)
                     isvalid(fid) && kb_add_fact!(kb, fid)
                 catch
                     # Skip atoms that don't parse to valid M-Core
@@ -229,6 +265,15 @@ function execute!(s::Space, program::AbstractString; opts::SCOptions=SC_DEFAULTS
             end
             n_facts_derived = saturate!(kb; max_rounds=100)
             n_kb_facts = length(kb.facts)
+            # write-back: serialize each DERIVED fact (not base) and add it to the live Space
+            if n_facts_derived > 0
+                derived = String[]
+                for f in values(kb.facts)
+                    is_base_fact(f) && continue
+                    push!(derived, sprint_mcore(kb.g, f.id))
+                end
+                isempty(derived) || space_add_all_sexpr!(s, join(derived, "\n"))
+            end
         end
         timings[:saturate] = t
     end
@@ -360,27 +405,34 @@ function _sexpr_nodes_to_mcore(g::MCoreGraph, nodes::Vector{SNode})::Vector{Node
     NodeID[_sexpr_to_mcore!(g, n) for n in nodes]
 end
 
-function _sexpr_to_mcore!(g::MCoreGraph, n::SNode)::NodeID
+# `varmap` maps a NAMED variable (`$x`) to a distinct, SHARED M-Core Var id within one scope (one
+# atom/rule), so `(path $x $y)` + `(edge $y $z)` correctly share `$y` for the join. Without this,
+# every named var collapsed to `Var(0)` and joins/saturation over the M-Core could never bind. Pass
+# ONE varmap across a rule's body+head; a fresh map per independent atom. Numeric vars (`$1`) keep
+# their literal id; named vars get ids offset by NAMED_VAR_BASE to avoid clashing with numeric ones.
+const NAMED_VAR_BASE = 100_000
+function _sexpr_to_mcore!(g::MCoreGraph, n::SNode,
+                          varmap::Dict{String,Int}=Dict{String,Int}())::NodeID
     if n isa SAtom
         return add_sym!(g, Sym(Symbol((n::SAtom).name)))
     elseif n isa SVar
-        # Variable: parse the index from the name if numeric, else use 0
         name = (n::SVar).name[2:end]  # strip leading $
-        ix = tryparse(Int, name)
-        return add_var!(g, Var(ix !== nothing ? ix : 0))
+        num = tryparse(Int, name)
+        ix = num !== nothing ? num : get!(varmap, name, NAMED_VAR_BASE + length(varmap))
+        return add_var!(g, Var(ix))
     else
         items = (n::SList).items
         isempty(items) && return add_con!(g, Con(:nil))
         head = items[1]
 
         if head isa SAtom && (head::SAtom).name == "exec"
-            # Compile exec atom as mm2_exec primitive
-            arg_ids = NodeID[_sexpr_to_mcore!(g, items[i]) for i in 2:length(items)]
+            # Compile exec atom as mm2_exec primitive (share the varmap across its sources+template)
+            arg_ids = NodeID[_sexpr_to_mcore!(g, items[i], varmap) for i in 2:length(items)]
             return add_prim!(g, Prim(:mm2_exec, arg_ids, EffectSet(UInt8(0x05))))
         end
 
-        head_id = _sexpr_to_mcore!(g, head)
-        field_ids = NodeID[_sexpr_to_mcore!(g, items[i]) for i in 2:length(items)]
+        head_id = _sexpr_to_mcore!(g, head, varmap)
+        field_ids = NodeID[_sexpr_to_mcore!(g, items[i], varmap) for i in 2:length(items)]
         if head isa SAtom
             return add_con!(g, Con(Symbol((head::SAtom).name), field_ids))
         end

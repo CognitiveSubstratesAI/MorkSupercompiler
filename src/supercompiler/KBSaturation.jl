@@ -248,6 +248,11 @@ function _apply_rule_semi_naive!(kb::KBState, rule::Rule, delta_old::Vector{Fact
         head_id = _instantiate(kb.g, rule.head_id, bindings)
         isvalid(head_id) || continue
         haskey(kb.facts, head_id.idx) && continue
+        # VALUE-based uniqueness gate: `_instantiate` mints a fresh NodeID per derivation, so the
+        # NodeID check above never catches a re-derived value. Without this, cyclic data (e.g.
+        # edge 0↔1) re-derives the same path forever. Reuse the head index + structural equality.
+        any(fid -> _node_equal(kb.g, fid, head_id),
+            index_lookup(kb.index, _fact_head(kb.g, head_id))) && continue
 
         f = Fact(head_id, rule.rule_id, collect(values(bindings)), kb.version)
         kb_add_fact!(kb, f)
@@ -321,6 +326,22 @@ function _facts_unify(g::MCoreGraph, pat_id::NodeID, fact_id::NodeID)::Bool
     false
 end
 
+# Structural VALUE equality of two M-Core nodes. Two facts can hold the same value (`1`) as DISTINCT
+# graph nodes (different NodeIDs), so a shared variable's consistency check must compare by value, not
+# by NodeID identity — otherwise a join on a shared var (e.g. `(path $x $y),(edge $y $z)`) never binds.
+function _node_equal(g::MCoreGraph, a::NodeID, b::NodeID)::Bool
+    a == b && return true
+    na = get_node(g, a); nb = get_node(g, b)
+    na isa Sym && nb isa Sym && return (na::Sym).name == (nb::Sym).name
+    na isa Lit && nb isa Lit && return (na::Lit).val == (nb::Lit).val
+    if na isa Con && nb isa Con
+        nca = na::Con; ncb = nb::Con
+        (nca.head == ncb.head && length(nca.fields) == length(ncb.fields)) || return false
+        return all(_node_equal(g, x, y) for (x, y) in zip(nca.fields, ncb.fields))
+    end
+    return false
+end
+
 function _merge_bindings(
     g::MCoreGraph, pat_id::NodeID, fact_id::NodeID, existing::Dict{Int, NodeID}
 )::Union{Dict{Int, NodeID}, Nothing}
@@ -328,7 +349,7 @@ function _merge_bindings(
     if pn isa Var
         ix = (pn::Var).ix
         if haskey(existing, ix)
-            existing[ix] == fact_id || return nothing   # conflict
+            _node_equal(g, existing[ix], fact_id) || return nothing   # conflict (compare by VALUE)
         else
             out = copy(existing)
             out[ix] = fact_id
