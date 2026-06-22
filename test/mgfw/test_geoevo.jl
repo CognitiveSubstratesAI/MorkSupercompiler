@@ -197,9 +197,8 @@ end
         push!(omegas, geo_step!([d], s, :G, p; fitness_fn=fit, steer=true, rng=rng).omega_align[1])
     end
     @test omegas[end] < omegas[1]                       # the coupling STEERED evolution (Ω_align↓)
+    @test omegas[end] ≤ 0.1                             # FULLY CLOSED: Ω_align→0 (EDA-guided round, no random junk)
     @test geo_cover(geo_deme_ops(d), motif) ≈ 1.0       # CONVERGED: deme acquired the FULL subgoal motif
-    # (Ω_align floors >0, not →0, because the SHARED random `_sample_candidates` co-injects non-motif
-    #  ops that inflate Gap — removing that random co-sampler is the §7/§8 forward-completeness track.)
 
     # CONTROL: unsteered, the random forward variation cannot reach the subgoal ops
     d2 = Deme(2); d2.eda_model[:x] = 1.0

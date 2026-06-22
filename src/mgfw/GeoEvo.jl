@@ -336,7 +336,48 @@ function geo_eda_sample!(d::Deme, n::Int; rng::AbstractRNG=default_rng())
 end
 
 """
-    geo_step!(demes, space, goal, p; fitness_fn, steer=false, n_inject=8, rng) -> NamedTuple
+    geo_evolve_steered!(demes, motifs, fitness_fn, p; n_cand=12, top_k=5, rng) -> demes
+
+GeoEvo-native steered evolutionary round (§8 EDA-guided generation) — the forward variation that
+actually CLOSES the loop. Per deme: bias toward its best-paired subgoal motif, generate candidates by
+EDA-sampling from the biased model (NO random head-mutation), evaluate, keep top-k, and RE-ESTIMATE
+the EDA model from the survivors (`empty!` first — so stale non-motif keys don't accumulate). This is
+why `Ω_align → 0` here, vs the shared `evolve_demes!`/`_sample_candidates` which floors Gap > 0.
+
+NOTE: this is the EDA-guided-generation slice of §7/§8. Full §7 quantale crossover (join/product/
+mask-based) and full §8 (n-ary factor-graph EDA + belief propagation) remain as richer variation; the
+shared `evolve_demes!` random round is still used on the unsteered path.
+"""
+function geo_evolve_steered!(demes::Vector{Deme}, motifs::Dict{String, Set{Symbol}},
+        fitness_fn::Function, p::Dict{Symbol, Float64}; n_cand::Int=12, top_k::Int=5,
+        rng::AbstractRNG=default_rng())
+    sgids, C, _, _, _ = geo_pairing(demes, motifs, p)
+    for (m, d) in enumerate(demes)
+        isempty(sgids) || geo_align_bias!(d, motifs[sgids[argmax(@view C[m, :])]])
+        geo_eda_sample!(d, n_cand; rng=rng)                       # EDA-guided variation (no random heads)
+        for id in collect(keys(d.store.nodes))
+            d.fitnesses[id] = fitness_fn(d.store, id)
+        end
+        scored = sort(collect(d.fitnesses); by = x -> -x[2])
+        best_f = isempty(scored) ? 0.0 : scored[1][2]
+        top = [id for (id, f) in scored if f >= best_f - 1e-9]    # elite = best-fitness tier (Occam, drops the worse)
+        length(top) > top_k && (top = top[1:top_k])
+        counts = Dict{Symbol, Int}()
+        for id in top
+            haskey(d.store.nodes, id) && (counts[d.store.nodes[id].head] = get(counts, d.store.nodes[id].head, 0) + 1)
+        end
+        empty!(d.eda_model)                                       # re-estimate from survivors (the fix)
+        tot = max(1, sum(values(counts)))
+        for (op, c) in counts
+            d.eda_model[op] = c / tot
+        end
+        d.generation += 1
+    end
+    return demes
+end
+
+"""
+    geo_step!(demes, space, goal, p; fitness_fn, steer=false, n_inject=12, rng) -> NamedTuple
 
 One GEO-EVO scheduler iteration (§4.5). With `steer=true` the loop is CLOSED: each deme is biased
 toward its best-paired subgoal motif and EDA-sampled from that bias BEFORE the forward round, so the
@@ -344,18 +385,13 @@ two ends genuinely pull each other (Ω_align↓). With `steer=false` it is the v
 measured, forward variation random). All structure read from `space`; nothing hardcoded.
 """
 function geo_step!(demes::Vector{Deme}, s::MORK.Space, goal::Symbol, p::Dict{Symbol, Float64};
-        fitness_fn::Function, steer::Bool=false, n_inject::Int=8, rng::AbstractRNG=default_rng())
+        fitness_fn::Function, steer::Bool=false, n_inject::Int=12, rng::AbstractRNG=default_rng())
     motifs = geo_subgoal_motifs(s)
     if steer && !isempty(motifs) && !isempty(demes)
-        sg0, C0, _, _, _ = geo_pairing(demes, motifs, p)
-        for (m, d) in enumerate(demes)
-            isempty(sg0) && break
-            k = argmax(@view C0[m, :])               # the deme's best-paired subgoal
-            geo_align_bias!(d, motifs[sg0[k]])
-            geo_eda_sample!(d, n_inject; rng=rng)
-        end
+        geo_evolve_steered!(demes, motifs, fitness_fn, p; n_cand=n_inject, rng=rng)  # EDA-guided — closes the loop (Gap→0)
+    else
+        evolve_demes!(demes, fitness_fn)                      # MVP / unsteered: shared random engine
     end
-    evolve_demes!(demes, fitness_fn)                          # forward round (reused engine)
     bwd = geo_backward_g(s, goal)
     sgids, C, π, omega, sgap = geo_pairing(demes, motifs, p)
     splices = geo_splice_check(demes, motifs, bwd, p)
