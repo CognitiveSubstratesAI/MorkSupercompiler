@@ -25,6 +25,7 @@ Staging (honest, no stubs-called-done):
 """
 
 # Space ops are MORK-qualified to avoid clashing with MorkSupercompiler's own `new_space`/`Space`.
+using Random: AbstractRNG, default_rng
 
 # ── structure read FROM the space (NOT hardcoded) ─────────────────────────────────────────────
 
@@ -296,10 +297,65 @@ One GEO-EVO scheduler iteration (§4.5 minimal): advance the forward demes one r
 allocation. Mutates `demes` (forward evolution). All structure (subgoal motifs, factors, params)
 read from `space` — nothing hardcoded.
 """
+# ── (a) close the forward loop: bias-driven, EDA-guided variation toward subgoals ──────────────
+# The §3.4 analysis-proximal-demes direction MADE ACTIVE: bias a deme toward its paired subgoal motif
+# and SAMPLE from that bias, so the coupling STEERS evolution (Ω_align↓) — not just measures it.
+# (The shared `evolve_demes!`/`_sample_candidates` stays random — closing THAT is the §7/§8 forward
+# track; here GeoEvo steers via eda_model + EDA-guided injection, which `evolve_demes!` then selects.)
+
+"Boost a deme's `eda_model` toward `motif` operators (the Ω_align-reducing variation bias, §3.4) + renormalize."
+function geo_align_bias!(d::Deme, motif::Set{Symbol}; strength::Float64=2.0)
+    for op in motif
+        d.eda_model[op] = get(d.eda_model, op, 0.0) + strength
+    end
+    z = sum(values(d.eda_model))
+    z > 0 && for k in collect(keys(d.eda_model)); d.eda_model[k] /= z; end
+    return d
+end
+
+"""
+    geo_eda_sample!(d, n; rng) -> Deme
+
+EDA-guided sampling: intern `n` nodes whose heads are drawn from the deme's (bias-boosted) `eda_model`,
+so the population ACQUIRES the favoured operators. This is what makes the coupling steer evolution —
+it CONSUMES `eda_model` (unlike the shared random `_sample_candidates`). Deterministic given `rng`.
+"""
+function geo_eda_sample!(d::Deme, n::Int; rng::AbstractRNG=default_rng())
+    isempty(d.eda_model) && return d
+    ops = collect(keys(d.eda_model)); w = collect(values(d.eda_model)); z = sum(w)
+    z <= 0 && return d
+    for _ in 1:n
+        r = rand(rng) * z; acc = 0.0; chosen = ops[end]
+        for i in eachindex(ops)
+            acc += w[i]
+            r <= acc && (chosen = ops[i]; break)
+        end
+        d.fitnesses[dag_intern!(d.store, chosen)] = 0.0
+    end
+    return d
+end
+
+"""
+    geo_step!(demes, space, goal, p; fitness_fn, steer=false, n_inject=8, rng) -> NamedTuple
+
+One GEO-EVO scheduler iteration (§4.5). With `steer=true` the loop is CLOSED: each deme is biased
+toward its best-paired subgoal motif and EDA-sampled from that bias BEFORE the forward round, so the
+two ends genuinely pull each other (Ω_align↓). With `steer=false` it is the v1c MVP (coupling
+measured, forward variation random). All structure read from `space`; nothing hardcoded.
+"""
 function geo_step!(demes::Vector{Deme}, s::MORK.Space, goal::Symbol, p::Dict{Symbol, Float64};
-        fitness_fn::Function)
-    evolve_demes!(demes, fitness_fn)                          # forward round (reused engine)
+        fitness_fn::Function, steer::Bool=false, n_inject::Int=8, rng::AbstractRNG=default_rng())
     motifs = geo_subgoal_motifs(s)
+    if steer && !isempty(motifs) && !isempty(demes)
+        sg0, C0, _, _, _ = geo_pairing(demes, motifs, p)
+        for (m, d) in enumerate(demes)
+            isempty(sg0) && break
+            k = argmax(@view C0[m, :])               # the deme's best-paired subgoal
+            geo_align_bias!(d, motifs[sg0[k]])
+            geo_eda_sample!(d, n_inject; rng=rng)
+        end
+    end
+    evolve_demes!(demes, fitness_fn)                          # forward round (reused engine)
     bwd = geo_backward_g(s, goal)
     sgids, C, π, omega, sgap = geo_pairing(demes, motifs, p)
     splices = geo_splice_check(demes, motifs, bwd, p)

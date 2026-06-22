@@ -1,6 +1,7 @@
 using Test
 using MorkSupercompiler
 import MORK
+using Random: MersenneTwister
 
 @testset "GeoEvo v0 — data-driven (no-hardcode) contract" begin
     # Structure lives in the space; the engine reads it. Two spaces with different param atoms
@@ -173,4 +174,38 @@ end
     w = geo_bandit([2.0, 0.0], [0.0, 0.0], p)
     @test w[1] > w[2]
     @test sum(w) ≈ 1.0
+end
+
+@testset "GeoEvo (a) — closed forward loop: steered geo_step! drives Ω_align down" begin
+    p = geo_params(MORK.new_space())
+    s = MORK.new_space()
+    MORK.space_add_all_sexpr!(s, "(subgoal-motif G and)\n(subgoal-motif G move)")
+    motif = Set([:and, :move])
+    fit(store, id) = (haskey(store.nodes, id) && store.nodes[id].head in motif) ? 1.0 : 0.0
+
+    # EDA-guided sampler CONSUMES eda_model (acquires the biased operator)
+    d3 = Deme(3); geo_align_bias!(d3, Set([:grab]))
+    geo_eda_sample!(d3, 5; rng=MersenneTwister(1))
+    @test :grab in Set(n.head for n in values(d3.store.nodes))
+
+    # STEERED: deme starts far from the subgoal (only :x); the coupling should pull it in.
+    d = Deme(1); d.eda_model[:x] = 1.0
+    _, _, _, om_init, _ = geo_pairing([d], geo_subgoal_motifs(s), p)   # initial Ω_align (≈1)
+    rng = MersenneTwister(7)
+    omegas = Float64[om_init[1]]
+    for _ in 1:8
+        push!(omegas, geo_step!([d], s, :G, p; fitness_fn=fit, steer=true, rng=rng).omega_align[1])
+    end
+    @test omegas[end] < omegas[1]                       # the coupling STEERED evolution (Ω_align↓)
+    @test geo_cover(geo_deme_ops(d), motif) ≈ 1.0       # CONVERGED: deme acquired the FULL subgoal motif
+    # (Ω_align floors >0, not →0, because the SHARED random `_sample_candidates` co-injects non-motif
+    #  ops that inflate Gap — removing that random co-sampler is the §7/§8 forward-completeness track.)
+
+    # CONTROL: unsteered, the random forward variation cannot reach the subgoal ops
+    d2 = Deme(2); d2.eda_model[:x] = 1.0
+    rng2 = MersenneTwister(7); om2 = 1.0
+    for _ in 1:8
+        om2 = geo_step!([d2], s, :G, p; fitness_fn=fit, steer=false, rng=rng2).omega_align[1]
+    end
+    @test om2 ≥ omegas[end]            # steering helps: unsteered stays no closer than steered
 end
