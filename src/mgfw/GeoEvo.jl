@@ -564,3 +564,27 @@ function geo_fg_sample(marg::Dict{Symbol, Float64}, fac::Dict{Tuple{Symbol, Symb
     end
     return out
 end
+
+# ── §7+§8 wired into a loop: block-based evolution over op-SETS (multi-op programs) ────────────
+# Resolves the single-op limitation of geo_eda_sample! by representing programs as operator SETS, so
+# §7 recombination and §8 factor-graph EDA actually drive the search. Each round: §8 mine co-occurrence
+# from the elite + sample dependency-aware offspring, §7 recombine the elite toward the subgoal motif,
+# select. Building blocks accumulate into full coverers — the geodesic two-ends loop, fully realized.
+
+"""
+    geo_evolve_blocks!(pop, motif, fitness; rng, n, elite, size) -> pop
+
+One round of block-based GEO-EVO over a population of op-sets, USING §7 (`geo_recombine`) + §8
+(`geo_mine_factors`/`geo_fg_sample`). `fitness::Set{Symbol}->Real` scores op-sets; `motif` is the
+backward subgoal the recombination is biased toward. Returns the new population (elite + offspring).
+"""
+function geo_evolve_blocks!(pop::Vector{Set{Symbol}}, motif::Set{Symbol}, fitness;
+        rng::AbstractRNG=default_rng(), n::Int=8, elite::Int=4, size::Int=3)
+    scored = sort([(s, float(fitness(s))) for s in pop]; by = x -> -x[2])
+    keep = Set{Symbol}[s for (s, _) in scored[1:min(elite, length(scored))]]
+    fits = Float64[float(fitness(s)) for s in keep]
+    marg, fac = geo_mine_factors(keep, fits)                              # §8.2 mine co-occurrence
+    offspring = isempty(marg) ? Set{Symbol}[] : geo_fg_sample(marg, fac; rng=rng, n=n, size=size)  # §8.3
+    append!(offspring, geo_recombine(keep, motif; rng=rng, n=n))         # §7 building-block recombine
+    return vcat(keep, offspring)
+end

@@ -264,3 +264,17 @@ end
         @test (k ⊆ Set([:a, :b])) || (k ⊆ Set([:c, :d]))   # coherent block, vs independent EDA mixing
     end
 end
+
+@testset "GeoEvo §7+§8 in-loop — block evolution accumulates building blocks into a full coverer" begin
+    motif = Set([:a, :b, :c])
+    fit(s::Set{Symbol}) = geo_cover(s, motif)                  # reward subgoal-motif coverage
+    pop = [Set([:a]), Set([:b]), Set([:c]), Set([:x])]          # building blocks SCATTERED across programs
+    best0 = maximum(fit, pop)
+    @test best0 ≈ 1 / 3                                         # no single program covers >1 op of the motif
+    for _ in 1:5
+        pop = geo_evolve_blocks!(pop, motif, fit; rng=MersenneTwister(4))
+    end
+    bestN = maximum(fit, pop)
+    @test bestN > best0                                        # §7 recombine + §8 EDA combined the blocks
+    @test bestN ≈ 1.0                                          # CONVERGED: a program covers the FULL motif {a,b,c}
+end
