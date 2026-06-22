@@ -97,3 +97,47 @@ end
     fgu = geo_factor_graph(su)
     @test fgu.var_nodes[:Punk].message.confidence ≈ 0.0   # ignorance = zero confidence (§2.4)
 end
+
+@testset "GeoEvo v1b — two-ends coupling (Comp/Gap/π) over demes × subgoal motifs (data)" begin
+    p = geo_params(MORK.new_space())   # documented fallback params
+
+    # subgoal motifs are DATA: (subgoal-motif id op) atoms
+    sm = MORK.new_space()
+    MORK.space_add_all_sexpr!(sm, join([
+        "(subgoal-motif reach-door and)",
+        "(subgoal-motif reach-door move)",
+        "(subgoal-motif pick-key grasp)",
+    ], "\n"))
+    motifs = geo_subgoal_motifs(sm)
+    @test motifs["reach-door"] == Set([:and, :move])
+    @test motifs["pick-key"] == Set([:grasp])
+
+    # operator-set kernels (§3.4)
+    @test geo_cover(Set([:a, :b]), Set([:a, :b, :c])) ≈ 2 / 3
+    @test geo_gap(Set([:a]), Set([:a])) ≈ 0.0
+    @test geo_gap(Set([:a]), Set([:b])) ≈ 1.0
+
+    # two demes with distinct operator profiles (set via eda_model — what evolve_demes! would learn)
+    d1 = Deme(1); d1.eda_model[:and] = 0.5; d1.eda_model[:move] = 0.5   # ~ reach-door
+    d2 = Deme(2); d2.eda_model[:grasp] = 1.0                            # = pick-key
+    sgids, C, P, omega, sgap = geo_pairing([d1, d2], motifs, p)
+
+    @test sgids == ["pick-key", "reach-door"]     # sorted
+    rd = findfirst(==("reach-door"), sgids); pk = findfirst(==("pick-key"), sgids)
+    @test C[1, rd] > C[1, pk]                      # deme1 covers reach-door better
+    @test C[2, pk] > C[2, rd]                      # deme2 covers pick-key better
+    @test all(abs.(sum(P, dims=2) .- 1.0) .< 1e-9)  # π rows are distributions
+    @test P[1, rd] > P[1, pk]                      # pairing follows Comp
+    @test omega[2] ≈ 0.0                           # deme2 exactly matches a motif ⇒ min Gap = 0
+    @test sgap[pk] ≈ 0.0                           # pick-key has a deme that matches it exactly
+
+    # §9.4 weakness = unique DAG node count
+    st = DAGStore()
+    leaf = dag_intern!(st, :x)
+    root = dag_intern!(st, :f, UInt64[leaf, leaf])   # f over a shared leaf ⇒ 2 unique nodes
+    @test geo_weakness(st, root) == 2
+
+    # DATA-DRIVEN: no subgoal motifs in the space → no coupling
+    sgids0, _, _, _, _ = geo_pairing([d1], Dict{String, Set{Symbol}}(), p)
+    @test isempty(sgids0)
+end

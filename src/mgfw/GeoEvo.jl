@@ -160,3 +160,87 @@ function geo_backward_g(s::MORK.Space, goal::Symbol; budget::Int=1000)::Dict{Sym
     _, dem = compute_demand_field(goal, geo_factor_graph(s), budget)
     return dem
 end
+
+# ── v1b: two-ends-of-the-path co-adaptation (Geo-Evo §3.4) ─────────────────────────────────────
+# Couples the forward demes (evolve_demes!) to the backward subgoals. The forward loop is REUSED
+# (not rebuilt); v1b adds the coupling. Subgoal motifs are DATA: (subgoal-motif <id> <op>) atoms.
+# Deme manifold M_m ≈ its operator profile (eda_model / store heads). Analytical manifold S_k ≈ a
+# subgoal's motif operator set. Compatibility/pairing computed over operator-set Cover/Reach/Gap.
+
+"Operator profile of a deme (its `eda_model` favoured ops; else the heads present in its store)."
+function geo_deme_ops(d::Deme)::Set{Symbol}
+    isempty(d.eda_model) || return Set(keys(d.eda_model))
+    return Set(n.head for n in values(d.store.nodes))
+end
+
+"§9.4 weakness W = Occam node-count: the number of unique DAG nodes reachable from `root`."
+function geo_weakness(store::DAGStore, root::UInt64)::Int
+    seen = Set{UInt64}()
+    stack = UInt64[root]
+    while !isempty(stack)
+        id = pop!(stack)
+        (id in seen || !haskey(store.nodes, id)) && continue
+        push!(seen, id)
+        append!(stack, store.nodes[id].children)
+    end
+    return length(seen)
+end
+
+"Read `(subgoal-motif <id> <op>)` atoms → Dict(subgoal-id ⇒ Set of motif operators). Pure data read."
+function geo_subgoal_motifs(s::MORK.Space)::Dict{String, Set{Symbol}}
+    out = Dict{String, Set{Symbol}}()
+    for a in _geo_dump_lines(s)
+        m = match(r"^\(subgoal-motif\s+(\S+)\s+(\S+?)\s*\)$", a)
+        m === nothing && continue
+        push!(get!(out, String(m.captures[1]), Set{Symbol}()), Symbol(m.captures[2]))
+    end
+    return out
+end
+
+"§3.4 Cover: fraction of the subgoal's motif the deme already expresses (population satisfies subgoal)."
+geo_cover(deme_ops::Set{Symbol}, motif::Set{Symbol})::Float64 =
+    isempty(motif) ? 0.0 : length(intersect(deme_ops, motif)) / length(motif)
+
+"§3.4 Gap: projection mismatch = Jaccard distance between motif space and deme knob-span ∈ [0,1]."
+function geo_gap(deme_ops::Set{Symbol}, motif::Set{Symbol})::Float64
+    u = length(union(deme_ops, motif))
+    return u == 0 ? 0.0 : length(symdiff(deme_ops, motif)) / u
+end
+
+"§3.4 Reach (editability within the deme). MVP proxy: variation capacity ~ operator richness.
+§5.1 sanctions a simple surrogate here; deferred = short-rollout / learned editability predictor."
+geo_reach(deme_ops::Set{Symbol})::Float64 = 1.0 - 1.0 / (1.0 + length(deme_ops))
+
+"""
+    geo_pairing(demes, motifs, p) -> (sgids, Comp, π, omega_align, subgoal_deme_gap)
+
+§3.4 two-ends co-adaptation, bidirectional:
+  • `Comp[m,k]` = `geo_comp(Cover, Reach, Gap)` over operator sets (demes × subgoals);
+  • `π` = `geo_sinkhorn(Comp)` — the soft deme↔subgoal pairing;
+  • `omega_align[m]` = minₖ Gap(m,k)  — **analysis-proximal-demes** regularizer (how far each deme is
+    from its nearest subgoal; the variation bias the scheduler would reduce);
+  • `subgoal_deme_gap[k]` = minₘ Gap(m,k) — **deme-proximal-analysis** signal (prefer decompositions
+    near existing demes, Geo-Evo `DecompEffort + η·minGap`).
+All weights (α1,α2,α3,τ) read from `p` (data). Pure — produces the coupling STATE; the scheduler
+(v1c) consumes it. NOTE/depth-limit: applying `omega_align` as a variation bias is gated on the
+forward engine's `_sample_candidates` consuming `eda_model` (it currently samples randomly — a
+documented forward-completeness gap, NOT faked here).
+"""
+function geo_pairing(demes::Vector{Deme}, motifs::Dict{String, Set{Symbol}}, p::Dict{Symbol, Float64})
+    sgids = sort(collect(keys(motifs)))
+    M, K = length(demes), length(sgids)
+    C = zeros(Float64, M, K)
+    G = zeros(Float64, M, K)
+    for (m, d) in enumerate(demes)
+        ops = geo_deme_ops(d); r = geo_reach(ops)
+        for (k, sg) in enumerate(sgids)
+            motif = motifs[sg]
+            C[m, k] = geo_comp(geo_cover(ops, motif), r, geo_gap(ops, motif), p)
+            G[m, k] = geo_gap(ops, motif)
+        end
+    end
+    π = (M > 0 && K > 0) ? geo_sinkhorn(C, p) : zeros(Float64, M, K)
+    omega_align = [K > 0 ? minimum(@view G[m, :]) : 0.0 for m in 1:M]
+    subgoal_deme_gap = [M > 0 ? minimum(@view G[:, k]) : 0.0 for k in 1:K]
+    return (sgids, C, π, omega_align, subgoal_deme_gap)
+end
