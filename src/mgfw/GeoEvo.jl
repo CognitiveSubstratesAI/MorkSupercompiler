@@ -402,3 +402,49 @@ function geo_step!(demes::Vector{Deme}, s::MORK.Space, goal::Symbol, p::Dict{Sym
         backward=bwd, splices=splices, allocation=alloc,
         generation=isempty(demes) ? 0 : demes[1].generation)
 end
+
+# ── §7 quantale variation operators (MOSES-MORK §7 / §9.2 Q_var) ───────────────────────────────
+# Program variation as algebra in the powerset quantale over operator sets: ⊕ = ∪ (permissive join),
+# ⊗ = ∩ (common product), mask = per-element parent selection via the residuum complement. This is
+# the RECOMBINATION layer on top of the §8 EDA generation — it mixes BUILDING BLOCKS from existing
+# good programs (the classic GA crossover power), rather than only resampling the EDA model.
+
+"§7.1 join-crossover (⊕, permissive): child inherits the UNION of both parents' operators."
+geo_xover_join(a::Set{Symbol}, b::Set{Symbol})::Set{Symbol} = union(a, b)
+
+"§7.1 product-crossover (⊗, common): child inherits the INTERSECTION (strongest common structure)."
+geo_xover_product(a::Set{Symbol}, b::Set{Symbol})::Set{Symbol} = intersect(a, b)
+
+"§7.2 mask-based crossover: `mask` ops from parent `a`, the residuum complement from parent `b` —
+child = (a ∩ mask) ∪ (b ∖ mask). Per-operator parent selection (building-block mixing)."
+geo_xover_mask(a::Set{Symbol}, b::Set{Symbol}, mask::Set{Symbol})::Set{Symbol} =
+    union(intersect(a, mask), setdiff(b, mask))
+
+"§7.3 additive (weakening) mutation, m ⊕ δ: add operator `op`."
+geo_mutate_add(a::Set{Symbol}, op::Symbol)::Set{Symbol} = union(a, Set([op]))
+
+"§7.3 multiplicative (sharpening) mutation, m ⊗ δ: restrict to `keep`."
+geo_mutate_restrict(a::Set{Symbol}, keep::Set{Symbol})::Set{Symbol} = intersect(a, keep)
+
+"""
+    geo_recombine(parents, motif; rng, n) -> Vector{Set{Symbol}}
+
+§7 building-block recombination toward a subgoal `motif` (the Geo-Evo two-ends bias on variation):
+crossover the `parents` (op-sets) — all pairwise joins (building-block combination) plus random
+product/mask variety — and return the `n` children that best COVER `motif`. Combines partial coverers
+into a full coverer, which neither parent reaches alone.
+"""
+function geo_recombine(parents::Vector{Set{Symbol}}, motif::Set{Symbol};
+        rng::AbstractRNG=default_rng(), n::Int=4)::Vector{Set{Symbol}}
+    length(parents) < 2 && return copy(parents)
+    children = Set{Symbol}[]
+    for i in 1:length(parents), j in (i + 1):length(parents)   # systematic joins = building-block combine
+        push!(children, geo_xover_join(parents[i], parents[j]))
+    end
+    for _ in 1:max(n, 4)                                        # product/mask variety
+        a = parents[rand(rng, 1:length(parents))]; b = parents[rand(rng, 1:length(parents))]
+        push!(children, rand(rng, Bool) ? geo_xover_product(a, b) : geo_xover_mask(a, b, motif))
+    end
+    sort!(children; by = c -> -geo_cover(c, motif))
+    return children[1:min(n, length(children))]
+end

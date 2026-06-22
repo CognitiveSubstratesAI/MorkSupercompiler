@@ -208,3 +208,19 @@ end
     end
     @test om2 ≥ omegas[end]            # steering helps: unsteered stays no closer than steered
 end
+
+@testset "GeoEvo §7 — quantale crossover/mutation + building-block recombination" begin
+    a = Set([:x, :y]); b = Set([:y, :z])
+    @test geo_xover_join(a, b) == Set([:x, :y, :z])                 # ⊕ = union (permissive)
+    @test geo_xover_product(a, b) == Set([:y])                      # ⊗ = intersection (common)
+    @test geo_xover_mask(Set([:x, :y]), Set([:p, :q]), Set([:x])) == Set([:x, :p, :q])  # x from a, p,q from b
+    @test geo_mutate_add(Set([:x]), :y) == Set([:x, :y])           # m ⊕ δ
+    @test geo_mutate_restrict(Set([:x, :y, :z]), Set([:x, :y])) == Set([:x, :y])        # m ⊗ δ
+
+    # BUILDING-BLOCK MIXING: two HALF-covering parents → a FULL-covering child (§7's whole point)
+    motif = Set([:a, :b, :c, :d])
+    parents = [Set([:a, :b]), Set([:c, :d])]   # neither covers the motif alone
+    @test geo_cover(parents[1], motif) ≈ 0.5 && geo_cover(parents[2], motif) ≈ 0.5
+    kids = geo_recombine(parents, motif; rng=MersenneTwister(2), n=4)
+    @test geo_cover(kids[1], motif) ≈ 1.0      # join recombined the building blocks → full coverage
+end
