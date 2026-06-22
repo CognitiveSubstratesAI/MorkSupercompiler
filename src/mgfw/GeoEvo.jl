@@ -448,3 +448,53 @@ function geo_recombine(parents::Vector{Set{Symbol}}, motif::Set{Symbol};
     sort!(children; by = c -> -geo_cover(c, motif))
     return children[1:min(n, length(children))]
 end
+
+# ── §3.9 success metrics + §4.1/4.2 guidance capsule persistence (observability) ───────────────
+
+"""
+    geo_metrics(omega_seq, pairing_seq) -> NamedTuple
+
+§3.9 success metrics over a `geo_step!` trajectory:
+  • `coupling_gain`  = Ω_align reduction (first − last)            — how much the two ends converged;
+  • `action_length`  = Σ |ΔΩ_align| per step                       — transport effort (prefer small);
+  • `evenness`       = std of the per-step |ΔΩ_align|              — low ⇒ steady geodesic progress;
+  • `pi_stability`   = L1 change of π in the final step            — lower ⇒ pairings settled.
+Pure; dependency-free.
+"""
+function geo_metrics(omega_seq::Vector{Float64}, pairing_seq::Vector{<:AbstractMatrix})
+    n = length(omega_seq)
+    coupling_gain = n >= 2 ? omega_seq[1] - omega_seq[end] : 0.0
+    deltas = n >= 2 ? [abs(omega_seq[i + 1] - omega_seq[i]) for i in 1:(n - 1)] : Float64[]
+    action_length = sum(deltas; init=0.0)
+    evenness = if length(deltas) < 2
+        0.0
+    else
+        mu = action_length / length(deltas)
+        sqrt(sum((d - mu)^2 for d in deltas) / length(deltas))
+    end
+    pi_stability = length(pairing_seq) >= 2 ? sum(abs.(pairing_seq[end] .- pairing_seq[end - 1])) : 0.0
+    return (coupling_gain=coupling_gain, action_length=action_length, evenness=evenness, pi_stability=pi_stability)
+end
+
+"""
+    geo_guidance_capsules!(space, res) -> Int
+
+§4.1/4.2 persist the running GEO-EVO state from a `geo_step!` result as MORK capsule atoms (so it is
+queryable + auditable, the connectome pattern — not in-memory only):
+  `(geo-guidance omega-align deme<m> <v>)` · `(geo-pairing deme<m> <subgoal> <π>)` ·
+  `(geo-guidance backward <node> <demand>)`. Returns the number of capsules written.
+"""
+function geo_guidance_capsules!(s::MORK.Space, res)::Int
+    lines = String[]
+    for (m, om) in enumerate(res.omega_align)
+        push!(lines, "(geo-guidance omega-align deme$(m) $(round(om, digits=4)))")
+    end
+    for (k, sg) in enumerate(res.subgoals), m in 1:size(res.pairing, 1)
+        push!(lines, "(geo-pairing deme$(m) $(sg) $(round(res.pairing[m, k], digits=4)))")
+    end
+    for (node, dem) in res.backward
+        push!(lines, "(geo-guidance backward $(node) $(round(dem, digits=4)))")
+    end
+    isempty(lines) || MORK.space_add_all_sexpr!(s, join(lines, "\n"))
+    return length(lines)
+end

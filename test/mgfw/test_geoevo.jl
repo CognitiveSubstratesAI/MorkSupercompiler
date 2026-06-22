@@ -224,3 +224,25 @@ end
     kids = geo_recombine(parents, motif; rng=MersenneTwister(2), n=4)
     @test geo_cover(kids[1], motif) ≈ 1.0      # join recombined the building blocks → full coverage
 end
+
+@testset "GeoEvo §3.9 — success metrics + §4.1/4.2 guidance capsule persistence" begin
+    # §3.9 metrics over a convergent Ω_align trajectory
+    omega = [1.0, 0.5, 0.2, 0.0, 0.0]
+    pi1 = [0.5 0.5; 0.5 0.5]; pi2 = [0.9 0.1; 0.1 0.9]
+    mt = geo_metrics(omega, [pi1, pi2])
+    @test mt.coupling_gain ≈ 1.0               # Ω_align converged 1.0 → 0.0
+    @test mt.action_length ≈ 1.0               # Σ|ΔΩ| = 0.5+0.3+0.2+0
+    @test mt.evenness ≥ 0.0
+    @test mt.pi_stability ≈ 1.6                # L1 change of π in the final step
+
+    # §4.1/4.2 guidance capsules persisted to the MORK space + readable back
+    p = geo_params(MORK.new_space())
+    s = MORK.new_space()
+    MORK.space_add_all_sexpr!(s, "(subgoal-motif G and)")
+    d = Deme(1); d.eda_model[:and] = 1.0
+    res = geo_step!([d], s, :G, p; fitness_fn=(st, id) -> 1.0)
+    nwrote = geo_guidance_capsules!(s, res)
+    @test nwrote > 0
+    dump = MORK.space_dump_all_sexpr(s)
+    @test occursin("geo-guidance", dump)       # state persisted as queryable MORK atoms (not in-memory only)
+end
