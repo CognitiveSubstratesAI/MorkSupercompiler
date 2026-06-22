@@ -246,3 +246,21 @@ end
     dump = MORK.space_dump_all_sexpr(s)
     @test occursin("geo-guidance", dump)       # state persisted as queryable MORK atoms (not in-memory only)
 end
+
+@testset "GeoEvo §8 — factor-graph EDA: n-ary co-occurrence mining + dependency-aware sampling" begin
+    # population: a,b co-occur in high-fitness programs; c,d co-occur; the blocks are never mixed
+    programs = [Set([:a, :b]), Set([:a, :b]), Set([:c, :d]), Set([:c, :d])]
+    fits = [1.0, 1.0, 1.0, 1.0]
+    marg, fac = geo_mine_factors(programs, fits)
+    @test fac[(:a, :b)] ≈ 2.0                  # §8.2 fitness-weighted co-occurrence
+    @test fac[(:c, :d)] ≈ 2.0
+    @test !haskey(fac, (:a, :c))               # a,c never co-occur → no factor
+    @test marg[:a] ≈ 2.0
+
+    # §8.3/8.4 dependency-aware sampling PRESERVES building blocks — never glues {a,c}
+    kids = geo_fg_sample(marg, fac; rng=MersenneTwister(3), n=6, size=2)
+    @test !isempty(kids)
+    for k in kids
+        @test (k ⊆ Set([:a, :b])) || (k ⊆ Set([:c, :d]))   # coherent block, vs independent EDA mixing
+    end
+end

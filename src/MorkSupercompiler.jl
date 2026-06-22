@@ -140,6 +140,7 @@ export geo_forward_f, geo_splice_check, geo_bandit, geo_step!
 export geo_align_bias!, geo_eda_sample!, geo_evolve_steered!
 export geo_xover_join, geo_xover_product, geo_xover_mask, geo_mutate_add, geo_mutate_restrict, geo_recombine
 export geo_metrics, geo_guidance_capsules!
+export geo_mine_factors, geo_fg_sample
 
 # Wire the MVP-template lowerings + template registrations into the global
 # registry. Registers idempotently — `register!` overwrites, so re-calling

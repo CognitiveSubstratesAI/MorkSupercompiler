@@ -498,3 +498,69 @@ function geo_guidance_capsules!(s::MORK.Space, res)::Int
     isempty(lines) || MORK.space_add_all_sexpr!(s, join(lines, "\n"))
     return length(lines)
 end
+
+# ── §8 factor-graph EDA (MORK-MOSES §8) — n-ary co-occurrence factors over operators ──────────
+# Upgrades the univariate (operator-frequency) EDA to a FACTOR-GRAPH EDA: mine which operators
+# CO-OCCUR in high-fitness programs (§8.2 n-ary patterns weighted by fitness) and sample new programs
+# that PRESERVE those building blocks (§8.3/8.4) — capturing the high-order correlations independent
+# sampling misses. Q_prob = ([0,1], ⊗=×, ⊕=max).
+
+"""
+    geo_mine_factors(programs, fitnesses) -> (marginals, factors)
+
+§8.2 mine (pairwise) co-occurrence factors from the population, fitness-weighted: `marginals[op]` =
+weighted frequency of `op`; `factors[(a,b)]` (a<b) = weighted co-occurrence of `a,b`. The φ potentials
+a dependency-aware EDA samples from. (Pairwise MVP; higher-arity factors are the §8.2 extension.)
+"""
+function geo_mine_factors(programs::Vector{Set{Symbol}}, fitnesses::Vector{Float64})
+    marg = Dict{Symbol, Float64}()
+    fac = Dict{Tuple{Symbol, Symbol}, Float64}()
+    for (prog, f) in zip(programs, fitnesses)
+        f <= 0 && continue
+        ops = sort(collect(prog))
+        for op in ops
+            marg[op] = get(marg, op, 0.0) + f
+        end
+        for i in 1:length(ops), j in (i + 1):length(ops)
+            key = (ops[i], ops[j])
+            fac[key] = get(fac, key, 0.0) + f
+        end
+    end
+    return (marg, fac)
+end
+
+"""
+    geo_fg_sample(marginals, factors; rng, n, size) -> Vector{Set{Symbol}}
+
+§8.3/8.4 sample `n` programs (op-sets up to `size`) from the factor graph: seed an op by its marginal,
+then EXPAND by adding the op with the highest co-occurrence with the chosen set (⊕=max over members —
+belief-propagation-lite). Preserves the mined building blocks; stops when no co-occurrence signal
+remains (won't glue unrelated ops). Full loopy/junction-tree BP is the deeper §8.3.
+"""
+function geo_fg_sample(marg::Dict{Symbol, Float64}, fac::Dict{Tuple{Symbol, Symbol}, Float64};
+        rng::AbstractRNG=default_rng(), n::Int=4, size::Int=3)
+    isempty(marg) && return Set{Symbol}[]
+    ops = collect(keys(marg)); w = collect(values(marg)); z = sum(w)
+    cooc(a, b) = get(fac, a < b ? (a, b) : (b, a), 0.0)
+    out = Set{Symbol}[]
+    for _ in 1:n
+        r = rand(rng) * z; acc = 0.0; seed = ops[end]
+        for i in eachindex(ops)
+            acc += w[i]
+            r <= acc && (seed = ops[i]; break)
+        end
+        chosen = Set([seed])
+        while length(chosen) < size
+            best = nothing; bestv = 0.0
+            for o in ops
+                o in chosen && continue
+                v = maximum((cooc(o, c) for c in chosen); init=0.0)   # ⊕ = max over chosen members
+                v > bestv && (best = o; bestv = v)
+            end
+            best === nothing && break
+            push!(chosen, best)
+        end
+        push!(out, chosen)
+    end
+    return out
+end
