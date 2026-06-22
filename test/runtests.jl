@@ -52,6 +52,7 @@ end
     include("supercompiler/test_bounded_split.jl")
     include("supercompiler/test_driver.jl")
     include("supercompiler/test_kb_saturation.jl")
+    include("supercompiler/test_rule_specialization.jl")   # v1 §8.3 partial instantiation + magic sets
     include("supercompiler/test_evo_specializer.jl")
     include("supercompiler/test_pipeline_decompose.jl")
     include("supercompiler/test_projection_lossless.jl")
@@ -59,6 +60,8 @@ end
     # ── Code Generation ───────────────────────────────────────────────────────
     include("codegen/test_mm2_compiler.jl")
     include("codegen/test_space_primitives.jl")
+    include("codegen/test_bisim_verifier.jl")    # Boundary #3 — v2 §12.2 differential testing
+    include("codegen/test_mm2_optimize.jl")      # v1 §10.6 — static sched + batching + fusion
 
     # ── Integration ───────────────────────────────────────────────────────────
     include("integration/test_pipeline.jl")
@@ -71,6 +74,7 @@ end
     include("mgfw/test_mgfw.jl")
     include("mgfw/test_pln_reference.jl")   # PLN Layer-1 forward-map reference gate
     include("mgfw/test_pln_demand.jl")      # PLN step 4 — §3.2-§3.4 demand sensitivity
+    include("mgfw/test_geoevo.jl")          # GEO-EVO §3-6 — data-driven contract + grounded kernels
 
     # ── Multi-Space (Stage 1 + Stage 2) ─────────────────────────────────────
     include("multispace/test_multispace.jl")

@@ -62,8 +62,11 @@ include("supercompiler/PipelineDecompose.jl")
 
 # Layer 6 — Phase 3 Specializations + Code Generation (§7–9)
 include("supercompiler/KBSaturation.jl")
+include("supercompiler/RuleSpecialization.jl")   # v1 §8.3 partial instantiation + magic sets
 include("supercompiler/EvoSpecializer.jl")
 include("codegen/MM2Compiler.jl")
+include("codegen/BisimVerifier.jl")          # Boundary #3 — discharges MM2Compiler obligations via v2 §12.2 differential testing
+include("codegen/MM2Optimize.jl")            # v1 §10.6 — static scheduling + space batching + pattern fusion
 
 # Layer 8 — Approximate Supercompilation (Doc 2, approx spec)
 # Must be included before SCPipeline (SCResult references ApproxPipelineResult)
@@ -125,6 +128,12 @@ include("mgfw/templates/pln_stv.jl")
 include("mgfw/templates/motif_miner.jl")
 include("mgfw/templates/geodesic_bgc.jl")
 include("mgfw/templates/references.jl")
+
+# GEO-EVO geodesic evolutionary control (Geo-Evo.pdf §3–6): couples the forward demes to the PLN
+# backward demand field. All structure (params/subgoals/factors) is read from MORK atoms at
+# runtime — see the anti-hardcode contract at the head of GeoEvo.jl.
+include("mgfw/GeoEvo.jl")
+export geo_params, geo_subgoals, geo_comp, geo_score, geo_sinkhorn, geo_feff, geo_effort, geo_sigma
 
 # Wire the MVP-template lowerings + template registrations into the global
 # registry. Registers idempotently — `register!` overwrites, so re-calling
@@ -271,6 +280,8 @@ export decompose_program, decompose_report, flow_vars
 export Fact, is_base_fact, Rule
 export VersionedIndex, index_insert!, index_lookup, index_delta_since, bump_version!
 export KBState, kb_add_fact!, kb_add_rule!, all_facts, saturate!
+export SpecializationResult, specialize_rules                   # v1 §8.3 partial instantiation
+export MagicSetsResult, magic_sets_transform                    # v1 §8.3 Alg 4 magic sets
 # EvoSpecializer (Phase 3 §8)
 export SpecLevel, SPEC_GENERIC, SPEC_INCREMENTAL, SPEC_VECTORIZED
 export SpecDecision, should_specialize
@@ -281,6 +292,8 @@ export EvolutionaryPBox, approximate_fitness, allocate_evaluations
 export MM2Priority, MM2ExecAtom, sprint_exec, sprint_priority
 export CompileCtx, BiSimObligation
 export compile_sequential!, compile_conditional!, compile_node!, compile_program
+export VerifyResult, BisimVerdict, verify_bisim   # Boundary #3 — bisim verifier
+export schedule_static, batch_space_ops, fuse_identical_patterns   # v1 §10.6 MM2 optimizations
 export sprint_mcore_to_mm2
 # Integration layer (Phase 4)
 export SCOptions, SC_DEFAULTS, SCResult, run!, execute, timing_report

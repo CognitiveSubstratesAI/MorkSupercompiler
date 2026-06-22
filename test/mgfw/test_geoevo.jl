@@ -1,0 +1,61 @@
+using Test
+using MorkSupercompiler
+import MORK
+
+@testset "GeoEvo v0 — data-driven (no-hardcode) contract" begin
+    # Structure lives in the space; the engine reads it. Two spaces with different param atoms
+    # must yield different reads — proving the values are SOURCED FROM DATA, not hardcoded.
+    s = MORK.new_space()
+    MORK.space_add_all_sexpr!(s, join([
+        "(geo-param lambda 0.25)",
+        "(geo-param mu 2.0)",
+        "(geo-param gamma 0.1)",
+        "(subgoal reach-door)",
+        "(subgoal pick-key)",
+    ], "\n"))
+
+    p = geo_params(s)
+    @test p[:lambda] ≈ 0.25
+    @test p[:mu] ≈ 2.0
+    @test p[:gamma] ≈ 0.1
+    @test p[:alpha1] ≈ 1.0          # absent key → documented fallback (not a hardcoded policy)
+
+    sg = geo_subgoals(s)
+    @test "reach-door" in sg
+    @test "pick-key" in sg
+    @test length(sg) == 2
+
+    # THE INVARIANT: a different space → different param, with NO code change.
+    s2 = MORK.new_space()
+    MORK.space_add_all_sexpr!(s2, "(geo-param lambda 0.9)")
+    @test geo_params(s2)[:lambda] ≈ 0.9
+    @test geo_params(s)[:lambda] ≈ 0.25    # original space unaffected
+
+    # empty space still runs on documented fallbacks
+    @test geo_params(MORK.new_space())[:lambda] ≈ 1.0
+end
+
+@testset "GeoEvo v0 — grounded kernels (the fixed engine)" begin
+    p = Dict{Symbol,Float64}(:lambda => 1.0, :mu => 1.0, :gamma => 0.5, :tau => 1.0,
+        :alpha1 => 1.0, :alpha2 => 1.0, :alpha3 => 1.0, :budget => 1000.0)
+
+    # Comp ∈ (0,1); ↑ in cover/reach, ↓ in gap (§3.4)
+    @test 0.0 < geo_comp(1.0, 1.0, 0.0, p) < 1.0
+    @test geo_comp(2.0, 0.0, 0.0, p) > geo_comp(0.0, 0.0, 0.0, p)
+    @test geo_comp(0.0, 0.0, 2.0, p) < geo_comp(0.0, 0.0, 0.0, p)
+
+    # Score = Δ(φ+ψ) − λΔcost + μΔalign (§3.5)
+    @test geo_score(1.0, 0.5, 0.0, 0.0, p) ≈ 1.5
+    @test geo_score(0.0, 0.0, 1.0, 0.0, p) ≈ -1.0
+    @test geo_score(0.0, 0.0, 0.0, 1.0, p) ≈ 1.0
+
+    # F_eff = F − γW (§3.1/§3.10)
+    @test geo_feff(1.0, 1.0, p) ≈ 0.5
+
+    # Sinkhorn pairing: rows are distributions; higher Comp ⇒ more mass (§3.4/§5.1.4)
+    C = [1.0 0.0; 0.0 1.0; 0.5 0.5]
+    P = geo_sinkhorn(C, p)
+    @test all(P .>= 0.0)
+    @test all(abs.(sum(P, dims=2) .- 1.0) .< 1e-9)
+    @test P[1, 1] > P[1, 2]
+end
