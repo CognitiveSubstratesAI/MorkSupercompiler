@@ -109,7 +109,8 @@ geo_effort(neg_log_edit_lik::Float64, kl_to_prior::Float64, diversity::Float64):
 #   (factor <f> <rule>)          — a factor with its PLN rule tag (hmp/deduction/conjunction/…)
 #   (premise <f> <var> <role>)   — premise edge; role ∈ {premise_1, premise_2, …} (positional)
 #   (conclusion <f> <var>)       — conclusion edge
-#   (stv <var> <s> <c>)          — optional premise STV (default 0.5/0.5)
+#   (stv <var> <s> <c>)          — optional premise STV; unknown = neutral prior (½,0) per §2.4
+#                                  (ignorance is zero-confidence ⇒ need=1−c=1; never (0,0)=falsity)
 # Nothing here is hardcoded: change a factor atom → the backward field changes (test asserts it).
 
 _geo_ensure_var!(g::FactorGraph, name::Symbol) =
@@ -142,7 +143,7 @@ function geo_factor_graph(s::MORK.Space)::FactorGraph
         end
     end
     for (name, node) in g.var_nodes
-        sc = get(stvs, name, (0.5, 0.5))
+        sc = get(stvs, name, (0.5, 0.0))   # §2.4 neutral prior: ignorance = zero-confidence (need=1), never (0,0)
         node.message = stv_to_pbox(sc[1], sc[2])
     end
     return g

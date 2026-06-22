@@ -87,4 +87,13 @@ end
     @test haskey(fg.factor_nodes, :fmp)
     @test fg.factor_nodes[:fmp].rule === :hmp
     @test any(e -> e.role_label === :conclusion && e.var_node === :B, fg.edges)
+
+    # §2.4: an unknown premise (no stv atom) gets the NEUTRAL prior (½,0) — confidence 0, need=1.
+    # NOT (0.5,0.5); the spec rejects high-confidence/(0,0) defaults for ignorance.
+    su = MORK.new_space()
+    MORK.space_add_all_sexpr!(su, join([
+        "(factor fu negation)", "(conclusion fu Q)", "(premise fu Punk premise_1)",
+    ], "\n"))
+    fgu = geo_factor_graph(su)
+    @test fgu.var_nodes[:Punk].message.confidence ≈ 0.0   # ignorance = zero confidence (§2.4)
 end
