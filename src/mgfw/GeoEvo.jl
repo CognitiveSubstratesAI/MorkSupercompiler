@@ -43,7 +43,8 @@ runtime. Nothing here is a hardcoded policy — only safe fallbacks so an empty 
 """
 function geo_params(s::MORK.Space)::Dict{Symbol,Float64}
     p = Dict{Symbol,Float64}(:lambda => 1.0, :mu => 1.0, :gamma => 0.5, :tau => 1.0,
-        :alpha1 => 1.0, :alpha2 => 1.0, :alpha3 => 1.0, :budget => 1000.0)
+        :alpha1 => 1.0, :alpha2 => 1.0, :alpha3 => 1.0, :budget => 1000.0,
+        :eta => 0.1, :fisher_ridge => 1.0e-6, :alpha_w => 1.0, :beta_k => 1.0)   # §4.4 / §19.6.3
     for a in _geo_dump_lines(s)
         m = match(r"^\(geo-param\s+([A-Za-z_][\w-]*)\s+(-?[\d.][\d.eE+-]*)\s*\)$", a)
         m === nothing && continue
@@ -623,4 +624,182 @@ function geo_corridor_maintain(score_trend::Vector{Float64}, comp_max::Vector{Fl
     retire = [m for m in eachindex(score_trend) if score_trend[m] < retire_below]
     spawn_near = sortperm(comp_max; rev=true)
     return (retire, spawn_near)
+end
+
+# ── §5.2 Variants & Extensions (geo_evo_spec.md §5.2 + dependence_dichotomy_pareto_weakness_spec §19) ──
+# Grounded in BOTH canonical specs. NOTE: the multiobjective layer is NOT hypervolume (absent from the
+# theory spec) — it is the §2 Pareto product-order + §19.5.3 Thm-21 density-greedy weakness-schema +
+# §19.6.3 cost-normalized score.
+
+# ── A — island topologies (§5.2: subgoal graphs define migration edges; migration ∝ Comp) ──────
+"§5.2 island topologies: read (subgoal-edge <a> <b>) atoms → undirected adjacency (migration edges)."
+function geo_subgoal_edges(s::MORK.Space)::Dict{String, Set{String}}
+    out = Dict{String, Set{String}}()
+    for a in _geo_dump_lines(s)
+        m = match(r"^\(subgoal-edge\s+(\S+)\s+(\S+?)\s*\)$", a)
+        m === nothing && continue
+        u, v = String(m.captures[1]), String(m.captures[2])
+        push!(get!(out, u, Set{String}()), v)
+        push!(get!(out, v, Set{String}()), u)
+    end
+    return out
+end
+
+"""
+    geo_island_migrate(demes, motifs, edges, p; rng) -> Vector{Tuple{Int,String,String}}
+
+§5.2 island topologies: each deme (best-paired to subgoal S_k) may migrate to a NEIGHBOUR S_k'
+((subgoal-edge …) in `edges`) with probability ∝ exp(τ·Comp_{m,k'}). Returns `(deme, from, to)`.
+Migration graph is DATA; re-points which motif `geo_evolve_steered!` steers the deme toward.
+"""
+function geo_island_migrate(demes::Vector{Deme}, motifs::Dict{String, Set{Symbol}},
+        edges::Dict{String, Set{String}}, p::Dict{Symbol, Float64}; rng::AbstractRNG=default_rng())
+    sgids, C, _, _, _ = geo_pairing(demes, motifs, p)
+    out = Tuple{Int, String, String}[]
+    isempty(sgids) && return out
+    for m in eachindex(demes)
+        from = sgids[argmax(@view C[m, :])]
+        nbr = [k for (k, sg) in enumerate(sgids) if sg in get(edges, from, Set{String}())]
+        isempty(nbr) && continue
+        w = [exp(p[:tau] * C[m, k]) for k in nbr]; z = sum(w)
+        z == 0 && continue
+        r = rand(rng) * z; acc = 0.0; chosen = nbr[end]
+        for (i, k) in enumerate(nbr)
+            acc += w[i]
+            r <= acc && (chosen = k; break)
+        end
+        push!(out, (m, from, sgids[chosen]))
+    end
+    return out
+end
+
+# ── B — multiobjective via Pareto product-order + density-greedy (NOT hypervolume) ─────────────
+"§5.2/§19 objective vector (F_eff, D, W_evid, Align) — all MAXIMIZED under the product order."
+geo_objective_vector(feff::Float64, diversity::Float64, w_evid::Float64, align::Float64)::NTuple{4, Float64} =
+    (feff, diversity, w_evid, align)
+
+"Product-order dominance (dependence_dichotomy §2 Def 1): `a` dominates `b` iff ≥ in all dims, > in one."
+function geo_dominates(a::NTuple{N, Float64}, b::NTuple{N, Float64})::Bool where {N}
+    all(a[i] >= b[i] for i in 1:N) && any(a[i] > b[i] for i in 1:N)
+end
+
+"Pareto front (dependence_dichotomy §1.2/§2): the non-dominated points of `pts`."
+geo_pareto_front(pts::Vector{<:NTuple{N, Float64}}) where {N} =
+    [p for p in pts if !any(geo_dominates(q, p) for q in pts if q !== p)]
+
+"""
+    geo_density_greedy(elements, gain, cost, budget) -> Vector
+
+dependence_dichotomy §19.5.3 Thm 21 — density-greedy weakness-schema: repeatedly add the element with
+max marginal `gain(e, chosen)/cost(e)` while Σcost ≤ `budget`. For a submodular `gain` this is a
+(1−e^{−ρ})-approximation to the budget-constrained optimum. The faithful §5.2 multiobjective selector
+(hypervolume is absent from the canonical theory spec).
+"""
+function geo_density_greedy(elements::Vector{T}, gain::Function, cost::Function, budget::Float64) where {T}
+    chosen = T[]; spent = 0.0; pool = collect(elements)
+    while !isempty(pool)
+        best = nothing; bestratio = -Inf; bestcost = 0.0
+        for e in pool
+            c = float(cost(e)); c <= 0 && continue
+            spent + c > budget && continue
+            ratio = float(gain(e, chosen)) / c
+            ratio > bestratio && (best = e; bestratio = ratio; bestcost = c)
+        end
+        best === nothing && break
+        push!(chosen, best); spent += bestcost
+        pool = filter(e -> !(e === best), pool)
+    end
+    return chosen
+end
+
+"§19.6.3 cost-normalized multiobjective move score: Δ(φ+ψ) − λΔCost + α·ΔW_evid − β·ΔK_comp + μ·ΔAlign."
+geo_score_mo(dphi::Float64, dpsi::Float64, dcost::Float64, dw_evid::Float64, dk_comp::Float64,
+        dalign::Float64, p::Dict{Symbol, Float64})::Float64 =
+    (dphi + dpsi) - p[:lambda] * dcost + p[:alpha_w] * dw_evid - p[:beta_k] * dk_comp + p[:mu] * dalign
+
+# ── C — natural-gradient / mirror-descent in knob space (§4.4 NES/CMA-style) ────────────────────
+# self-contained SPD solve (Gaussian elimination, partial pivot) — avoids a LinearAlgebra dependency
+function _geo_solve(A::Matrix{Float64}, b::Vector{Float64})::Vector{Float64}
+    n = length(b); M = copy(A); x = copy(b)
+    for k in 1:n
+        pr = k
+        for i in (k + 1):n
+            abs(M[i, k]) > abs(M[pr, k]) && (pr = i)
+        end
+        if pr != k
+            M[k, :], M[pr, :] = M[pr, :], M[k, :]; x[k], x[pr] = x[pr], x[k]
+        end
+        piv = abs(M[k, k]) < 1.0e-300 ? 1.0e-300 : M[k, k]
+        for i in (k + 1):n
+            f = M[i, k] / piv
+            M[i, :] .-= f .* M[k, :]; x[i] -= f * x[k]
+        end
+    end
+    y = zeros(n)
+    for k in n:-1:1
+        s = x[k]
+        for j in (k + 1):n
+            s -= M[k, j] * y[j]
+        end
+        y[k] = s / (abs(M[k, k]) < 1.0e-300 ? 1.0e-300 : M[k, k])
+    end
+    return y
+end
+
+"§4.4 Fisher-like preconditioner: fitness-weighted covariance of knob perturbations (NES/CMA-style)."
+function geo_knob_covariance(samples::Vector{Vector{Float64}}, weights::Vector{Float64})::Matrix{Float64}
+    isempty(samples) && return zeros(0, 0)
+    d = length(samples[1]); wz = sum(weights)
+    wz <= 0 && return zeros(d, d)
+    mu = zeros(d)
+    for i in eachindex(samples)
+        mu .+= weights[i] .* samples[i]
+    end
+    mu ./= wz
+    F = zeros(d, d)
+    for i in eachindex(samples), a in 1:d, b in 1:d
+        F[a, b] += weights[i] * (samples[i][a] - mu[a]) * (samples[i][b] - mu[b])
+    end
+    F ./= wz
+    return F
+end
+
+"§4.4/§5.2 natural gradient g̃ = (F + ridge·I)⁻¹ g (Fisher-preconditioned ≈ Riemannian geodesic step)."
+function geo_natural_grad(grad::Vector{Float64}, F::Matrix{Float64}; ridge::Float64=1.0e-6)::Vector{Float64}
+    n = length(grad); Fr = copy(F)
+    for i in 1:n
+        Fr[i, i] += ridge
+    end
+    return _geo_solve(Fr, grad)
+end
+
+"§4.4 natural-gradient / mirror knob step θ' = θ + η·(F+ridge·I)⁻¹ g."
+geo_mirror_step(theta::Vector{Float64}, grad::Vector{Float64}, F::Matrix{Float64};
+        eta::Float64=0.1, ridge::Float64=1.0e-6)::Vector{Float64} =
+    theta .+ eta .* geo_natural_grad(grad, F; ridge=ridge)
+
+# ── D — Wasserstein / entropic-OT coupling between 𝒮 and ℳ (§5.2; reuses geo_sinkhorn) ──────────
+"§5.2 Wasserstein ground metric C_ij = Gap(motif_i, motif_j) (Jaccard distance ∈ [0,1])."
+geo_ground_metric(a::Vector{Set{Symbol}}, b::Vector{Set{Symbol}})::Matrix{Float64} =
+    Float64[geo_gap(a[i], b[j]) for i in eachindex(a), j in eachindex(b)]
+
+"""
+    geo_ot_couple(demes, motifs, p) -> Matrix
+
+§5.2 entropic-OT coupling between demes ℳ and subgoals 𝒮: cost = Gap; the entropic-OT plan =
+`geo_sinkhorn` over exp(τ·(−Gap)) — the Schrödinger-bridge coupling ρ ∝ f·g (§3.2). Reuses the
+existing Sinkhorn solver (does NOT reimplement OT).
+"""
+function geo_ot_couple(demes::Vector{Deme}, motifs::Dict{String, Set{Symbol}}, p::Dict{Symbol, Float64})
+    sgids = sort(collect(keys(motifs)))
+    M, K = length(demes), length(sgids)
+    (M == 0 || K == 0) && return zeros(M, K)
+    G = zeros(M, K)
+    for (m, d) in enumerate(demes)
+        ops = geo_deme_ops(d)
+        for (k, sg) in enumerate(sgids)
+            G[m, k] = -geo_gap(ops, motifs[sg])
+        end
+    end
+    return geo_sinkhorn(G, p)
 end

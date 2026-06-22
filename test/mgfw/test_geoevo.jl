@@ -296,3 +296,57 @@ end
     @test retire == [2]                                       # deme 2 (negative trend) retired
     @test spawn[1] == 2                                       # spawn near deme 2 (highest Comp 0.9)
 end
+
+@testset "GeoEvo §5.2 A — island topologies (subgoal-edge migration ∝ Comp)" begin
+    p = geo_params(MORK.new_space())
+    se = MORK.new_space()
+    MORK.space_add_all_sexpr!(se, "(subgoal-edge A B)\n(subgoal-edge B C)")
+    edges = geo_subgoal_edges(se)
+    @test edges["A"] == Set(["B"]) && edges["B"] == Set(["A", "C"])   # undirected
+    motifs = Dict("A" => Set([:x]), "B" => Set([:y]), "C" => Set([:z]))
+    d = Deme(1); d.eda_model[:x] = 1.0                                # best-paired to A
+    mig = geo_island_migrate([d], motifs, edges, p; rng=MersenneTwister(2))
+    @test length(mig) == 1 && mig[1] == (1, "A", "B")                 # A → its ONLY neighbour B (never C)
+    @test isempty(geo_island_migrate([d], motifs, Dict{String, Set{String}}(), p; rng=MersenneTwister(2)))
+end
+
+@testset "GeoEvo §5.2 B — Pareto product-order + density-greedy (NOT hypervolume)" begin
+    @test geo_objective_vector(0.9, 0.5, 0.8, 0.7) == (0.9, 0.5, 0.8, 0.7)
+    @test geo_dominates((1.0, 1.0, 1.0, 1.0), (0.9, 1.0, 1.0, 1.0))   # ≥ all, > one
+    @test !geo_dominates((1.0, 0.0), (0.0, 1.0))                      # incomparable
+    @test !geo_dominates((1.0, 1.0), (1.0, 1.0))                      # equal ⇒ not dominate
+    front = geo_pareto_front([(1.0, 0.0), (0.0, 1.0), (0.5, 0.5), (0.2, 0.2)])
+    @test (0.5, 0.5) in front && !((0.2, 0.2) in front)               # (0.2,0.2) dominated by (0.5,0.5)
+
+    # §19.5.3 Thm 21 density-greedy weakness-schema (max gain-per-cost under budget, submodular coverage)
+    sets = [Set([:a, :b]), Set([:c]), Set([:d]), Set([:a])]
+    gain(e, chosen) = length(setdiff(e, union(Set{Symbol}(), chosen...)))
+    cost(e) = float(length(e))
+    picked = geo_density_greedy(sets, gain, cost, 4.0)
+    @test Set([:a, :b]) in picked
+    @test length(union(Set{Symbol}(), picked...)) >= 3                # greedy covers most of the universe
+
+    p = geo_params(MORK.new_space())
+    @test geo_score_mo(0.0, 0.0, 0.0, 1.0, 0.0, 0.0, p) ≈ 1.0         # +α·ΔW_evid
+    @test geo_score_mo(0.0, 0.0, 0.0, 0.0, 1.0, 0.0, p) ≈ -1.0        # −β·ΔK_comp
+end
+
+@testset "GeoEvo §5.2 C — natural-gradient / Fisher preconditioning (§4.4)" begin
+    @test geo_natural_grad([1.0, 2.0], [1.0 0.0; 0.0 1.0]; ridge=0.0) ≈ [1.0, 2.0]   # F=I ⇒ raw grad
+    ng = geo_natural_grad([1.0, 1.0], [4.0 0.0; 0.0 1.0]; ridge=0.0)
+    @test ng[1] ≈ 0.25 && ng[2] ≈ 1.0                                # F⁻¹g: high-variance dir shrunk ¼
+    F = geo_knob_covariance([[1.0, 0.0], [-1.0, 0.0], [2.0, 0.0], [-2.0, 0.0]], ones(4))
+    @test abs(F[1, 2]) < 1e-9 && F[2, 2] ≈ 0.0 && F[1, 1] > 0.0       # variance only in dim 1
+    @test all(isfinite, geo_mirror_step([0.0, 0.0], [1.0, 1.0], [0.0 0.0; 0.0 0.0]; ridge=1e-3))  # ridge → finite
+end
+
+@testset "GeoEvo §5.2 D — Wasserstein/entropic-OT coupling (reuses geo_sinkhorn)" begin
+    p = geo_params(MORK.new_space())
+    @test geo_ground_metric([Set([:a])], [Set([:a])])[1, 1] ≈ 0.0    # identical → 0
+    @test geo_ground_metric([Set([:a])], [Set([:b])])[1, 1] ≈ 1.0    # disjoint → 1
+    motifs = Dict("A" => Set([:x]), "B" => Set([:y]))
+    d1 = Deme(1); d1.eda_model[:x] = 1.0; d2 = Deme(2); d2.eda_model[:y] = 1.0
+    P = geo_ot_couple([d1, d2], motifs, p)
+    @test all(abs.(sum(P, dims=2) .- 1.0) .< 1e-9)                   # valid coupling (rows sum 1)
+    @test P[1, 1] > P[1, 2]                                          # deme1 (x) couples to A (x), not B
+end

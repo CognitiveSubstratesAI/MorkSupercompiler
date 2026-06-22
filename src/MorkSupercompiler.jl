@@ -142,6 +142,10 @@ export geo_xover_join, geo_xover_product, geo_xover_mask, geo_mutate_add, geo_mu
 export geo_metrics, geo_guidance_capsules!
 export geo_mine_factors, geo_fg_sample, geo_evolve_blocks!
 export geo_side_choice, geo_progress, geo_diversity_bonus, geo_corridor_maintain
+export geo_subgoal_edges, geo_island_migrate                                            # §5.2 A
+export geo_objective_vector, geo_dominates, geo_pareto_front, geo_density_greedy, geo_score_mo  # §5.2 B
+export geo_knob_covariance, geo_natural_grad, geo_mirror_step                           # §5.2 C
+export geo_ground_metric, geo_ot_couple                                                 # §5.2 D
 
 # Wire the MVP-template lowerings + template registrations into the global
 # registry. Registers idempotently — `register!` overwrites, so re-calling
