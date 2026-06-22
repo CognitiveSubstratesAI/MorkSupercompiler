@@ -20,8 +20,11 @@ Bisimulation obligations (Algorithm 14):
   (2) Backward simulation: every MM2 trace projects to a MeTTa trace
   (3) Fairness:            MM2 priority ordering preserves MeTTa fairness
 
-The compiler records proof obligations (not proofs) so they can be
-checked by a future verifier or discharged manually.
+The compiler records proof obligations (not proofs); the dedicated
+verifier `verify_bisim` in `BisimVerifier.jl` discharges them via v2 §12.2
+differential testing (run source program + compiled program on fresh
+Spaces, compare final atom sets). Boundary #3 closure from the 2026-06-18
+audit. End-to-end test: `test/codegen/test_bisim_verifier.jl`.
 """
 
 # ── MM2 exec atom representation ─────────────────────────────────────────────

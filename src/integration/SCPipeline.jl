@@ -45,6 +45,7 @@ struct SCOptions
     split_budget::Int      # BoundedSplit branch budget
     sc_max_drive_steps::Int      # §6 driver: per-region rewrite_once iteration cap
     cleanup_intermediates::Bool     # Post: remove _sc_tmp* atoms from space
+    use_driven_program::Bool     # Stage 4c+: replace program_planned with the driver's residual
 end
 
 SCOptions(;
@@ -60,7 +61,8 @@ SCOptions(;
     sample_frac=1.0,
     budget=SPLIT_DEFAULT_BUDGET,
     drive_steps=1000,
-    cleanup=true
+    cleanup=true,
+    use_driven=false
 ) = SCOptions(
     stats,
     plan,
@@ -74,7 +76,8 @@ SCOptions(;
     sample_frac,
     budget,
     drive_steps,
-    cleanup
+    cleanup,
+    use_driven
 )
 
 const SC_DEFAULTS = SCOptions()
@@ -106,6 +109,7 @@ struct SCResult
     approx_result::Union{Nothing, ApproxPipelineResult}  # Stage 2b output (nothing if skipped)
     n_facts_derived::Int   # Stage 4: derived facts from KBSaturation (0 if saturate_kb=false)
     n_kb_facts::Int   # Stage 4: total facts (base + derived) in the saturation KB
+    program_driven::String   # Stage 4c: residual program from drive!() (empty if supercompile=false)
 end
 
 # ── Main pipeline entry point ─────────────────────────────────────────────────
@@ -287,36 +291,57 @@ function execute!(s::Space, program::AbstractString; opts::SCOptions=SC_DEFAULTS
     # This is the §6 unit-tested machinery composed end-to-end. Without this
     # block, the supercompiler is effectively a planner + decomposer; with it
     # the TyLA G functor (Appendix D) is load-bearing in code.
+    # Boundary #2 (audit 2026-06-18): drive! now produces an OBSERVABLE residual program
+    # (`program_driven`). When opts.use_driven_program=true, that residual REPLACES
+    # program_planned for Stage 5 — i.e., drive! becomes load-bearing on the live path.
+    # Default false because semantic equivalence to the source program is gated on
+    # Boundary #3 (bisimulation verifier); enabling without verification is a
+    # caller-acknowledged choice (consistent with v2 §12 "Differential testing").
     drive_results = DriveResult[]
+    program_driven = ""
     if opts.supercompile
         t = @elapsed begin
-            g = MCoreGraph()
+            g_drive = MCoreGraph()
             space_reg = copy(DEFAULT_PRIM_REGISTRY)
             register_space_primitives!(space_reg, s)
             opts.use_approx_pipeline && register_approx_primitives!(space_reg)
             ft = FoldTable()
+            driven_atoms = String[]
             for node in parse_program(program_planned)
                 root_id = try
-                    _sexpr_to_mcore!(g, node)
+                    _sexpr_to_mcore!(g_drive, node)
                 catch
                     continue
                 end
                 isvalid(root_id) || continue
-                push!(
-                    drive_results,
-                    drive!(
-                        g,
-                        root_id;
-                        ft=ft,
-                        max_steps=opts.sc_max_drive_steps,
-                        stats=stats,
-                        split_budget=opts.split_budget,
-                        registry=space_reg
-                    )
+                dr = drive!(
+                    g_drive,
+                    root_id;
+                    ft=ft,
+                    max_steps=opts.sc_max_drive_steps,
+                    stats=stats,
+                    split_budget=opts.split_budget,
+                    registry=space_reg
                 )
+                push!(drive_results, dr)
+                # Build residual atom: prefer the driven final_id when terminated cleanly
+                # (:value or :fold). For :blocked / :max_steps the driver couldn't decide,
+                # so keep the original source atom in the residual program.
+                atom_str = if (dr.terminated === :value || dr.terminated === :fold) &&
+                              isvalid(dr.final_id)
+                    sprint_mcore(g_drive, dr.final_id)
+                else
+                    sprint_program(SNode[node])
+                end
+                push!(driven_atoms, atom_str)
             end
+            program_driven = join(driven_atoms, "\n")
         end
         timings[:supercompile] = t
+        # Optionally make drive! load-bearing: route the driven residual into Stage 5.
+        if opts.use_driven_program && !isempty(program_driven)
+            program_planned = program_driven
+        end
     end
 
     # Stage 4b — optional MM2Compiler lowering with space-aware primitive registry
@@ -361,7 +386,8 @@ function execute!(s::Space, program::AbstractString; opts::SCOptions=SC_DEFAULTS
         drive_results,
         approx_res,
         n_facts_derived,
-        n_kb_facts
+        n_kb_facts,
+        program_driven
     )
 end
 
@@ -390,7 +416,8 @@ function execute(
         opts.stats_sample_frac,
         opts.split_budget,
         opts.sc_max_drive_steps,
-        opts.cleanup_intermediates
+        opts.cleanup_intermediates,
+        opts.use_driven_program
     )
     result = execute!(s, program; opts=opts2)
     (s, result)

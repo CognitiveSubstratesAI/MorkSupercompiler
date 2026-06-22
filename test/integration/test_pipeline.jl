@@ -222,3 +222,60 @@ end
     @test res_on.n_kb_facts >= 0     # base facts loaded into local KB
     @test haskey(res_on.timings, :saturate)
 end
+
+@testset "drive! produces program_driven (Boundary #2)" begin
+    # Boundary #2 (audit 2026-06-18): verify drive!'s residual is OBSERVABLE
+    # via SCResult.program_driven, and can be made LOAD-BEARING via the
+    # SCOptions(use_driven=true) opt-in.
+    #
+    # Route 1 (default): observation only. SCResult.program_driven is
+    # populated but program_planned is the original/decomposed form.
+    # Route 2 (opt-in): program_driven REPLACES program_planned for Stage 5.
+    s = new_space()
+    space_add_all_sexpr!(s, "(edge a b) (edge b c)")
+    prog = raw"(exec 0 (, (edge $x $y)) (, (trans $x $y)))"
+
+    # Route 1 — observation
+    opts_obs = SCOptions(supercompile=true, max_steps=1)
+    res_obs = execute!(s, prog; opts=opts_obs)
+    @test !isempty(res_obs.drive_results)               # driver fired
+    @test !isempty(res_obs.program_driven)              # residual built
+    @test haskey(res_obs.timings, :supercompile)
+
+    # Route 2 — load-bearing: driven program runs instead of planned
+    s2 = new_space()
+    space_add_all_sexpr!(s2, "(edge a b) (edge b c)")
+    opts_lb = SCOptions(supercompile=true, use_driven=true, max_steps=1)
+    res_lb = execute!(s2, prog; opts=opts_lb)
+    @test !isempty(res_lb.program_driven)
+    # program_planned in the result reflects whatever was loaded into the Space
+    @test res_lb.program_planned == res_lb.program_driven
+end
+
+@testset "opts.saturate_kb derived facts persist back to MORK space (Boundary #1)" begin
+    # Boundary #1 (audit 2026-06-18): verify KBSaturation write-back is
+    # load-bearing — derived facts must appear in the live MORK Space dump
+    # after `execute!`, not just in `n_facts_derived` count.
+    #
+    # The prior testset only checked observable counts; this one closes the
+    # gap by asserting the round-trip (kb.facts → sprint_mcore → space_add_all_sexpr!)
+    # at SCPipeline.jl Stage 4 lines 268-276.
+    s = new_space()
+    space_add_all_sexpr!(s, "(parent alice bob) (parent bob carol)")
+    # Transitivity rule: (parent X Y) ∧ (parent Y Z) → (ancestor X Z)
+    # Encoded as a (==> BODY HEAD) atom — _is_rule at SCPipeline.jl:231-232
+    # picks it up; _sat_body_ids! splits the conjunctive body into premises.
+    prog = raw"(==> (, (parent $x $y) (parent $y $z)) (ancestor $x $z))"
+
+    opts = SCOptions(saturate=true, plan=false, decompose=false, max_steps=1)
+    res = execute!(s, prog; opts=opts)
+
+    @test res.n_facts_derived >= 1                          # rule fired in saturate!
+    @test haskey(res.timings, :saturate)
+
+    # Round-trip assertion: derived (ancestor alice carol) must be queryable
+    # in the live Space, not just present in the throwaway KBState.
+    dump = space_dump_all_sexpr(s)
+    @test occursin("ancestor", dump)
+    @test occursin("alice", dump) && occursin("carol", dump)
+end

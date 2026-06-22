@@ -205,11 +205,13 @@ Algorithm 11 (IncrementalSaturation) from §7.1.  Semi-naive evaluation:
 
 Semi-naive invariant prevents quadratic re-derivation cost.
 
-!!! note "Not on the executed path (as of 2026-06-03)"
-    `saturate!` mutates `kb.facts` over a local `MCoreGraph`; derived `Con` nodes are
-    NOT serialized back to MORK s-expressions, so saturation is observability-only on
-    the live path. Writing derived facts back to the Space is scheduled phase work.
-    See the README "live path" section.
+!!! note "Live-path integration"
+    `saturate!` is pure: it operates on an in-memory `KBState` and does NOT touch
+    the MORK Space directly. The integration layer wires the write-back —
+    [`SCPipeline.execute!`](@ref) Stage 4 serializes each newly-derived fact
+    (those failing `is_base_fact`) via `sprint_mcore` and adds it to the live
+    Space via `space_add_all_sexpr!`. End-to-end test asserting derived facts
+    appear in the live Space dump: `test/integration/test_pipeline.jl :: "opts.saturate_kb derived facts persist back to MORK space (Boundary #1)"`.
 """
 function saturate!(kb::KBState; max_rounds::Int=1000)::Int
     total_new = 0

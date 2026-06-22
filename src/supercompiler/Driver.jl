@@ -61,12 +61,21 @@ prior canonical key, or terminates. Bounded by `max_steps` to guard
 against runaway recursion (which would itself indicate a Stepper bug —
 the whistle should always fire eventually under finite-state termination).
 
-!!! note "Not on the executed path (as of 2026-06-03)"
-    `drive!`'s `DriveResult` is recorded for inspection; it does NOT transform the
-    program that runs — `SCPipeline.execute!` still executes via MORK's
-    `space_metta_calculus!`. Making `drive!` load-bearing (folding/splitting the
-    executed program) is scheduled phase work, gated on a semantics-preserving
-    verification surface that does not exist yet. See the README "live path" section.
+!!! note "Live-path integration (Boundary #2 closure 2026-06-18)"
+    Two routes are now available:
+    1. **Observation (default)**: `drive!`'s `DriveResult` is recorded in
+       `SCResult.drive_results`; a serialized residual program lives in
+       `SCResult.program_driven`. `SCPipeline.execute!` still loads
+       `program_planned` (the non-driven form) into the Space for Stage 5
+       `space_metta_calculus!` — same behaviour as before.
+    2. **Load-bearing (opt-in)**: set `SCOptions(use_driven=true)`. The driver's
+       residual atoms — built by `sprint_mcore` on each `DriveResult.final_id`
+       when terminated cleanly (`:value` or `:fold`) — replace `program_planned`
+       before Stage 5. The caller acknowledges that semantic equivalence to the
+       original program is gated on Boundary #3 (the bisimulation verifier),
+       which checks the recorded obligations against trace-level behaviour.
+    End-to-end test asserting both routes:
+    `test/integration/test_pipeline.jl :: "drive! produces program_driven (Boundary #2)"`.
 """
 function drive!(
     g::MCoreGraph,
