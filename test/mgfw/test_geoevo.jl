@@ -278,3 +278,21 @@ end
     @test bestN > best0                                        # §7 recombine + §8 EDA combined the blocks
     @test bestN ≈ 1.0                                          # CONVERGED: a program covers the FULL motif {a,b,c}
 end
+
+@testset "GeoEvo §3.7/§4.5 — corridor tracking + scheduler orchestration" begin
+    p = geo_params(MORK.new_space())
+    # §4.5 side-choice: expand the side whose cost deviates most from c*
+    @test geo_side_choice(0.9, 0.5, 0.5) == :forward          # fwd cost 0.9 deviates more from c*=0.5
+    @test geo_side_choice(0.5, 0.1, 0.5) == :backward         # bwd deviates more
+    # §3.7.1 progress: needs φ+ψ+μ·align>0 AND cost within the band
+    @test geo_progress(0.3, 0.2, 0.1, 0.5, p; cmin=0.1, cmax=1.0) == true
+    @test geo_progress(-0.5, 0.0, 0.0, 0.5, p; cmin=0.1, cmax=1.0) == false   # degraded → off-corridor
+    @test geo_progress(0.3, 0.2, 0.0, 2.0, p; cmin=0.1, cmax=1.0) == false    # cost out of band
+    # §3.7.3 diversity: a unique deme is more novel than a duplicated one
+    pop = [Set([:a, :b]), Set([:a, :b]), Set([:c, :d])]
+    @test geo_diversity_bonus(Set([:c, :d]), pop) > geo_diversity_bonus(Set([:a, :b]), pop)
+    # §3.7.4 corridor maintenance: retire low-yield arms, spawn near high-Comp
+    retire, spawn = geo_corridor_maintain([0.5, -0.2, 0.8], [0.1, 0.9, 0.3]; retire_below=0.0)
+    @test retire == [2]                                       # deme 2 (negative trend) retired
+    @test spawn[1] == 2                                       # spawn near deme 2 (highest Comp 0.9)
+end

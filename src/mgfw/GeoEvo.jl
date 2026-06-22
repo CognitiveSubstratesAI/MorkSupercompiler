@@ -588,3 +588,39 @@ function geo_evolve_blocks!(pop::Vector{Set{Symbol}}, motif::Set{Symbol}, fitnes
     append!(offspring, geo_recombine(keep, motif; rng=rng, n=n))         # §7 building-block recombine
     return vcat(keep, offspring)
 end
+
+# ── §3.7/§4.5 corridor tracking + scheduler orchestration ──────────────────────────────────────
+# The deme-orchestration layer: keep demes inside the least-effort corridor (progress + cost band),
+# choose which end to expand to keep per-step cost even, guard diversity, and retire/spawn demes.
+
+"§4.5 step 2 — cost-balanced side-choice: expand the side whose average step cost deviates MOST from
+the target `c_star` (keeps per-step cost even along the geodesic corridor)."
+geo_side_choice(fwd_cost::Float64, bwd_cost::Float64, c_star::Float64)::Symbol =
+    abs(fwd_cost - c_star) >= abs(bwd_cost - c_star) ? :forward : :backward
+
+"§3.7.1 progress test — a deme stays in the corridor iff it raised φ+ψ+μ·align AND its per-step cost
+is within the band [cmin, cmax]. μ read from `p`."
+geo_progress(dphi::Float64, dpsi::Float64, dalign::Float64, cost::Float64,
+        p::Dict{Symbol, Float64}; cmin::Float64=0.0, cmax::Float64=Inf)::Bool =
+    (dphi + dpsi + p[:mu] * dalign) > 0.0 && cmin <= cost <= cmax
+
+"§3.7.3 diversity guard — novelty = mean Gap of `ops` to the whole population (duplicates count as
+gap 0, lowering novelty). Add to Score to prevent corridor/population collapse."
+function geo_diversity_bonus(ops::Set{Symbol}, population::Vector{Set{Symbol}})::Float64
+    isempty(population) && return 1.0
+    return sum(geo_gap(ops, q) for q in population) / length(population)
+end
+
+"""
+    geo_corridor_maintain(score_trend, comp_max; retire_below) -> (retire, spawn_near)
+
+§3.7.4 / §5.1.5 corridor maintenance: `retire` = deme indices whose recent Score-trend is below
+`retire_below` (off-corridor / low-yield bandit arms); `spawn_near` = indices ordered by descending
+maxₖ Comp — where to spawn replacements (high-coupling waypoints / meet-points, the §3.7.4 preference).
+"""
+function geo_corridor_maintain(score_trend::Vector{Float64}, comp_max::Vector{Float64};
+        retire_below::Float64=0.0)
+    retire = [m for m in eachindex(score_trend) if score_trend[m] < retire_below]
+    spawn_near = sortperm(comp_max; rev=true)
+    return (retire, spawn_near)
+end
