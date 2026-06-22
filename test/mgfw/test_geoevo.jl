@@ -59,3 +59,32 @@ end
     @test all(abs.(sum(P, dims=2) .- 1.0) .< 1e-9)
     @test P[1, 1] > P[1, 2]
 end
+
+@testset "GeoEvo v1a — backward g (PLN demand) over factors read from the space" begin
+    # The rule set is DATA: an hmp factor concluding B from premises A, AB — stored as atoms.
+    s = MORK.new_space()
+    MORK.space_add_all_sexpr!(s, join([
+        "(factor fmp hmp)",
+        "(conclusion fmp B)",
+        "(premise fmp A premise_1)",
+        "(premise fmp AB premise_2)",
+        "(stv A 0.8 0.9)",
+        "(stv AB 0.7 0.85)",
+    ], "\n"))
+
+    g = geo_backward_g(s, :B)
+    @test g[:B] ≈ 1.0                       # demand seeded at the goal
+    @test haskey(g, :A) && g[:A] > 0.0      # propagated conclusion→premise
+    @test haskey(g, :AB) && g[:AB] > 0.0
+
+    # DATA-DRIVEN: a space with NO factor for B → only the seed, nothing to propagate to.
+    g2 = geo_backward_g(MORK.new_space(), :B)
+    @test g2[:B] ≈ 1.0
+    @test !haskey(g2, :A)
+
+    # the factor graph reflects the atoms (factor rule-tagged, conclusion edge present)
+    fg = geo_factor_graph(s)
+    @test haskey(fg.factor_nodes, :fmp)
+    @test fg.factor_nodes[:fmp].rule === :hmp
+    @test any(e -> e.role_label === :conclusion && e.var_node === :B, fg.edges)
+end

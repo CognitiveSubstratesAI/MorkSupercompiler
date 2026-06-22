@@ -134,6 +134,7 @@ include("mgfw/templates/references.jl")
 # runtime — see the anti-hardcode contract at the head of GeoEvo.jl.
 include("mgfw/GeoEvo.jl")
 export geo_params, geo_subgoals, geo_comp, geo_score, geo_sinkhorn, geo_feff, geo_effort, geo_sigma
+export geo_factor_graph, geo_backward_g
 
 # Wire the MVP-template lowerings + template registrations into the global
 # registry. Registers idempotently — `register!` overwrites, so re-calling

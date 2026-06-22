@@ -102,3 +102,60 @@ Caller supplies the three measured components; this is the fixed combiner.
 """
 geo_effort(neg_log_edit_lik::Float64, kl_to_prior::Float64, diversity::Float64)::Float64 =
     neg_log_edit_lik + kl_to_prior + diversity
+
+# ── backward potential g: the PLN demand field over factors read FROM the space ───────────────
+# The rule/factor set is DATA, stored as FLAT MORK atoms (atomic + prefix-queryable — the
+# MORK-native form of lib/pln's `(factor f rule (premises …) (conclusion …))` schema):
+#   (factor <f> <rule>)          — a factor with its PLN rule tag (hmp/deduction/conjunction/…)
+#   (premise <f> <var> <role>)   — premise edge; role ∈ {premise_1, premise_2, …} (positional)
+#   (conclusion <f> <var>)       — conclusion edge
+#   (stv <var> <s> <c>)          — optional premise STV (default 0.5/0.5)
+# Nothing here is hardcoded: change a factor atom → the backward field changes (test asserts it).
+
+_geo_ensure_var!(g::FactorGraph, name::Symbol) =
+    (haskey(g.var_nodes, name) || (g.var_nodes[name] = FactorNode(name, :premise; is_factor=false)); name)
+
+"""
+    geo_factor_graph(space) -> FactorGraph
+
+Build a `FactorGraph` from the factor/premise/conclusion/stv atoms in `space`. Pure read — the
+inference rules live in the space as data, never as Julia constants.
+"""
+function geo_factor_graph(s::MORK.Space)::FactorGraph
+    g = FactorGraph(TEMPLATE_PLN_STV_MP)
+    stvs = Dict{Symbol, Tuple{Float64, Float64}}()
+    for a in _geo_dump_lines(s)
+        m = match(r"^\(stv\s+(\S+)\s+(-?[\d.][\d.eE+-]*)\s+(-?[\d.][\d.eE+-]*)\s*\)$", a)
+        m === nothing && continue
+        stvs[Symbol(m.captures[1])] = (parse(Float64, m.captures[2]), parse(Float64, m.captures[3]))
+    end
+    for a in _geo_dump_lines(s)
+        if (m = match(r"^\(factor\s+(\S+)\s+(\S+?)\s*\)$", a)) !== nothing
+            f = Symbol(m.captures[1])
+            g.factor_nodes[f] = FactorNode(f, :boundary; is_factor=true, rule=Symbol(m.captures[2]))
+        elseif (m = match(r"^\(premise\s+(\S+)\s+(\S+)\s+(\S+?)\s*\)$", a)) !== nothing
+            f = Symbol(m.captures[1]); v = _geo_ensure_var!(g, Symbol(m.captures[2]))
+            push!(g.edges, FactorEdge(v, f, Symbol(m.captures[3])))
+        elseif (m = match(r"^\(conclusion\s+(\S+)\s+(\S+?)\s*\)$", a)) !== nothing
+            f = Symbol(m.captures[1]); v = _geo_ensure_var!(g, Symbol(m.captures[2]))
+            push!(g.edges, FactorEdge(v, f, :conclusion))
+        end
+    end
+    for (name, node) in g.var_nodes
+        sc = get(stvs, name, (0.5, 0.5))
+        node.message = stv_to_pbox(sc[1], sc[2])
+    end
+    return g
+end
+
+"""
+    geo_backward_g(space, goal; budget=1000) -> Dict{Symbol,Float64}
+
+§3.3.1 backward potential `g`: the PLN demand field seeded at `goal`, propagated conclusion→premise
+over the factors read from `space` (via `compute_demand_field`). Higher demand = a subgoal/premise
+the goal more needs evidence for. The geodesic backward signal that v1's two-ends coupling consumes.
+"""
+function geo_backward_g(s::MORK.Space, goal::Symbol; budget::Int=1000)::Dict{Symbol, Float64}
+    _, dem = compute_demand_field(goal, geo_factor_graph(s), budget)
+    return dem
+end
