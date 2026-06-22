@@ -244,3 +244,69 @@ function geo_pairing(demes::Vector{Deme}, motifs::Dict{String, Set{Symbol}}, p::
     subgoal_deme_gap = [M > 0 ? minimum(@view G[:, k]) : 0.0 for k in 1:K]
     return (sgids, C, π, omega_align, subgoal_deme_gap)
 end
+
+# ── v1c: the scheduler — one GEO-EVO step = forward + backward + coupling + splice + bandit ─────
+# Geo-Evo §4.5 operator-oriented outline / §5.1 minimal-viable. Fills the composite operators
+# (scheduler_pop/guidance_update/evidence_update/splice_check). Reuses the forward engine
+# (evolve_demes!); all structure read from the space.
+
+"§3.6/§5.1 forward attainability f(deme): MVP proxy = best fitness in the deme (more fit ⇒ more
+attainable), else operator-richness reach. Deferred (§5.1): short rollouts / learned predictor."
+function geo_forward_f(d::Deme)::Float64
+    isempty(d.fitnesses) && return geo_reach(geo_deme_ops(d))
+    return clamp(maximum(values(d.fitnesses)), 0.0, 1.0)
+end
+
+"""
+    geo_splice_check(demes, motifs, backward_g, p) -> Vector
+
+§5.1.6 splicing: forward↔backward meet-points by high f·g and high Comp. For each (deme m,
+subgoal k): splice = f(m)·g(k)·Comp[m,k], where g(k) = backward demand at subgoal k's node.
+Returns `(deme, subgoal, splice, gap)` rows sorted by descending splice (lowest action first).
+"""
+function geo_splice_check(demes::Vector{Deme}, motifs::Dict{String, Set{Symbol}},
+        backward_g::Dict{Symbol, Float64}, p::Dict{Symbol, Float64})
+    sgids, C, _, _, _ = geo_pairing(demes, motifs, p)
+    out = NamedTuple[]
+    for (m, d) in enumerate(demes)
+        f = geo_forward_f(d); ops = geo_deme_ops(d)
+        for (k, sg) in enumerate(sgids)
+            g = get(backward_g, Symbol(sg), 0.0)
+            push!(out, (deme=m, subgoal=sg, splice=f * g * C[m, k], gap=geo_gap(ops, motifs[sg])))
+        end
+    end
+    sort!(out; by = x -> -x.splice)
+    return out
+end
+
+"§5.1.5/§3.7 deme bandit: compute allocation ∝ softmax of the sliding-window Score-trend, with a
+bonus for high maxₖ Comp. Returns normalized per-deme weights. τ read from `p`."
+function geo_bandit(score_trend::Vector{Float64}, comp_max::Vector{Float64}, p::Dict{Symbol, Float64})::Vector{Float64}
+    isempty(score_trend) && return Float64[]
+    w = exp.(p[:tau] .* score_trend) .* (1.0 .+ comp_max)
+    s = sum(w)
+    return s == 0 ? fill(1.0 / length(w), length(w)) : w ./ s
+end
+
+"""
+    geo_step!(demes, space, goal, p; fitness_fn) -> NamedTuple
+
+One GEO-EVO scheduler iteration (§4.5 minimal): advance the forward demes one round
+(`evolve_demes!`), recompute the two-ends coupling + backward field, find splices, and the bandit
+allocation. Mutates `demes` (forward evolution). All structure (subgoal motifs, factors, params)
+read from `space` — nothing hardcoded.
+"""
+function geo_step!(demes::Vector{Deme}, s::MORK.Space, goal::Symbol, p::Dict{Symbol, Float64};
+        fitness_fn::Function)
+    evolve_demes!(demes, fitness_fn)                          # forward round (reused engine)
+    motifs = geo_subgoal_motifs(s)
+    bwd = geo_backward_g(s, goal)
+    sgids, C, π, omega, sgap = geo_pairing(demes, motifs, p)
+    splices = geo_splice_check(demes, motifs, bwd, p)
+    comp_max = isempty(sgids) ? zeros(Float64, length(demes)) : [maximum(@view C[m, :]) for m in 1:length(demes)]
+    trend = [geo_forward_f(d) for d in demes]                 # MVP Score-trend proxy = forward f
+    alloc = geo_bandit(trend, comp_max, p)
+    return (subgoals=sgids, comp=C, pairing=π, omega_align=omega, subgoal_gap=sgap,
+        backward=bwd, splices=splices, allocation=alloc,
+        generation=isempty(demes) ? 0 : demes[1].generation)
+end

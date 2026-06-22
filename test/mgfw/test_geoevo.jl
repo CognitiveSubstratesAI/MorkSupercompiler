@@ -141,3 +141,36 @@ end
     sgids0, _, _, _, _ = geo_pairing([d1], Dict{String, Set{Symbol}}(), p)
     @test isempty(sgids0)
 end
+
+@testset "GeoEvo v1c — scheduler step (forward + coupling + splice + bandit)" begin
+    p = geo_params(MORK.new_space())
+
+    # one space carries BOTH the backward factors and the subgoal motifs — all data
+    s = MORK.new_space()
+    MORK.space_add_all_sexpr!(s, join([
+        "(factor fmp hmp)", "(conclusion fmp G)",
+        "(premise fmp A premise_1)", "(premise fmp AB premise_2)",
+        "(stv A 0.8 0.9)", "(stv AB 0.7 0.85)",
+        "(subgoal-motif G and)", "(subgoal-motif G move)",
+    ], "\n"))
+
+    d = Deme(1); d.eda_model[:and] = 0.5; d.eda_model[:move] = 0.5
+    fit(store, id) = 0.5
+    res = geo_step!([d], s, :G, p; fitness_fn=fit)
+
+    @test "G" in res.subgoals
+    @test haskey(res.backward, :G) && res.backward[:G] ≈ 1.0        # demand seeded at goal G
+    @test length(res.allocation) == 1 && res.allocation[1] ≈ 1.0    # single deme → all compute
+    @test !isempty(res.splices) && res.splices[1].subgoal == "G"
+    @test res.generation ≥ 1                                        # forward round advanced
+
+    # forward f proxy
+    df = Deme(2); df.fitnesses[UInt64(1)] = 0.9
+    @test geo_forward_f(df) ≈ 0.9
+    @test geo_forward_f(Deme(3)) ≈ geo_reach(Set{Symbol}())         # empty deme → reach proxy
+
+    # bandit: higher score-trend ⇒ more compute, weights normalized
+    w = geo_bandit([2.0, 0.0], [0.0, 0.0], p)
+    @test w[1] > w[2]
+    @test sum(w) ≈ 1.0
+end
