@@ -215,10 +215,13 @@ Semi-naive invariant prevents quadratic re-derivation cost.
 """
 function saturate!(kb::KBState; max_rounds::Int=1000)::Int
     total_new = 0
+    converged = false
 
     for round in 1:max_rounds
         delta_old = copy(kb.delta)
-        isempty(delta_old) && break   # fixed point reached
+        if isempty(delta_old)
+            converged = true; break   # fixed point reached
+        end
 
         kb.delta = Fact[]
         bump_version!(kb.index)
@@ -230,8 +233,18 @@ function saturate!(kb::KBState; max_rounds::Int=1000)::Int
         end
 
         total_new += new_this_round
-        new_this_round == 0 && break
+        if new_this_round == 0
+            converged = true; break
+        end
     end
+
+    # No silent cap: a value-GENERATING rule with no bounding guard never reaches a fixpoint
+    # (the dedup gate collapses identical values, not freshly-minted ones) and gets truncated
+    # at the round cap. Surface it — the pragmatic stand-in for the supercompilation
+    # homeomorphic-embedding whistle — rather than returning a partial result as if complete.
+    converged || @warn "saturate!: reached max_rounds=$max_rounds without a fixpoint — likely an " *
+                       "unbounded value-generating rule; add a bounding comparison guard (e.g. (< \$x K)). " *
+                       "Result is truncated, not a fixpoint."
 
     total_new
 end
@@ -309,6 +322,54 @@ function _eval_guard_premise(g::MCoreGraph, pid::NodeID,
     nothing
 end
 
+# ── Arithmetic premises — 3-arg MODED functions `(op a b c)` that BIND the output c ──
+# `(+ $x $y $z)` is the moded lowering of `(= $z (+ $x $y))` — PeTTa compiles `+`→3-arg
+# `is/2` identically and CeTTa keeps the moded form in its MM2-IL. Inputs bound + output
+# unbound ⇒ COMPUTE and bind output; all bound ⇒ CHECK (filter). Float64-internal then
+# Int-narrowed string — identical to GROUNDED_REGISTRY (`_register_arithmetic!`). ⚠️ A
+# value-GENERATING rule (output feeds the head and recurses) must carry a bounding
+# comparison guard or saturation diverges — the dedup gate collapses identical values,
+# not freshly-minted ones; `saturate!` warns if it hits the round cap still-deriving
+# (the pragmatic stand-in for the homeomorphic-embedding whistle, per the theory digest).
+const _ARITH_OPS = Dict{Symbol, Function}(
+    Symbol("+") => (+), Symbol("-") => (-), Symbol("*") => (*),
+    Symbol("/") => (/), Symbol("%") => rem)
+
+_is_arith_premise(g::MCoreGraph, id::NodeID)::Bool =
+    (n = get_node(g, id); n isa Con && (n::Con).head in keys(_ARITH_OPS) &&
+                          length((n::Con).fields) == 3)
+
+# Resolve a field NodeID through bindings to a numeric value (or `nothing` if unbound/non-numeric).
+function _num_arg(g::MCoreGraph, id::NodeID, bindings::Dict{Int, NodeID})
+    n = get_node(g, id)
+    if n isa Var
+        haskey(bindings, (n::Var).ix) || return nothing
+        n = get_node(g, bindings[(n::Var).ix])
+    end
+    t = _atom_text(n); t === nothing && return nothing
+    tryparse(Float64, t)
+end
+
+# Apply `(op a b c)` under bindings: returns updated bindings (output bound / check passed),
+# `nothing` to DROP (failed check), or `:defer` when an input isn't bound yet.
+function _apply_arith_premise(g::MCoreGraph, pid::NodeID, bindings::Dict{Int, NodeID})
+    con = get_node(g, pid)::Con
+    fa = _num_arg(g, con.fields[1], bindings)
+    fb = _num_arg(g, con.fields[2], bindings)
+    (fa === nothing || fb === nothing) && return :defer
+    r    = _ARITH_OPS[con.head](fa, fb)
+    rstr = isinteger(r) ? string(Int(r)) : string(r)
+    cn = get_node(g, con.fields[3])
+    if cn isa Var
+        ix = (cn::Var).ix
+        haskey(bindings, ix) || begin
+            nb = copy(bindings); nb[ix] = add_sym!(g, Sym(Symbol(rstr))); return nb
+        end
+        return _atom_text(get_node(g, bindings[ix])) == rstr ? bindings : nothing
+    end
+    return _atom_text(cn) == rstr ? bindings : nothing
+end
+
 """
     _match_body_with_facts(kb, body_ids) -> Vector{Tuple{Dict{Int,NodeID}, Vector{NodeID}}}
 
@@ -327,7 +388,9 @@ function _match_body_with_facts(
     isempty(body_ids) && return [(Dict{Int, NodeID}(), NodeID[])]
 
     guards    = NodeID[id for id in body_ids if _is_guard_premise(kb.g, id)]
-    relations = NodeID[id for id in body_ids if !_is_guard_premise(kb.g, id)]
+    arith     = NodeID[id for id in body_ids if _is_arith_premise(kb.g, id)]
+    relations = NodeID[id for id in body_ids
+                       if !_is_guard_premise(kb.g, id) && !_is_arith_premise(kb.g, id)]
     ordered   = sort(relations; by=id -> _premise_cardinality(kb, id))
 
     results = Tuple{Dict{Int, NodeID}, Vector{NodeID}}[(Dict{Int, NodeID}(), NodeID[])]
@@ -344,6 +407,30 @@ function _match_body_with_facts(
         results = new_results
         isempty(results) && return results
     end
+
+    # Arithmetic premises, applied in READINESS order — each `(op a b c)` binds its output
+    # once its inputs are bound (partial evaluation); chained arith resolves over iterations.
+    # Binding structure is uniform across results (same relations bind the same vars), so a
+    # premise is ready/deferred for all results together — test on the first.
+    remaining = arith
+    while !isempty(remaining) && !isempty(results)
+        ready = NodeID[]; deferred = NodeID[]
+        for ap in remaining
+            (_apply_arith_premise(kb.g, ap, results[1][1]) === :defer) ?
+                push!(deferred, ap) : push!(ready, ap)
+        end
+        isempty(ready) && break    # no progress: remaining inputs never bind
+        for ap in ready
+            nr = Tuple{Dict{Int, NodeID}, Vector{NodeID}}[]
+            for (b, u) in results
+                nb = _apply_arith_premise(kb.g, ap, b)
+                (nb !== nothing && nb !== :defer) && push!(nr, (nb::Dict{Int, NodeID}, u))
+            end
+            results = nr
+        end
+        remaining = deferred
+    end
+    isempty(remaining) || return Tuple{Dict{Int, NodeID}, Vector{NodeID}}[]  # unsatisfiable arith
 
     # Guards last: evaluate against the now-bound variables; keep a tuple iff every
     # guard decides true (an undecidable/unbound guard returns nothing → dropped).
