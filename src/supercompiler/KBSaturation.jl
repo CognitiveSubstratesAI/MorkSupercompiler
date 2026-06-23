@@ -266,19 +266,69 @@ end
 
 # ── Body matching — multi-premise conjunctive query ───────────────────────────
 
+# ── Guard premises — EVALUATED, not looked up (comparison filters) ─────────────
+# A premise whose head is a comparison op (`< > <= >= == !=`) is a GUARD: it is
+# evaluated against the current bindings and FILTERS the result set, rather than
+# being matched against stored facts (a `(< $x 3)` premise has no `(< …)` fact to
+# find, so without this it silently blocks the rule). Semantics MIRROR Core's
+# `GROUNDED_REGISTRY` (`Primitives.jl _register_comparison!`) so the saturation lane
+# bisimulates the MM2 calculus lane: parse both operands as Float64 and compare;
+# `==`/`!=` fall back to textual (structural-symbol) (in)equality when non-numeric.
+# `!=` has no GROUNDED_REGISTRY counterpart — it is the saturation-IR guard mirroring
+# CeTTa's MM2-IL `ir_guard_neq` (kept off the surface, as in every reference runtime).
+# Guards bind no variables and add no facts ⇒ monotone, always-terminating filters.
+const _GUARD_OPS = Set{Symbol}(Symbol.(["<", ">", "<=", ">=", "==", "!="]))
+
+_is_guard_premise(g::MCoreGraph, id::NodeID)::Bool =
+    (n = get_node(g, id); n isa Con && (n::Con).head in _GUARD_OPS)
+
+_atom_text(n)::Union{String, Nothing} =
+    n isa Sym ? string((n::Sym).name) :
+    n isa Lit ? string((n::Lit).val)  : nothing
+
+# Evaluate a guard premise under `bindings`: true/false when both operands are GROUND
+# and comparable, or `nothing` when an operand is still unbound/structured (the
+# partial-evaluation "defer" case — an undecidable guard drops the tuple, never
+# deriving on an unconfirmed guard).
+function _eval_guard_premise(g::MCoreGraph, pid::NodeID,
+                             bindings::Dict{Int, NodeID})::Union{Bool, Nothing}
+    gcon = get_node(g, _instantiate(g, pid, bindings))
+    (gcon isa Con && length((gcon::Con).fields) >= 2) || return nothing
+    op = (gcon::Con).head
+    sa = _atom_text(get_node(g, (gcon::Con).fields[1]))
+    sb = _atom_text(get_node(g, (gcon::Con).fields[2]))
+    (sa === nothing || sb === nothing) && return nothing
+    fa = tryparse(Float64, sa); fb = tryparse(Float64, sb)
+    num = fa !== nothing && fb !== nothing
+    op === Symbol("<")  && return num ? (fa <  fb) : nothing
+    op === Symbol(">")  && return num ? (fa >  fb) : nothing
+    op === Symbol("<=") && return num ? (fa <= fb) : nothing
+    op === Symbol(">=") && return num ? (fa >= fb) : nothing
+    op === Symbol("==") && return num ? (fa == fb) : (sa == sb)
+    op === Symbol("!=") && return num ? (fa != fb) : (sa != sb)
+    nothing
+end
+
 """
     _match_body_with_facts(kb, body_ids) -> Vector{Tuple{Dict{Int,NodeID}, Vector{NodeID}}}
 
 Enumerate all complete bindings satisfying all premises in `body_ids`.
 Returns (bindings, used_fact_ids) pairs — used_fact_ids tracks which
 fact NodeIDs were matched (needed for the semi-naive delta check).
+
+GUARD premises (`_GUARD_OPS`) are partitioned out and applied LAST — after the
+relation premises have bound the variables (the partial-evaluation discipline:
+evaluate when bound). This also fixes the ordering hazard where `_premise_cardinality`
+gives an unindexed guard cardinality 0 and would otherwise sort it first.
 """
 function _match_body_with_facts(
     kb::KBState, body_ids::Vector{NodeID}
 )::Vector{Tuple{Dict{Int, NodeID}, Vector{NodeID}}}
     isempty(body_ids) && return [(Dict{Int, NodeID}(), NodeID[])]
 
-    ordered = sort(body_ids; by=id -> _premise_cardinality(kb, id))
+    guards    = NodeID[id for id in body_ids if _is_guard_premise(kb.g, id)]
+    relations = NodeID[id for id in body_ids if !_is_guard_premise(kb.g, id)]
+    ordered   = sort(relations; by=id -> _premise_cardinality(kb, id))
 
     results = Tuple{Dict{Int, NodeID}, Vector{NodeID}}[(Dict{Int, NodeID}(), NodeID[])]
 
@@ -294,7 +344,13 @@ function _match_body_with_facts(
         results = new_results
         isempty(results) && return results
     end
-    results
+
+    # Guards last: evaluate against the now-bound variables; keep a tuple iff every
+    # guard decides true (an undecidable/unbound guard returns nothing → dropped).
+    isempty(guards) && return results
+    filter(results) do (bindings, _used)
+        all(gid -> _eval_guard_premise(kb.g, gid, bindings) === true, guards)
+    end
 end
 
 # Keep old name for any external callers
