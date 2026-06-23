@@ -298,7 +298,10 @@ function execute!(s::Space, program::AbstractString; opts::SCOptions=SC_DEFAULTS
                     # Skip atoms that don't parse to valid M-Core
                 end
             end
-            n_facts_derived = saturate!(kb; max_rounds=100)
+            # Stratified saturation when the program uses negation (`(not …)` premises) so each
+            # negated premise sees a completed lower stratum; flat saturation otherwise (identical path).
+            n_facts_derived = (_program_has_negation(kb) ? saturate_stratified! :
+                                                           saturate!)(kb; max_rounds=100)
             n_kb_facts = length(kb.facts)
             # write-back: serialize each DERIVED fact (not base) and add it to the live Space
             if n_facts_derived > 0

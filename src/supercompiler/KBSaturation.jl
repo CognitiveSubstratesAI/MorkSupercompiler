@@ -249,6 +249,111 @@ function saturate!(kb::KBState; max_rounds::Int=1000)::Int
     total_new
 end
 
+# ── Stratified negation: signed dependency graph → strata → per-stratum saturation ──
+
+# Collect the Var indices appearing anywhere in a premise pattern (for NAF safety).
+function _premise_vars!(g::MCoreGraph, id::NodeID, acc::Set{Int})::Set{Int}
+    n = get_node(g, id)
+    if n isa Var
+        push!(acc, (n::Var).ix)
+    elseif n isa Con
+        for f in (n::Con).fields
+            _premise_vars!(g, f, acc)
+        end
+    end
+    acc
+end
+
+"""
+    _stratify(kb) -> Vector{Vector{Rule}} | nothing
+
+Partition `kb.rules` into strata for stratified negation. Builds the signed predicate
+dependency graph — a POSITIVE edge `head → pred` for a positive premise, a NEGATIVE edge
+for a `(not (pred …))` premise — and assigns stratum numbers (positive dependency ≥,
+negative dependency STRICTLY >). Returns the rules grouped by head-stratum in increasing
+order, or `nothing` if the program is NON-stratifiable (a cycle through negation → needs
+well-founded semantics, not supported). Warns on an unsafe rule (a negated literal with a
+variable not bound by any positive premise).
+"""
+function _stratify(kb::KBState)::Union{Vector{Vector{Rule}}, Nothing}
+    g, rules = kb.g, kb.rules
+    derived = Set{Symbol}(_fact_head(g, r.head_id) for r in rules)
+    stratum = Dict{Symbol, Int}(p => 0 for p in derived)
+    edges = Tuple{Symbol, Symbol, Bool}[]                 # (head, body_pred, is_negative)
+    for r in rules
+        h = _fact_head(g, r.head_id)
+        posvars = Set{Int}()
+        for bid in r.body_ids
+            if _is_negated_premise(g, bid)
+                q = _fact_head(g, (get_node(g, bid)::Con).fields[1])
+                q in derived && push!(edges, (h, q, true))
+            elseif _is_guard_premise(g, bid)
+                # guards bind nothing — no edge, no vars
+            elseif _is_arith_premise(g, bid)
+                _premise_vars!(g, bid, posvars)           # arith binds its output, reads inputs
+            else
+                q = _fact_head(g, bid)
+                q in derived && push!(edges, (h, q, false))
+                _premise_vars!(g, bid, posvars)
+            end
+        end
+        for bid in r.body_ids                              # NAF safety: negated vars positively bound
+            _is_negated_premise(g, bid) || continue
+            nv = _premise_vars!(g, (get_node(g, bid)::Con).fields[1], Set{Int}())
+            unbound = setdiff(nv, posvars)
+            isempty(unbound) || @warn "stratified NAF: unsafe rule — negated premise variable(s) " *
+                "$(collect(unbound)) not bound by a positive premise; result may be unsound."
+        end
+    end
+    n = length(derived)
+    for _ in 1:(n + 1)                                     # relax stratum numbers to a fixed point
+        changed = false
+        for (h, q, neg) in edges
+            want = neg ? stratum[q] + 1 : stratum[q]
+            stratum[h] < want && (stratum[h] = want; changed = true)
+        end
+        changed || break
+    end
+    for (h, q, neg) in edges                               # constraint check: neg ⇒ strictly higher
+        neg && stratum[q] >= stratum[h] && return nothing  # cycle through negation → non-stratifiable
+    end
+    maxs = maximum(values(stratum); init = 0)
+    strata = [Rule[] for _ in 0:maxs]
+    for r in rules
+        push!(strata[stratum[_fact_head(g, r.head_id)] + 1], r)
+    end
+    filter(!isempty, strata)
+end
+
+"""
+    saturate_stratified!(kb; max_rounds) -> Int
+
+Stratified saturation for programs with negated premises: saturate one stratum at a time
+(lower strata frozen-complete before higher), so a `(not (p …))` premise is evaluated only
+once `p`'s relation is fully derived — the closed-world reading that makes NAF sound. Falls
+back to flat `saturate!` (with a warning) when the program is non-stratifiable.
+"""
+function saturate_stratified!(kb::KBState; max_rounds::Int=1000)::Int
+    strata = _stratify(kb)
+    if strata === nothing
+        @warn "stratified NAF: program is NON-stratifiable (recursion through negation) — needs " *
+              "well-founded semantics (tnot), not supported; running flat saturation (negation unsound here)."
+        return saturate!(kb; max_rounds)
+    end
+    saved, total = kb.rules, 0
+    for stratum_rules in strata
+        kb.rules = stratum_rules
+        kb.delta = collect(values(kb.facts))   # all prior-stratum facts are this stratum's frontier
+        total += saturate!(kb; max_rounds)
+    end
+    kb.rules = saved
+    total
+end
+
+# Does the program use negation (any rule with a `(not …)` premise)?
+_program_has_negation(kb::KBState)::Bool =
+    any(r -> any(bid -> _is_negated_premise(kb.g, bid), r.body_ids), kb.rules)
+
 """
 Apply one rule using semi-naive strategy: at least one premise from delta_old.
 """
@@ -370,6 +475,19 @@ function _apply_arith_premise(g::MCoreGraph, pid::NodeID, bindings::Dict{Int, No
     return _atom_text(cn) == rstr ? bindings : nothing
 end
 
+# ── Negated premises — `(not (p …))` stratified negation-as-failure ────────────
+# A `(not inner)` premise SUCCEEDS for a binding iff NO fact matches `inner` under it
+# (anti-join / closed-world). Sound only under STRATIFIED evaluation: `inner`'s predicate
+# must live in a strictly-lower, already-saturated stratum, so "no match" is final, not
+# transient (see `saturate_stratified!` / `_stratify`). Safety: `inner`'s variables must be
+# bound by positive premises (warned in `_stratify`). Detected by head, like guards/arith.
+_is_negated_premise(g::MCoreGraph, id::NodeID)::Bool =
+    (n = get_node(g, id); n isa Con && (n::Con).head === :not && length((n::Con).fields) == 1)
+
+# NAF holds (keep the tuple) iff the instantiated inner pattern has NO matching fact.
+_eval_negated_premise(kb::KBState, pid::NodeID, bindings::Dict{Int, NodeID})::Bool =
+    isempty(_match_fact(kb, _instantiate(kb.g, (get_node(kb.g, pid)::Con).fields[1], bindings)))
+
 """
     _match_body_with_facts(kb, body_ids) -> Vector{Tuple{Dict{Int,NodeID}, Vector{NodeID}}}
 
@@ -389,8 +507,10 @@ function _match_body_with_facts(
 
     guards    = NodeID[id for id in body_ids if _is_guard_premise(kb.g, id)]
     arith     = NodeID[id for id in body_ids if _is_arith_premise(kb.g, id)]
+    negated   = NodeID[id for id in body_ids if _is_negated_premise(kb.g, id)]
     relations = NodeID[id for id in body_ids
-                       if !_is_guard_premise(kb.g, id) && !_is_arith_premise(kb.g, id)]
+                       if !_is_guard_premise(kb.g, id) && !_is_arith_premise(kb.g, id) &&
+                          !_is_negated_premise(kb.g, id)]
     ordered   = sort(relations; by=id -> _premise_cardinality(kb, id))
 
     results = Tuple{Dict{Int, NodeID}, Vector{NodeID}}[(Dict{Int, NodeID}(), NodeID[])]
@@ -432,11 +552,12 @@ function _match_body_with_facts(
     end
     isempty(remaining) || return Tuple{Dict{Int, NodeID}, Vector{NodeID}}[]  # unsatisfiable arith
 
-    # Guards last: evaluate against the now-bound variables; keep a tuple iff every
-    # guard decides true (an undecidable/unbound guard returns nothing → dropped).
-    isempty(guards) && return results
+    # Guards + negation last: evaluate against the now-bound variables. Keep a tuple iff every
+    # guard decides true AND every negated premise holds (its inner pattern has no matching fact).
+    (isempty(guards) && isempty(negated)) && return results
     filter(results) do (bindings, _used)
-        all(gid -> _eval_guard_premise(kb.g, gid, bindings) === true, guards)
+        all(gid -> _eval_guard_premise(kb.g, gid, bindings) === true, guards) &&
+            all(nid -> _eval_negated_premise(kb, nid, bindings), negated)
     end
 end
 
