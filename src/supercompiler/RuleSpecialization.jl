@@ -194,6 +194,9 @@ function magic_sets_transform(
     end
     qcon = qn::Con
     query_head = qcon.head
+    # SAFETY: only the single-predicate, self-recursive, bound-FIRST fragment is sound here. A non-first
+    # bound position has no adornment/SIPS → unsound on branching graphs; fall back to full closure.
+    bound_position == 0 || return MagicSetsResult(copy(rules), NodeID[], :_no_magic)
     bound_position + 1 <= length(qcon.fields) ||
         return MagicSetsResult(copy(rules), NodeID[], :_no_magic)
 
@@ -203,6 +206,25 @@ function magic_sets_transform(
     # be meaningful. A bound Var is no magic-restriction at all.
     if !(bound_node isa Sym || bound_node isa Lit)
         return MagicSetsResult(copy(rules), NodeID[], :_no_magic)
+    end
+
+    # SAFETY: this transform seeds/propagates only `magic_<query_head>`. If the query predicate's
+    # derivation depends on a DIFFERENT derived (rule-head) predicate — mutual/cross-predicate recursion
+    # (e.g. even↔odd) — the seed never reaches that predicate's subgoals, so magic-sets would silently
+    # DROP query-relevant answers. Detect it and fall back to full closure (correct, just un-directed).
+    derived_preds = Set{Symbol}()
+    for r in rules
+        hn = get_node(g, r.head_id)
+        hn isa Con && push!(derived_preds, (hn::Con).head)
+    end
+    for r in rules
+        hn = get_node(g, r.head_id)
+        (hn isa Con && (hn::Con).head === query_head) || continue
+        for bid in r.body_ids
+            bn = get_node(g, bid)
+            bn isa Con && (bn::Con).head !== query_head && (bn::Con).head in derived_preds &&
+                return MagicSetsResult(copy(rules), NodeID[], :_no_magic)
+        end
     end
 
     magic_pred = Symbol("magic_$(query_head)")

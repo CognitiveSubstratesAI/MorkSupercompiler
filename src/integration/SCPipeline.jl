@@ -46,6 +46,9 @@ struct SCOptions
     sc_max_drive_steps::Int      # §6 driver: per-region rewrite_once iteration cap
     cleanup_intermediates::Bool     # Post: remove _sc_tmp* atoms from space
     use_driven_program::Bool     # Stage 4c+: replace program_planned with the driver's residual
+    use_magic_sets::Bool     # Stage 3.5: magic-sets goal-direction of the saturation rules
+    magic_query::String      # Stage 3.5: goal s-expr seeding magic-sets, e.g. "(path 0 \$y)"
+    magic_bound::Int         # Stage 3.5: which query argument is bound (0-based)
 end
 
 SCOptions(;
@@ -62,7 +65,10 @@ SCOptions(;
     budget=SPLIT_DEFAULT_BUDGET,
     drive_steps=1000,
     cleanup=true,
-    use_driven=false
+    use_driven=false,
+    use_magic_sets=false,
+    magic_query="",
+    magic_bound=0
 ) = SCOptions(
     stats,
     plan,
@@ -77,7 +83,10 @@ SCOptions(;
     budget,
     drive_steps,
     cleanup,
-    use_driven
+    use_driven,
+    use_magic_sets,
+    magic_query,
+    magic_bound
 )
 
 const SC_DEFAULTS = SCOptions()
@@ -238,6 +247,7 @@ function execute!(s::Space, program::AbstractString; opts::SCOptions=SC_DEFAULTS
             # renders each atom's vars positionally/anonymously, which destroys the cross-pattern
             # var sharing a join needs, so rules can't be recovered from the dump.) One fresh varmap
             # per rule so its body+head share variables; numeric/named distinct via _sexpr_to_mcore!.
+            sat_rules = Rule[]
             for sn in parse_program(program)
                 _is_rule(sn) || continue
                 try
@@ -247,9 +257,30 @@ function execute!(s::Space, program::AbstractString; opts::SCOptions=SC_DEFAULTS
                     head_id  = _sexpr_to_mcore!(g, items[3], vm)
                     rule_ctr += 1
                     rid = add_sym!(g, Sym(Symbol("__sat_rule_$rule_ctr")))
-                    kb_add_rule!(kb, Rule(head_id, body_ids, rid))
+                    push!(sat_rules, Rule(head_id, body_ids, rid))
                 catch
                 end
+            end
+            # Stage 3.5 — magic-sets goal-direction (opt-in): rewrite the rules toward `magic_query` so
+            # the (otherwise full-relation) bottom-up saturation tables only goal-relevant facts — the
+            # bottom-up equivalent of top-down SLG tabling. Lane-agnostic: any caller (Direct via
+            # supercompile=true, or the MeTTa-IL saturate lane) reaches it through SCOptions.
+            if opts.use_magic_sets && !isempty(opts.magic_query)
+                try
+                    qn = parse_program(opts.magic_query)
+                    if !isempty(qn)
+                        qid = _sexpr_to_mcore!(g, only(qn))
+                        ms = magic_sets_transform(g, sat_rules, qid; bound_position = opts.magic_bound)
+                        sat_rules = ms.rewritten_rules
+                        for seed in ms.magic_seeds
+                            isvalid(seed) && kb_add_fact!(kb, seed)
+                        end
+                    end
+                catch
+                end
+            end
+            for r in sat_rules
+                kb_add_rule!(kb, r)
             end
             # Base FACTS come from the live Space (ground atoms — no vars to mangle). Skip any `==>`
             # stored in the space (its vars are mangled by the dump; rules are taken from `program`).
@@ -417,7 +448,10 @@ function execute(
         opts.split_budget,
         opts.sc_max_drive_steps,
         opts.cleanup_intermediates,
-        opts.use_driven_program
+        opts.use_driven_program,
+        opts.use_magic_sets,
+        opts.magic_query,
+        opts.magic_bound
     )
     result = execute!(s, program; opts=opts2)
     (s, result)
