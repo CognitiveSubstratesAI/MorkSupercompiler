@@ -292,7 +292,11 @@ function plan_report(program::AbstractString, stats::MORKStatistics)::String
     for node in nodes
         node isa SList || continue
         items = (node::SList).items
-        length(items) < 3 || !is_conjunction(items[2]) && continue
+        # two separate guards (cf. _plan_atom): the combined `a < 3 || !b && continue` mis-parsed as
+        # `a < 3 || (!b && continue)` (&& binds tighter than ||), so a short node like `!(fib 15)`
+        # (2 items) skipped the `continue` and hit `items[2]::SList` with the SAtom `15` → TypeError.
+        length(items) < 3 && continue
+        is_conjunction(items[2]) || continue
         conj = items[2]::SList
         sources = conj.items[2:end]
         length(sources) <= 1 && continue
