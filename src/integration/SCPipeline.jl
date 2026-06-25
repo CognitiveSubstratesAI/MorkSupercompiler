@@ -49,6 +49,7 @@ struct SCOptions
     use_magic_sets::Bool     # Stage 3.5: magic-sets goal-direction of the saturation rules
     magic_query::String      # Stage 3.5: goal s-expr seeding magic-sets, e.g. "(path 0 \$y)"
     magic_bound::Int         # Stage 3.5: which query argument is bound (0-based)
+    sat_max_rounds::Int      # Stage 4: KBSaturation round backstop; 0 = auto-scale to closure depth
 end
 
 SCOptions(;
@@ -68,7 +69,8 @@ SCOptions(;
     use_driven=false,
     use_magic_sets=false,
     magic_query="",
-    magic_bound=0
+    magic_bound=0,
+    sat_max_rounds=0          # 0 = auto-scale the saturation backstop to the closure depth
 ) = SCOptions(
     stats,
     plan,
@@ -86,7 +88,8 @@ SCOptions(;
     use_driven,
     use_magic_sets,
     magic_query,
-    magic_bound
+    magic_bound,
+    sat_max_rounds
 )
 
 const SC_DEFAULTS = SCOptions()
@@ -300,8 +303,20 @@ function execute!(s::Space, program::AbstractString; opts::SCOptions=SC_DEFAULTS
             end
             # Stratified saturation when the program uses negation (`(not …)` premises) so each
             # negated premise sees a completed lower stratum; flat saturation otherwise (identical path).
+            #
+            # Spec (v2 §7.1 Algorithm 11 / v1 §8.2 Algorithm 3): saturation computes the deductive
+            # CLOSURE — run to fixpoint (`while delta_old ≠ {}`), NO round cap. The cap here is purely
+            # a non-termination backstop for the out-of-spec value-generating case (warned, not silently
+            # truncated, in saturate!). Scale it to the problem so any monotone Horn closure — whose
+            # round count ≤ derivation-chain depth ≤ #base-facts — always converges FIRST; a fixed low
+            # cap (the old 100) truncated legitimate closures (e.g. an N>100 transitive chain) and
+            # violated the spec's closure definition. Callers may override via `opts.sat_max_rounds`.
+            # TODO(resource-budget): the spec puts resource bounds on splitting/allocation (§6.2
+            # BoundedSplit, approx §5.5), NOT on closure rounds. When a workload risks OOM, replace this
+            # round backstop with a Sys.free_memory()-derived memory/time budget that aborts-with-warning.
+            sat_backstop = opts.sat_max_rounds > 0 ? opts.sat_max_rounds : max(1000, 4 * length(kb.facts))
             n_facts_derived = (_program_has_negation(kb) ? saturate_stratified! :
-                                                           saturate!)(kb; max_rounds=100)
+                                                           saturate!)(kb; max_rounds=sat_backstop)
             n_kb_facts = length(kb.facts)
             # write-back: serialize each DERIVED fact (not base) and add it to the live Space
             if n_facts_derived > 0
