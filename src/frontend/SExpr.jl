@@ -34,23 +34,32 @@ end
 # `[`/`]`/`{`/`}`, and other punctuation the prior whitelist silently rejected.
 # `"` and `#` remain symbol-chars to preserve existing behavior (this parser
 # does not split strings as a separate token — see the module docstring).
-_is_symbol_char(c::Char) = !isspace(c) && c ∉ ('(', ')', ';')
+# Token boundaries follow the canonical MeTTa EBNF (docs/specs/metta_grammar.ebnf): a WORD body is
+# any byte that is NOT whitespace and NOT a structural delimiter '(' ')' ';'.  We parse at the BYTE
+# level — exactly like MORK's canonical `sexpr_parse!` (frontend/Frontend.jl), which runs over a
+# `Vector{UInt8}` and captures each symbol as a byte-range as-is.  Every delimiter and ASCII
+# whitespace byte is < 0x80, so all bytes of a multi-byte UTF-8 char (→, 𝜑, …) are non-delimiter
+# non-whitespace and flow through verbatim as symbol bytes — there is NO String char-boundary
+# indexing, so nothing can land mid-codepoint.  (The prior String/byte-step parser crashed on `→`.)
+@inline _ws_byte(b::UInt8)::Bool  = b < 0x80 && isspace(Char(b))     # ASCII whitespace only (multi-byte ⇒ symbol byte)
+@inline _sym_byte(b::UInt8)::Bool = !_ws_byte(b) && b != UInt8('(') && b != UInt8(')') && b != UInt8(';')
 
 # ── Parser ────────────────────────────────────────────────────────────────────
 
 """
     parse_program(src::AbstractString) -> Vector{SNode}
 
-Parse all top-level s-expressions from `src`.  Comments (`;...`) are skipped.
+Parse all top-level s-expressions from `src`.  Comments (`;...`) are skipped.  UTF-8 safe (byte-level).
 """
 function parse_program(src::AbstractString)::Vector{SNode}
+    b = Vector{UInt8}(src)            # parse over bytes (mirrors MORK sexpr_to_expr: Vector{UInt8}(src))
     nodes = SNode[]
     i = 1
-    n = length(src)
+    n = length(b)
     while i <= n
-        i = _skip_ws(src, i, n)
+        i = _skip_ws(b, i, n)
         i > n && break
-        node, i = _parse_at(src, i, n)
+        node, i = _parse_at(b, i, n)
         push!(nodes, node)
     end
     nodes
@@ -62,20 +71,21 @@ end
 Parse exactly one s-expression from the beginning of `src`.
 """
 function parse_sexpr(src::AbstractString)::SNode
-    i = _skip_ws(src, 1, length(src))
-    node, _ = _parse_at(src, i, length(src))
+    b = Vector{UInt8}(src)
+    n = length(b)
+    i = _skip_ws(b, 1, n)
+    node, _ = _parse_at(b, i, n)
     node
 end
 
-function _skip_ws(src, i, n)
+function _skip_ws(b::Vector{UInt8}, i::Int, n::Int)::Int
     while i <= n
-        c = src[i]
-        if c == ';'   # line comment
-            while i <= n && src[i] != '\n'
-                ;
+        c = b[i]
+        if c == UInt8(';')            # line comment: skip to end of line
+            while i <= n && b[i] != UInt8('\n')
                 i += 1
             end
-        elseif isspace(c)
+        elseif _ws_byte(c)
             i += 1
         else
             break
@@ -84,49 +94,48 @@ function _skip_ws(src, i, n)
     i
 end
 
-function _parse_at(src::AbstractString, i::Int, n::Int)::Tuple{SNode, Int}
+function _parse_at(b::Vector{UInt8}, i::Int, n::Int)::Tuple{SNode, Int}
     i > n && error("unexpected EOF at position $i")
-    c = src[i]
+    c = b[i]
 
-    if c == '('
-        return _parse_list(src, i, n)
-    elseif c == '$'
-        return _parse_var(src, i, n)
-    elseif _is_symbol_char(c)
-        return _parse_atom(src, i, n)
+    if c == UInt8('(')
+        return _parse_list(b, i, n)
+    elseif c == UInt8('$')
+        return _parse_var(b, i, n)
+    elseif _sym_byte(c)
+        return _parse_atom(b, i, n)
     else
-        error("unexpected character $(repr(c)) at position $i")
+        error("unexpected byte 0x$(string(c, base=16, pad=2)) at position $i")
     end
 end
 
-function _parse_list(src, i, n)
-    # consume '('
-    i += 1
+function _parse_list(b::Vector{UInt8}, i::Int, n::Int)::Tuple{SNode, Int}
+    i += 1                            # consume '('
     items = SNode[]
     while true
-        i = _skip_ws(src, i, n)
+        i = _skip_ws(b, i, n)
         i > n && error("unterminated list: reached EOF")
-        src[i] == ')' && return SList(items), i + 1
-        node, i = _parse_at(src, i, n)
+        b[i] == UInt8(')') && return SList(items), i + 1
+        node, i = _parse_at(b, i, n)
         push!(items, node)
     end
 end
 
-function _parse_var(src, i, n)
+function _parse_var(b::Vector{UInt8}, i::Int, n::Int)::Tuple{SNode, Int}
     start = i
-    i += 1   # skip '$'
-    while i <= n && _is_symbol_char(src[i])
+    i += 1                            # skip '$' (start retained so the name includes the leading $)
+    while i <= n && _sym_byte(b[i])
         i += 1
     end
-    SVar(src[start:(i - 1)]), i
+    SVar(String(b[start:(i - 1)])), i
 end
 
-function _parse_atom(src, i, n)
+function _parse_atom(b::Vector{UInt8}, i::Int, n::Int)::Tuple{SNode, Int}
     start = i
-    while i <= n && _is_symbol_char(src[i])
+    while i <= n && _sym_byte(b[i])
         i += 1
     end
-    SAtom(src[start:(i - 1)]), i
+    SAtom(String(b[start:(i - 1)])), i
 end
 
 # ── Serializer ────────────────────────────────────────────────────────────────

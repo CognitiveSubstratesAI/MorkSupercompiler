@@ -101,4 +101,17 @@ using MorkSupercompiler
             @test sprint_sexpr(n) == e
         end
     end
+
+    @testset "UTF-8 unicode (byte-level parse — the old String byte-step crashed on →/𝜑)" begin
+        # multi-byte tokens flow through verbatim as symbol bytes; nothing lands mid-codepoint
+        for e in ["(→ 𝜑 𝜑)",
+                  raw"(: $x (→ (→ (→ 𝜑 𝜓) 𝜒) (→ 𝜓 𝜒)))",
+                  raw"(target 5 (: $x (→ 𝜑 𝜑)))",
+                  raw"(sol $k:Int $hypcnt:Int (: ($f ax₁) $b))"]
+            @test sprint_sexpr(parse_sexpr(e)) == e
+        end
+        # a multi-byte arrow is ONE atom, not split mid-codepoint
+        n = parse_sexpr("(→ a b)")
+        @test n isa SList && (n::SList).items[1] isa SAtom && ((n::SList).items[1]::SAtom).name == "→"
+    end
 end
