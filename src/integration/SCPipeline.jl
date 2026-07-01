@@ -166,6 +166,41 @@ function _lower_match_program(program::AbstractString)::String
     return sprint_program(SNode[_lower_match_snode(n) for n in nodes])
 end
 
+# ── (=)→MM2 lowering (MeTTa_MM2_merge_design_2026-07-01.md; Phase-0 Rust-kernel-verified) ──────────────
+# A MeTTa function-rule `(= LHS RHS)` is a REDUCTION, so — unlike `(match)` (additive) and `(~>)` (accumulate)
+# — it must ADD the reduct AND DELETE the matched redex. Phase-0 verified shape (sinks.rs:1247-1252,
+# space.rs:1695-1726): `(exec 0 (I LHS) (O (+ RHS) (- LHS)))` — `I` sources the redex from the space, `O`
+# dispatches `+`→AddSink (add during the query loop) and `-`→RemoveSink (delete at finalize; remove-wins on a
+# path collision, and RHS≠LHS so none for a genuine reduction). Variables stay `SVar` here; MORK's serializer
+# applies the native NewVar/VarRef ordinal encoding by L→R occurrence across the whole exec (no de-Bruijn).
+#
+# OPT-IN / standalone (NOT wired into execute! unconditionally): `(=)` is ambiguous — a rule to lower vs a data
+# fact / type-eq — unlike an unambiguous top-level `(match)`. Call `_lower_eq_program` explicitly (or via an
+# opt-in flag) so the default 234-conformance path is untouched. SCOPE (Phase 1): body-form-FREE rules only —
+# RHS containing `if`/arithmetic/recursive calls needs the Phase-2 body-form lowering (MM2 has no built-in
+# `if`/arith); those RHS terms would be added VERBATIM, not evaluated.
+_is_eq_node(n::SNode) = n isa SList && length((n::SList).items) == 3 &&
+    (n::SList).items[1] isa SAtom && ((n::SList).items[1]::SAtom).name == "="
+
+function _lower_eq_snode(n::SNode)::SNode
+    n isa SList || return n
+    items = (n::SList).items
+    if length(items) == 3 && items[1] isa SAtom && (items[1]::SAtom).name == "="
+        lhs = items[2]; rhs = items[3]
+        pattern  = SList(SNode[SAtom("I"), lhs])                                    # source the redex
+        template = SList(SNode[SAtom("O"), SList(SNode[SAtom("+"), rhs]),           # add reduct
+                                           SList(SNode[SAtom("-"), lhs])])          # remove redex
+        return SList(SNode[SAtom("exec"), SAtom("0"), pattern, template])
+    end
+    return n
+end
+
+function _lower_eq_program(program::AbstractString)::String
+    nodes = parse_program(program)
+    any(_is_eq_node, nodes) || return String(program)             # no (=) → untouched (fast path)
+    return sprint_program(SNode[_lower_eq_snode(n) for n in nodes])
+end
+
 # Body of a saturation rule `(==> BODY HEAD)`: a `(, p₁ … pₙ)` conjunction → all premises;
 # a single pattern → one premise.
 function _sat_body_ids!(g::MCoreGraph, body::SNode, vm::Dict{String,Int})::Vector{NodeID}
