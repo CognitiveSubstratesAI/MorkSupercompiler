@@ -266,7 +266,7 @@ function execute!(s::Space, program::AbstractString; opts::SCOptions=SC_DEFAULTS
     # Space (sprint_mcore → s-expr → space_add_all_sexpr!).
     #
     # This closes the long-standing write-back gap (saturation was observability-only). MORK's
-    # KBSaturation already IS the seminaive forward-saturation engine (the PFC/Datalog fixpoint), so
+    # KBSaturation already IS the seminaive forward-saturation engine (the PFC forward-chaining fixpoint), so
     # nothing is ported — we only wire it onto the live path. The uniqueness gate in saturate! gives
     # termination, so a recursive rule like `(==> (, (path $x $y) (edge $y $z)) (path $x $z))` that
     # would loop the tree-walker converges here and materializes its transitive closure.
