@@ -476,6 +476,27 @@ function execute!(s::Space, program::AbstractString; opts::SCOptions=SC_DEFAULTS
 end
 
 """
+    _with_field(o::SCOptions, ::Val{F}, v) -> SCOptions
+
+Copy `o`, overriding exactly the field `F`.
+
+Derived from `fieldnames`/`fieldcount` so that **adding a field to `SCOptions` can never desync
+this construction**. The previous hand-written positional call enumerated 17 of the 18 fields and
+silently dropped `sat_max_rounds` when it was added, making every `execute()` throw
+`MethodError`. That is the second time this exact bug shipped (the first was fixed on 2026-06-23
+and re-armed by the next field addition), so the fix is structural rather than another
+hand-audited argument list.
+
+Keyword construction was rejected deliberately: a missing keyword falls back to its *default*,
+which would turn the next desync into a silently wrong option value instead of a loud error.
+This form has no argument list to get wrong.
+"""
+@inline function _with_field(o::SCOptions, ::Val{F}, v) where {F}
+    SCOptions(ntuple(i -> fieldname(SCOptions, i) === F ? v : getfield(o, i),
+                     Val(fieldcount(SCOptions)))...)
+end
+
+"""
     execute(facts::AbstractString, program::AbstractString; opts, steps) -> Tuple{Space, SCResult}
 
 Convenience wrapper: build a fresh space from `facts`, run the pipeline,
@@ -487,25 +508,7 @@ function execute(
 )::Tuple{Space, SCResult}
     s = new_space()
     space_add_all_sexpr!(s, facts)
-    opts2 = SCOptions(
-        opts.collect_stats,
-        opts.plan_join_order,
-        opts.use_approx_pipeline,
-        opts.error_tolerance,
-        opts.decompose_multi_source,
-        opts.saturate_kb,
-        opts.use_mm2_compiler,
-        opts.supercompile,
-        steps,
-        opts.stats_sample_frac,
-        opts.split_budget,
-        opts.sc_max_drive_steps,
-        opts.cleanup_intermediates,
-        opts.use_driven_program,
-        opts.use_magic_sets,
-        opts.magic_query,
-        opts.magic_bound
-    )
+    opts2 = _with_field(opts, Val(:max_steps), steps)
     result = execute!(s, program; opts=opts2)
     (s, result)
 end
