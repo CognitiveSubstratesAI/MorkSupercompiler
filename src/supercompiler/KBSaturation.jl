@@ -415,10 +415,8 @@ _is_guard_premise(g::MCoreGraph, id::NodeID)::Bool =
 # forbids direct reuse — Core depends on MorkSupercompiler, not the reverse — so the DRY home for it is
 # MORK, which both depend on. Until then: any change here or in `Primitives.jl _gnum` MUST be made in
 # both, and `Core/test/test_grounded_registry_differential.jl` is what would catch the drift.
-_kb_num(t::AbstractString) = begin
-    n = tryparse(Int, t)
-    n !== nothing ? n : tryparse(Float64, t)
-end
+# Delegates to MORK — the mirror is now SHARED CODE, not a comment asking two files to agree.
+_kb_num(t::AbstractString) = MORK.grounded_num(t)
 
 _atom_text(n)::Union{String, Nothing} =
     n isa Sym ? string((n::Sym).name) :
