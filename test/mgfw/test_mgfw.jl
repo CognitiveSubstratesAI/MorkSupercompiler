@@ -333,7 +333,8 @@ end
 
 @testset "MGCompiler — select_backend covers ALL SIX backends (§9 regression)" begin
     # REGRESSION. `BackendProfile` declares six backends but `select_backend`'s `scores` list
-    # contained only (:mm2, :mork, :factor, :trie) — so `:tensor` and `:petta` could NEVER be
+    # contained only (:mm2, :mork, :factor, :trie) — so `:tensor` and the search-machine slot
+    # (`:core`; spec §9 calls it PeTTa, but we replaced PeTTa with Core) could NEVER be
     # chosen however high their affinity. Spec §9 names exactly "MM2/PeTTa/tensor" as the affinity
     # targets and states the intended starting point is "Early supercompiler implementation:
     # PeTTa-first but MM2-aware", so an omitted backend is dead capability, not policy.
@@ -342,13 +343,43 @@ end
     tpl = GeometryTemplate[]
     for (name, prof) in [
         (:tensor, BackendProfile(NONE, NONE, NONE, NONE, HIGH, NONE)),
-        (:petta,  BackendProfile(NONE, NONE, NONE, NONE, NONE, HIGH)),
+        (:core,   BackendProfile(NONE, NONE, NONE, NONE, NONE, HIGH)),
         (:factor, BackendProfile(NONE, NONE, HIGH, NONE, NONE, NONE)),
         (:trie,   BackendProfile(NONE, NONE, NONE, HIGH, NONE, NONE)),
         (:mm2,    BackendProfile(HIGH, NONE, NONE, NONE, NONE, NONE)),
         (:mork,   BackendProfile(NONE, HIGH, NONE, NONE, NONE, NONE)),
     ]
         @test select_backend(prof, tpl).primary === name   # every declared backend is REACHABLE
+    end
+end
+
+@testset "MGCompiler — KNOWN LIMIT: affinity_analysis never scores :tensor or :core" begin
+    # PINNED LIMIT, not a passing feature. `select_backend` can now reach all six backends, but
+    # STAGE 1 feeding it cannot produce two of them: `affinity_analysis` constructs its profile with
+    # only `mm2=`, `mork=`, `factor=`, `trie=` keywords, so `tensor` and `core` always take their
+    # constructor defaults (NONE and LOW) regardless of the templates. The Stage-3 fix is therefore
+    # necessary but NOT sufficient — the analysis half is still four-backend.
+    # This test exists so the gap is VISIBLE and fails loudly when Stage 1 is extended, rather than
+    # the fix silently looking complete.
+    for tmpl in [GeometryTemplate[], [TEMPLATE_HEURISTIC_MP]]
+        prof = affinity_analysis(tmpl)
+        @test prof.tensor === NONE   # never scored — update this test when Stage 1 learns tensor
+        @test prof.core   === LOW    # never scored — update when Stage 1 learns the search machine
+    end
+end
+
+@testset "MGCompiler — selection is ADVISORY except for :mm2" begin
+    # §9 Stage 3 is "backend selection AND lowering". Only the selection half exists here: the choice
+    # is emitted as a metadata line and `polish` renumbers priorities for :mm2 and returns the code
+    # UNCHANGED for everything else. A caller reading `choice.primary == :tensor` and concluding "a
+    # tensor lowering ran" would be wrong, so make that checkable rather than folklore.
+    @test  lowering_implemented(:mm2)
+    for b in (:mork, :factor, :trie, :tensor, :core)
+        @test !lowering_implemented(b)
+    end
+    code = raw"(exec 0 (, (a $x)) (, (b $x)))"   # raw: `$x` in a Julia string INTERPOLATES
+    for b in (:mork, :factor, :trie, :tensor, :core)
+        @test polish(code, BackendChoice(b, :direct, false)) == code   # unchanged ⇒ advisory
     end
 end
 

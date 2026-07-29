@@ -43,11 +43,17 @@ struct BackendProfile
     factor::AffinityLevel   # Factor graph runtime
     trie::AffinityLevel   # Trie/PathMap runtime
     tensor::AffinityLevel   # GPU tensor kernels
-    petta::AffinityLevel   # PeTTa (Prolog-based)
+    core::AffinityLevel   # the SEARCH-MACHINE presentation — branch-heavy proof search / typed
+                          # backward chaining. Spec §9 calls this slot "PeTTa" (Prolog-based), but
+                          # WE REPLACED PeTTa WITH CORE: Core's interpreter carries SLG variant
+                          # tabling + Van Gelder WFS (`tnot`, 3-valued UNDEFINED), swipl-oracle
+                          # verified 39/39. There is no PeTTa in this stack (no FFI — the substrate
+                          # stays Julia-native), so naming the field `petta` named a backend we do
+                          # not have and cannot select.
 end
 
-BackendProfile(; mm2=MEDIUM, mork=MEDIUM, factor=LOW, trie=LOW, tensor=NONE, petta=LOW) =
-    BackendProfile(mm2, mork, factor, trie, tensor, petta)
+BackendProfile(; mm2=MEDIUM, mork=MEDIUM, factor=LOW, trie=LOW, tensor=NONE, core=LOW) =
+    BackendProfile(mm2, mork, factor, trie, tensor, core)
 
 """
     affinity_at_least(level, threshold) -> Bool
@@ -62,6 +68,19 @@ NEVER on HIGH — the exact opposite of its own comment ("factor + trie both HIG
 """
 @inline affinity_at_least(level::AffinityLevel, threshold::AffinityLevel)::Bool =
     Int(level) <= Int(threshold)
+
+"""
+    lowering_implemented(backend) -> Bool
+
+True iff selecting `backend` actually changes the emitted code.
+
+§9 Stage 3 is "backend selection AND lowering"; this tree implements the SELECTION half only. The
+choice is emitted as a metadata line and passed to `polish`, which renumbers priorities for `:mm2`
+and returns the code unchanged for every other backend. So a selected-but-unimplemented backend is
+an ADVISORY LABEL, and a caller that treats it as "a lowering ran" is wrong. Call this rather than
+assuming.
+"""
+@inline lowering_implemented(backend::Symbol)::Bool = backend === :mm2
 
 """
     BackendChoice
@@ -261,18 +280,25 @@ function select_backend(
     profile::BackendProfile, templates::Vector{GeometryTemplate}
 )::BackendChoice
     # Highest-affinity backend wins.
-    # ⚠️ ALL SIX fields of BackendProfile must appear here. `:tensor` and `:petta` were declared in
-    # the struct and OMITTED from this list, so they could never be selected however high their
-    # affinity — while spec §9 names exactly "MM2/PeTTa/tensor" as the affinity targets and states
-    # the intended starting point is "Early supercompiler implementation: PeTTa-first but MM2-aware".
-    # A backend absent here is dead capability, not a policy choice.
+    # ⚠️ ALL SIX fields of BackendProfile must appear here. `:tensor` and the search-machine slot
+    # were declared in the struct and OMITTED from this list, so they could never be selected however
+    # high their affinity — while spec §9 names exactly "MM2/PeTTa/tensor" as the affinity targets and
+    # states the intended starting point is "Early supercompiler implementation: PeTTa-first but
+    # MM2-aware". A backend absent here is dead capability, not a policy choice.
+    #
+    # ⚠️⚠️ SELECTION IS CURRENTLY ADVISORY FOR EVERY BACKEND EXCEPT :mm2. Stage 3 of §9 is
+    # "backend selection AND LOWERING"; only the selection half exists. `mg_compile` emits the choice
+    # as a metadata line (":486") and calls `polish`, which renumbers priorities for :mm2 and returns
+    # the code UNCHANGED for everything else (:308). So `choice.primary == :tensor` means "this region
+    # has tensor affinity", NOT "a tensor lowering was applied". `lowering_implemented` makes that
+    # checkable instead of a thing a caller has to know.
     scores = [
         (:mm2, profile.mm2),
         (:mork, profile.mork),
         (:factor, profile.factor),
         (:trie, profile.trie),
         (:tensor, profile.tensor),
-        (:petta, profile.petta)
+        (:core, profile.core)
     ]
     # HIGH=0 < MEDIUM=1 < LOW=2 < NONE=3 — argmin picks highest affinity
     best_idx = argmin(Int(s[2]) for s in scores)
