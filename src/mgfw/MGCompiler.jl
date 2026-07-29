@@ -50,6 +50,20 @@ BackendProfile(; mm2=MEDIUM, mork=MEDIUM, factor=LOW, trie=LOW, tensor=NONE, pet
     BackendProfile(mm2, mork, factor, trie, tensor, petta)
 
 """
+    affinity_at_least(level, threshold) -> Bool
+
+True iff `level` is AT LEAST as strong as `threshold`.
+
+⚠️ USE THIS INSTEAD OF A BARE COMPARISON. `@enum AffinityLevel HIGH MEDIUM LOW NONE` orders
+STRONGEST-FIRST (HIGH=0 … NONE=3), so a numeric `level >= MEDIUM` means "MEDIUM **or worse**" —
+the reverse of how it reads. `select_backend` uses `argmin` precisely because of this inversion,
+and the hybrid test two lines below it was written `>= MEDIUM`, so it fired on MEDIUM/LOW/NONE and
+NEVER on HIGH — the exact opposite of its own comment ("factor + trie both HIGH").
+"""
+@inline affinity_at_least(level::AffinityLevel, threshold::AffinityLevel)::Bool =
+    Int(level) <= Int(threshold)
+
+"""
     BackendChoice
 
 The result of backend selection (stage 3 of §9).
@@ -246,12 +260,19 @@ end
 function select_backend(
     profile::BackendProfile, templates::Vector{GeometryTemplate}
 )::BackendChoice
-    # Highest-affinity backend wins
+    # Highest-affinity backend wins.
+    # ⚠️ ALL SIX fields of BackendProfile must appear here. `:tensor` and `:petta` were declared in
+    # the struct and OMITTED from this list, so they could never be selected however high their
+    # affinity — while spec §9 names exactly "MM2/PeTTa/tensor" as the affinity targets and states
+    # the intended starting point is "Early supercompiler implementation: PeTTa-first but MM2-aware".
+    # A backend absent here is dead capability, not a policy choice.
     scores = [
         (:mm2, profile.mm2),
         (:mork, profile.mork),
         (:factor, profile.factor),
-        (:trie, profile.trie)
+        (:trie, profile.trie),
+        (:tensor, profile.tensor),
+        (:petta, profile.petta)
     ]
     # HIGH=0 < MEDIUM=1 < LOW=2 < NONE=3 — argmin picks highest affinity
     best_idx = argmin(Int(s[2]) for s in scores)
@@ -262,8 +283,11 @@ function select_backend(
     fallback_idx = isempty(rest) ? nothing : argmin(Int(s[2]) for s in rest)
     fallback = fallback_idx === nothing ? :direct : rest[fallback_idx][1]
 
-    # Hybrid if factor + trie both HIGH (e.g., GeodesicBGC-Composite)
-    is_hybrid = profile.factor >= MEDIUM && profile.trie >= MEDIUM
+    # Hybrid iff factor AND trie both have at least MEDIUM affinity (e.g. GeodesicBGC-Composite).
+    # Was `>= MEDIUM`, which under the strongest-first enum means "MEDIUM or WORSE" — it fired on
+    # MEDIUM/LOW/NONE and never on HIGH, i.e. it was true exactly when the comment said it should
+    # be false. See `affinity_at_least`.
+    is_hybrid = affinity_at_least(profile.factor, MEDIUM) && affinity_at_least(profile.trie, MEDIUM)
 
     BackendChoice(primary, fallback, is_hybrid)
 end

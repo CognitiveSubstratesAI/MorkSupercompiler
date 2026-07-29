@@ -373,6 +373,7 @@ export PatternTrie, trie_seed!, trie_grow!, trie_score!, run_trie_miner
 export AffinityLevel, HIGH, MEDIUM, LOW, NONE
 export BackendProfile, BackendChoice
 export affinity_analysis, select_backend, CompilationResult, mg_compile, mg_run!
+export affinity_at_least   # §9 — use instead of a bare AffinityLevel comparison (enum is strongest-first)
 export build_geodesic_bgc_composite
 # Multi-Space (Layer 10)
 export ENABLE_MULTI_SPACE, enable_multi_space!

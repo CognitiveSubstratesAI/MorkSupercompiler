@@ -331,6 +331,51 @@ end
     @test choice.primary in (:mm2, :mork)   # highest affinity wins
 end
 
+@testset "MGCompiler — select_backend covers ALL SIX backends (§9 regression)" begin
+    # REGRESSION. `BackendProfile` declares six backends but `select_backend`'s `scores` list
+    # contained only (:mm2, :mork, :factor, :trie) — so `:tensor` and `:petta` could NEVER be
+    # chosen however high their affinity. Spec §9 names exactly "MM2/PeTTa/tensor" as the affinity
+    # targets and states the intended starting point is "Early supercompiler implementation:
+    # PeTTa-first but MM2-aware", so an omitted backend is dead capability, not policy.
+    # The pre-existing test could not see this: it asserted `primary in (:mm2, :mork)` on a profile
+    # where mm2/mork were already HIGH.
+    tpl = GeometryTemplate[]
+    for (name, prof) in [
+        (:tensor, BackendProfile(NONE, NONE, NONE, NONE, HIGH, NONE)),
+        (:petta,  BackendProfile(NONE, NONE, NONE, NONE, NONE, HIGH)),
+        (:factor, BackendProfile(NONE, NONE, HIGH, NONE, NONE, NONE)),
+        (:trie,   BackendProfile(NONE, NONE, NONE, HIGH, NONE, NONE)),
+        (:mm2,    BackendProfile(HIGH, NONE, NONE, NONE, NONE, NONE)),
+        (:mork,   BackendProfile(NONE, HIGH, NONE, NONE, NONE, NONE)),
+    ]
+        @test select_backend(prof, tpl).primary === name   # every declared backend is REACHABLE
+    end
+end
+
+@testset "MGCompiler — is_hybrid was INVERTED by the strongest-first enum (§9 regression)" begin
+    # REGRESSION. `@enum AffinityLevel HIGH MEDIUM LOW NONE` orders STRONGEST FIRST (HIGH=0 …
+    # NONE=3), so the old `profile.factor >= MEDIUM && profile.trie >= MEDIUM` meant "MEDIUM or
+    # WORSE" — it was TRUE for NONE/NONE and FALSE for HIGH/HIGH, i.e. exactly inverted relative to
+    # its own comment ("Hybrid if factor + trie both HIGH"). `select_backend` uses `argmin` two
+    # lines above for precisely this reason, which is what makes the slip easy to miss.
+    tpl = GeometryTemplate[]
+    hyb(f, t) = select_backend(BackendProfile(LOW, LOW, f, t, NONE, NONE), tpl).is_hybrid
+    @test  hyb(HIGH,   HIGH)     # both strong  ⇒ hybrid            (was FALSE before the fix)
+    @test  hyb(HIGH,   MEDIUM)   # both ≥ MEDIUM ⇒ hybrid
+    @test  hyb(MEDIUM, MEDIUM)
+    @test !hyb(NONE,   NONE)     # both weakest ⇒ NOT hybrid        (was TRUE before the fix)
+    @test !hyb(MEDIUM, LOW)      # one below threshold ⇒ not hybrid
+    @test !hyb(LOW,    HIGH)
+
+    # the predicate itself — reads in AFFINITY terms, not enum-integer terms
+    @test  affinity_at_least(HIGH,   MEDIUM)
+    @test  affinity_at_least(MEDIUM, MEDIUM)
+    @test !affinity_at_least(LOW,    MEDIUM)
+    @test !affinity_at_least(NONE,   MEDIUM)
+    @test  affinity_at_least(HIGH,   HIGH)
+    @test !affinity_at_least(MEDIUM, HIGH)
+end
+
 @testset "MGCompiler — Algorithm 5 mg_compile" begin
     reg = SchemaRegistry()
     register!(reg, TEMPLATE_HEURISTIC_MP)
