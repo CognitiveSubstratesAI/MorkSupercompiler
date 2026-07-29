@@ -40,7 +40,7 @@ function explain(s::Space, program::AbstractString)::String
     for (atom_idx, node) in enumerate(nodes)
         node isa SList || continue
         items = (node::SList).items
-        length(items) < 3 || !is_conjunction(items[2]) && continue
+        (length(items) < 3 || !is_conjunction(items[2])) && continue
         conj = items[2]::SList
         sources = conj.items[2:end]
         length(sources) <= 1 && continue
@@ -132,7 +132,7 @@ function to_dot(
     for node in nodes
         node isa SList || continue
         items = (node::SList).items
-        length(items) < 3 || !is_conjunction(items[2]) && continue
+        (length(items) < 3 || !is_conjunction(items[2])) && continue
         conj = items[2]::SList
         sources = conj.items[2:end]
         length(sources) <= 1 && continue

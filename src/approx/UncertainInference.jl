@@ -195,7 +195,7 @@ function _tree_similarity(a::SNode, b::SNode)::Float64
         ai = (a::SList).items;
         bi = (b::SList).items
         isempty(ai) && isempty(bi) && return 1.0
-        isempty(ai) || isempty(bi) && return 0.0
+        (isempty(ai) || isempty(bi)) && return 0.0
         length(ai) != length(bi) && return 0.3  # structural mismatch: low similarity
         child_sims = [_tree_similarity(ai[k], bi[k]) for k in eachindex(ai)]
         return sum(child_sims) / length(child_sims)

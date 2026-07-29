@@ -576,7 +576,7 @@ function _match_fact(kb::KBState, ground_id::NodeID)::Vector{NodeID}
 end
 
 function _facts_unify(g::MCoreGraph, pat_id::NodeID, fact_id::NodeID)::Bool
-    !isvalid(pat_id) || !isvalid(fact_id) && return false
+    (!isvalid(pat_id) || !isvalid(fact_id)) && return false
     pn = get_node(g, pat_id)
     fn = get_node(g, fact_id)
     pn isa Var && return true   # variable matches anything

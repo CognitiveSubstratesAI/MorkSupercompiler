@@ -94,7 +94,7 @@ function coercion_path(reg::SchemaRegistry, from::GeomTag, to::GeomTag)::Vector{
 
     # One-hop: from → mid → to
     for mid in [GEOM_FACTOR, GEOM_DAG, GEOM_TRIE, GEOM_TENSOR_SPARSE]
-        mid == from || mid == to && continue
+        (mid == from || mid == to) && continue
         step1 = get(reg.coercions, (from, mid), Coercion[])
         step2 = get(reg.coercions, (mid, to), Coercion[])
         !isempty(step1) && !isempty(step2) && return [step1[1], step2[1]]

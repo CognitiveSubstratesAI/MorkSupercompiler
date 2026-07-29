@@ -105,7 +105,7 @@ Two p-boxes are statistically dependent iff their correlation_sig BitVectors
 share at least one set bit (§2.2). Dependent pairs use Fréchet bounds.
 """
 function are_dependent(a::PBox, b::PBox)::Bool
-    isempty(a.correlation_sig) || isempty(b.correlation_sig) && return false
+    (isempty(a.correlation_sig) || isempty(b.correlation_sig)) && return false
     n = min(length(a.correlation_sig), length(b.correlation_sig))
     any(a.correlation_sig[i] & b.correlation_sig[i] for i in 1:n)
 end

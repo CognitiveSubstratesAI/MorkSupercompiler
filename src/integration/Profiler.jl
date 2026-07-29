@@ -170,7 +170,7 @@ function _count_reordered_sources(program::AbstractString)::Int
     for node in nodes
         node isa SList || continue
         items = (node::SList).items
-        length(items) < 3 || !is_conjunction(items[2]) && continue
+        (length(items) < 3 || !is_conjunction(items[2])) && continue
         sources = (items[2]::SList).items[2:end]
         length(sources) <= 1 && continue
         scores = static_score.(sources)

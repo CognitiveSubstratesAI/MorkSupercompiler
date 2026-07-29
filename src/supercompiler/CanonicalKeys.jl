@@ -301,7 +301,7 @@ _node_head(::MCoreNode) = :unknown
 _node_head(::UncertainNode) = :UncertainNode
 
 function _collect_tags(g::MCoreGraph, id::NodeID, max_depth::Int)::Vector{Symbol}
-    max_depth <= 0 || !isvalid(id) && return Symbol[]
+    (max_depth <= 0 || !isvalid(id)) && return Symbol[]
     node = get_node(g, id)
     tags = [_node_head(node)]
     children = _node_children(node)
