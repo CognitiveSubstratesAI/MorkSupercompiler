@@ -400,6 +400,26 @@ const _GUARD_OPS = Set{Symbol}(Symbol.(["<", ">", "<=", ">=", "==", "!="]))
 _is_guard_premise(g::MCoreGraph, id::NodeID)::Bool =
     (n = get_node(g, id); n isa Con && (n::Con).head in _GUARD_OPS)
 
+# Type-PRESERVING numeric parse: Int stays Int, float stays Float64.
+#
+# ⚠️ RESTORES A BROKEN INVARIANT (2026-07-29). The comment below states that these guards MIRROR
+# Core's `GROUNDED_REGISTRY` so the saturation lane BISIMULATES the MM2 calculus lane. Both sides
+# used to parse every operand as `Float64`; Core's side was fixed (`e7ff1cf`) because that is wrong
+# past 2^53 — `(* 123456789 987654321)` was off by 5 — and this side was NOT swept at the same time,
+# so for a few hours the two lanes disagreed:
+#     (< 9007199254740993 9007199254740994)   GROUNDED_REGISTRY True   here False (both coerced to
+#                                                                       ONE Float64)
+# The bisimulation is the whole point of the mirror, so it has to move together.
+#
+# 🔴 THIS IS A THIRD COPY of the same parse (Core `_gnum`, Core `_g2atom`, here). The dependency graph
+# forbids direct reuse — Core depends on MorkSupercompiler, not the reverse — so the DRY home for it is
+# MORK, which both depend on. Until then: any change here or in `Primitives.jl _gnum` MUST be made in
+# both, and `Core/test/test_grounded_registry_differential.jl` is what would catch the drift.
+_kb_num(t::AbstractString) = begin
+    n = tryparse(Int, t)
+    n !== nothing ? n : tryparse(Float64, t)
+end
+
 _atom_text(n)::Union{String, Nothing} =
     n isa Sym ? string((n::Sym).name) :
     n isa Lit ? string((n::Lit).val)  : nothing
@@ -416,7 +436,7 @@ function _eval_guard_premise(g::MCoreGraph, pid::NodeID,
     sa = _atom_text(get_node(g, (gcon::Con).fields[1]))
     sb = _atom_text(get_node(g, (gcon::Con).fields[2]))
     (sa === nothing || sb === nothing) && return nothing
-    fa = tryparse(Float64, sa); fb = tryparse(Float64, sb)
+    fa = _kb_num(sa); fb = _kb_num(sb)          # NOT tryparse(Float64,…) — see _kb_num
     num = fa !== nothing && fb !== nothing
     op === Symbol("<")  && return num ? (fa <  fb) : nothing
     op === Symbol(">")  && return num ? (fa >  fb) : nothing
@@ -452,7 +472,7 @@ function _num_arg(g::MCoreGraph, id::NodeID, bindings::Dict{Int, NodeID})
         n = get_node(g, bindings[(n::Var).ix])
     end
     t = _atom_text(n); t === nothing && return nothing
-    tryparse(Float64, t)
+    _kb_num(t)                                   # NOT tryparse(Float64,…) — see _kb_num
 end
 
 # Apply `(op a b c)` under bindings: returns updated bindings (output bound / check passed),
@@ -462,8 +482,14 @@ function _apply_arith_premise(g::MCoreGraph, pid::NodeID, bindings::Dict{Int, No
     fa = _num_arg(g, con.fields[1], bindings)
     fb = _num_arg(g, con.fields[2], bindings)
     (fa === nothing || fb === nothing) && return :defer
+    # `rem(::Int, 0)` throws a Julia DivideError; a host exception must not escape saturation, so
+    # DEFER (the premise is undecidable) rather than crash the round.
+    (_ARITH_OPS[con.head] === rem && fb isa Integer && fb == 0) && return :defer
     r    = _ARITH_OPS[con.head](fa, fb)
-    rstr = isinteger(r) ? string(Int(r)) : string(r)
+    # `string(r)` directly — the old `isinteger(r) ? string(Int(r))` demoted every integral FLOAT
+    # result to an Int string, so `(+ 1.5 2.5 $z)` bound `$z` to `4` rather than `4.0`. Julia's own
+    # promotion now decides: Int⊕Int stays exact Int, any Float operand promotes.
+    rstr = string(r)
     cn = get_node(g, con.fields[3])
     if cn isa Var
         ix = (cn::Var).ix
