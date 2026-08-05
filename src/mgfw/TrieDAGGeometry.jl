@@ -378,6 +378,16 @@ Computes TF-IDF-like weights for each pattern and returns top-k sorted by weight
 #     (larger ΔL, longer span, smaller start, lower type id) with NO frequency term. Frequency is
 #     licensed ONLY as a candidate-generation GATE (`occs >= 3`), applied BEFORE ΔL is computed.
 #
+# ⚠️ SOURCE PRECEDENCE, per `docs/specs/source_papers.md`: AdaptiMORK is LOWER-confidence than
+# MORK-WILLIAM and loses where they disagree — it carries ZERO theorems (MORK-WILLIAM has 3), zero
+# citations and zero measured results; its "10-100x speedup" figures are prefaced "we expect:".
+# They do NOT disagree here — both are description-length objectives and MORK-WILLIAM's acceptance
+# test is Franz's ℓ(f)+ℓ(r) < ℓ(x), which is the gate implemented below — so anchoring the ΔL
+# ARITHMETIC to AdaptiMORK §4.5 is safe. Recorded because the precedence matters the moment anyone
+# extends this using AdaptiMORK's §9.1 WeightedTriemap fields: those sit TWO layers of speculation
+# above the substrate, since MORK-WILLIAM's own §11 already lists the base fields as "not yet added
+# to MORK".
+#
 # So frequency keeps its licensed role — `trie_seed!`/`trie_grow!` remain the GENERATOR — and MDL
 # gain becomes the acceptance/ranking key. That is exactly AdaptiMORK's §4 architecture.
 #
@@ -424,6 +434,31 @@ Computes TF-IDF-like weights for each pattern and returns top-k sorted by weight
 #   * the MDL arithmetic independently REPRODUCES AdaptiMORK's `occs >= 3` heuristic: for p = 2,
 #     ΔL > 0 first holds at n = 4 (n=3 gives 0, which the STRICT condition rejects). The paper's
 #     hand-tuned gate falls out of the objective rather than being asserted alongside it.
+#
+# ⚠️ THE TWO SOURCE DOCUMENTS DISAGREE ON THE COST CONVENTION, and the spec extraction says so
+# outright (`docs/specs/william/William-MORK-QA_spec.md`): "this convention does NOT count
+# parentheses as separate tokens — contrast with the clarifications document below."
+#     QA doc              S(cumsum E) = 1 + S(E)              parens NOT counted
+#     clarifications doc  L0 = 1 + 2 + 29 = 32                parens counted, 1 each
+# `source_papers.md` gives the divergence concretely: the SAME `(repeat 1 9)` step scores +3 under one
+# convention and +5 under the other — "each internally consistent but must not be mixed".
+# We implement the CLARIFICATIONS convention because it is the one with a fully worked example and
+# two independently checkable figures. Neither convention yields its third figure (11): QA gives 4,
+# clarifications gives 8 — so that sum is wrong under BOTH, not just ours.
+#
+# 📌 THE NAMED FUTURE ORACLE, when this grows past a token surrogate: `franz_ml_gen_spec.md` supplies
+# "the 5 canonical regression tests for any future WILLIAM-on-MORK implementation" — centralization,
+# outlier detection, linear regression, linear classification, decision-tree classification, each
+# emerging as a special case of compression with NO specialized ML machinery. That is the real
+# conformance target; the tests here cover the objective's algebra, not those five behaviours.
+#
+# ⚠️ AND THE AUTHOR CALLS THE TOKEN MODEL PEDAGOGICAL: "In production systems the score would be a
+# true MDL (optimal codes for integers, structure priors, and residuals) or an equivalent weakness
+# prior. The simple token model above is only to make the bookkeeping explicit in this ASCII note."
+# So this is conformant to the ILLUSTRATION, not to the production objective. Upgrading means optimal
+# integer codes + structure priors + a real residual term — and §8.1's quantale weakness is the
+# framework these notes illustrate but do not develop (itself flagged in the whitepaper as a research
+# hypothesis "with explicit proof and ablation obligations", not settled theory).
 #
 # COST MODEL, from the clarifications paper's Example A: literal 1, operator 1, each paren 1, first
 # use of a template +1 dictionary cost. `_mdl_token_cost` below reproduces two of the paper's three
