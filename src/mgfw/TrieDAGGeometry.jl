@@ -361,25 +361,155 @@ end
 §15.6 Stage 3 — Scoring via in-place prefix counters.
 Computes TF-IDF-like weights for each pattern and returns top-k sorted by weight.
 """
-function trie_score!(trie::PatternTrie)::Vector{Tuple{Vector{Symbol}, Float64}}
+# ── MDL scoring (WILLIAM-conformant) ─────────────────────────────────────────────────────────────
+#
+# 🔴 WHY THIS REPLACED A FREQUENCY WEIGHT (2026-08-05). `trie_score!` ranked by
+# `count * log(1 + total/count)` — a TF-IDF-shaped SUPPORT score. All three normative sources rank
+# by DESCRIPTION LENGTH, and support-primary ranking is licensed by none of them:
+#
+#   * Franz IC theory (Franz/Antonenko/Soletskyi 2020, Info.Sci. 547:28-48) — shortest-feature-first,
+#     primary key l(f), tie-break l(f'), admitted only under the STRICT compression condition
+#     l(f) + l(r) < l(x) (Def. 2.1 Eq. 7). It defines NO notion of support anywhere; both its
+#     algorithms enumerate candidates SORTED BY ASCENDING TOTAL LENGTH.
+#   * MORK-WILLIAM clarifications (Goertzel, Sept 2025) — gain(r,S) = L(S) - L(S') - C(r), keeping a
+#     branch while cumulative gain stays > 0.
+#   * AdaptiMORK v8 §4.5 (NORMATIVE) — "we use the same ΔL for: promotion decisions, precedence
+#     ordering in overlap resolution, rule retirement decisions"; its candidate order is
+#     (larger ΔL, longer span, smaller start, lower type id) with NO frequency term. Frequency is
+#     licensed ONLY as a candidate-generation GATE (`occs >= 3`), applied BEFORE ΔL is computed.
+#
+# So frequency keeps its licensed role — `trie_seed!`/`trie_grow!` remain the GENERATOR — and MDL
+# gain becomes the acceptance/ranking key. That is exactly AdaptiMORK's §4 architecture.
+#
+# THE GAIN, for this miner's pattern language. A pattern is a symbol sequence of length `p`
+# occurring `n` times. Promoting it to a dictionary rule replaces each occurrence with a single
+# reference symbol and pays once for the definition:
+#
+#     before      n * p                     tokens
+#     after       n * 1  +  (p + 1)         n references, plus the rule body and its name
+#     ΔL(p, n) =  n*p - n - p - 1  =  n*(p-1) - (p+1)
+#
+# This is `gain(r,S) = L(S) - L(S') - C(r)` with L = token count and C(r) = the dictionary cost.
+#
+# ✅ AND IT IS AN EXACT SPECIALIZATION OF AdaptiMORK §4.5 (NORMATIVE), term by term:
+#
+#     ΔL(R) = Σ_{u∈uses} [ ℓ(covered_u) - ℓ(SYM(R)) - ℓ(RESIDUAL_u) ]
+#                       - ℓ(DEF_PDR(R)) - λ·compute_cost(R)
+#
+#     ℓ(covered_u)   = p      tokens this use covers
+#     ℓ(SYM(R))      = 1      the reference symbol that replaces them
+#     ℓ(RESIDUAL_u)  = 0      this pattern language covers EXACTLY — a symbol-sequence match leaves
+#                             no residual (unlike a template application, which can)
+#     Σ over n uses  = n(p-1)
+#     ℓ(DEF_PDR(R))  = p + 1  the rule body plus its name
+#     λ·compute_cost = 0      not modelled (λ = 0)
+#     ⇒ ΔL = n(p-1) - (p+1)
+#
+# ORDERING likewise follows §4.4's total order — (1) larger ΔL, (2) longer span — then lexicographic.
+# Its keys (3) smaller start index and (4) lower type id do not apply to this pattern language; the
+# lexicographic tie-break serves their purpose, which §4.4 states plainly: confluence, so encoder and
+# decoder agree. Here it makes the top-k BOUNDARY deterministic, and that boundary decides what
+# reaches Smine.
+#
+# ⚠️ DELIBERATELY NOT MODELLED, so nobody reads this as full §4 conformance: `λ·compute_cost(R)`;
+# a non-zero `ℓ(RESIDUAL_u)` (needs a template language, not symbol sequences); §4.6's adaptive
+# staged threshold `b` (tau_hi=5.0, tau_lo=0.5, W_stall=1000); and "coder-accurate codelengths under
+# current adaptive counts" — ℓ here is a STATIC token count, not an adaptive-coder codelength. Those
+# are the remaining distance between this miner and AdaptiMORK's §4 engine.
+#
+# ⚠️ TWO CONSEQUENCES THAT ARE THE POINT, not side effects:
+#   * a length-1 pattern can NEVER be admitted: ΔL(1,n) = -2 for every n. Replacing one symbol with
+#     one reference saves nothing and still costs a rule. Under the old weight, length-1 seeds
+#     dominated the top-k purely by being frequent.
+#   * the MDL arithmetic independently REPRODUCES AdaptiMORK's `occs >= 3` heuristic: for p = 2,
+#     ΔL > 0 first holds at n = 4 (n=3 gives 0, which the STRICT condition rejects). The paper's
+#     hand-tuned gate falls out of the objective rather than being asserted alongside it.
+#
+# COST MODEL, from the clarifications paper's Example A: literal 1, operator 1, each paren 1, first
+# use of a template +1 dictionary cost. `_mdl_token_cost` below reproduces two of the paper's three
+# stated figures EXACTLY — L0 of `(cumsum <29 ints>)` = 32 ("1 for cumsum, 2 for parens, 29
+# integers") and `(repeat 1 9)` = 5 ("1 + 2 + 1 + 1"). ⚠️ Its THIRD figure does not reconcile: it
+# states `(repeat (s0 11) 2)` = 11 via "1 + 2 + 1 + 2 + 1 + 1 + 2 + 1", eight terms that double-count
+# under its own rules; this model gives 8. Anchored to the two unambiguous figures rather than
+# fudged to the third — recorded so nobody "fixes" the cost model to match a bad sum.
+
+"Token cost L(·): an atom/var costs 1; a list costs 2 (its parens) plus its contents."
+function _mdl_token_cost(n::SNode)::Int
+    n isa SList || return 1
+    c = 2
+    for it in (n::SList).items
+        c += _mdl_token_cost(it)
+    end
+    c
+end
+
+"""
+    mdl_rule_gain(pattern_len, count) -> Int
+
+ΔL for promoting a length-`pattern_len` pattern occurring `count` times to a dictionary rule:
+`count*(pattern_len - 1) - (pattern_len + 1)`. Positive ⇔ the compression condition holds.
+"""
+mdl_rule_gain(plen::Int, count::Int)::Int = count * (plen - 1) - (plen + 1)
+
+"""
+    trie_score!(trie; compression_condition=true) -> Vector{Tuple{Vector{Symbol}, Float64}}
+
+§15.6 Stage 3 — score and rank. Ranks by MDL gain ΔL (see the note above), NOT by support.
+
+`compression_condition=true` (the default, and what Franz Def. 2.1 Eq. 7 requires) admits only
+patterns with ΔL > 0 — so a corpus with no compressible structure correctly yields NOTHING rather
+than the least-bad frequent symbols. Pass `false` to rank without the gate (diagnostics only).
+"""
+function trie_score!(trie::PatternTrie; compression_condition::Bool=true)::Vector{Tuple{Vector{Symbol}, Float64}}
     _score_subtrie!(trie.root, trie.root.count + 1)
-    _rebuild_topk!(trie)
+    _rebuild_topk!(trie; compression_condition = compression_condition, by = :mdl)
     trie.top_k
 end
 
 function _score_subtrie!(entry::TrieEntry, total::Int)
-    total = max(1, total)
-    entry.weight = entry.count * log(1.0 + total / max(1, entry.count))
+    entry.weight = Float64(mdl_rule_gain(length(entry.pattern), entry.count))
     for child in values(entry.children)
         _score_subtrie!(child, total)
     end
 end
 
-function _rebuild_topk!(trie::PatternTrie)
+# 🔴 TWO DIFFERENT RANKINGS, AND CONFLATING THEM IS A REGRESSION — measured 2026-08-05.
+# AdaptiMORK §4 splits the decision in two, and each half needs its OWN key:
+#
+#   GENERATION  (trie_seed! / trie_grow!) — ordered by SUPPORT. This is the role frequency IS
+#       licensed for: "`occs >= 3`" gates which digrams are even scored (§4.3), applied BEFORE ΔL.
+#       `top_k` here is the GROWTH FRONTIER: trie_grow! only extends patterns currently in it.
+#   ACCEPTANCE  (trie_score!) — ordered by ΔL and gated by the compression condition (§4.4/§4.5).
+#
+# The first version of this change scored the frontier with ΔL too. Every length-1 seed has
+# ΔL = -2, so they all TIED, the tie-break fell to lexicographic, and with a small `k` the frontier
+# silently dropped high-frequency seeds: on `(chop tree wood) x2 …` with k=5, `:wood` was cut, so
+# `[:chop,:tree,:wood]` — the genuinely compressing pattern, ΔL=4 — was NEVER GROWN and the miner
+# returned nothing. The gate was right; the generator had been blinded. Frequency belongs here.
+function _rebuild_topk!(trie::PatternTrie; compression_condition::Bool=false, by::Symbol=:support)
     all_entries = Tuple{Vector{Symbol}, Float64}[]
     _collect_entries!(trie.root, all_entries)
-    sort!(all_entries; by=x -> -x[2])
+    if by === :support
+        # GENERATOR frontier: keep the highest-COUNT candidates, longer first on a tie so growth
+        # prefers the more explanatory branch. Counts are read from the trie, not from `weight`.
+        counts = Dict{Vector{Symbol}, Int}()
+        _collect_counts!(trie.root, counts)
+        sort!(all_entries; by = x -> (-get(counts, x[1], 0), -length(x[1]), string.(x[1])))
+    else
+        # Franz Def. 2.1 Eq. 7 — STRICT: l(f)+l(r) < l(x), so ΔL must be > 0, not >= 0.
+        compression_condition && filter!(e -> e[2] > 0.0, all_entries)
+        # AdaptiMORK §4.4's total order: larger ΔL, then LONGER span, then lexicographic for
+        # determinism — the top-k boundary decides what reaches Smine, so it must be stable.
+        sort!(all_entries; by = x -> (-x[2], -length(x[1]), string.(x[1])))
+    end
     trie.top_k = all_entries[1:min(trie.k, length(all_entries))]
+end
+
+function _collect_counts!(entry::TrieEntry, out::Dict{Vector{Symbol}, Int})
+    entry.count > 0 && (out[entry.pattern] = entry.count)
+    for child in values(entry.children)
+        _collect_counts!(child, out)
+    end
 end
 
 function _collect_entries!(entry::TrieEntry, out::Vector{Tuple{Vector{Symbol}, Float64}})
@@ -406,6 +536,7 @@ function run_trie_miner(
     trie_score!(trie)
 end
 
+export mdl_rule_gain
 export DAGNode, DAGStore, dag_intern!, dag_normalize!, Deme
 export DemeEvolutionResult, evolve_demes!
 export TrieEntry, PatternTrie, trie_seed!, trie_grow!, trie_score!, run_trie_miner

@@ -262,23 +262,38 @@ end
     # (may be 0 if no 2-symbol patterns found, that's ok for toy data)
     @test n_grown >= 0
 
-    # Stage 3: score
+    # Stage 3: score — MDL ΔL, NOT support (changed 2026-08-05).
+    # This used to assert `!isempty(scored)`. Under the compression condition that is WRONG for toy
+    # data: the seeds here are length-1, and ΔL(1,n) = -2 for every n, so nothing is admissible and
+    # an EMPTY result is the correct answer. Assert the contract instead of the old outcome.
     scored = trie_score!(trie)
-    @test !isempty(scored)
-    # Sorted by descending weight
-    ws = [w for (_, w) in scored]
-    @test issorted(ws; rev=true)
+    @test all(w > 0 for (_, w) in scored)              # nothing admitted below the condition
+    @test all(length(p) >= 2 for (p, _) in scored)     # ...so never a length-1 rule
+    @test issorted([w for (_, w) in scored]; rev=true) # ranked by descending ΔL
+    # ungated, the candidates are still there and still ordered — the gate is what removes them
+    open_scored = trie_score!(trie; compression_condition=false)
+    @test !isempty(open_scored)
+    @test issorted([w for (_, w) in open_scored]; rev=true)
 end
 
 @testset "TrieDAGGeometry — run_trie_miner end-to-end" begin
     t = TEMPLATE_EVIDENCE_CAPSULE
+    # REWRITTEN 2026-08-05. This asserted ":a should appear more often than :b → higher weight" —
+    # i.e. SUPPORT ranking, exactly what the miner no longer does. Under MDL a length-1 symbol is
+    # inadmissible at ANY frequency (ΔL(1,n) = -2), so on this toy data the correct result is EMPTY,
+    # and "a outranks b because a is commoner" is not a property to preserve.
     data = parse_program("(a x) (a y) (b x) (a z) (b y)")
-    top_k = run_trie_miner(t, data; k=3, max_depth=2)
+    @test isempty(run_trie_miner(t, data; k=3, max_depth=2))     # nothing here compresses
+
+    # A corpus that DOES compress: one multi-symbol pattern, well above the gate.
+    rep = parse_program(join(fill("(f a b)", 10), " "))
+    top_k = run_trie_miner(t, rep; k=3, max_depth=3)
     @test !isempty(top_k)
-    # :a should appear more often than :b → higher weight
-    a_weight = sum(w for (p, w) in top_k if !isempty(p) && p[1] == :a; init=0.0)
-    b_weight = sum(w for (p, w) in top_k if !isempty(p) && p[1] == :b; init=0.0)
-    @test a_weight >= b_weight
+    @test all(w > 0 for (_, w) in top_k)
+    @test all(length(p) >= 2 for (p, _) in top_k)
+    @test issorted([w for (_, w) in top_k]; rev=true)
+    (pat, w) = top_k[1]
+    @test w == Float64(mdl_rule_gain(length(pat), 10))   # the weight IS the rule's ΔL
 end
 
 # ── §9 + §12 MGCompiler ──────────────────────────────────────────────────────

@@ -75,6 +75,7 @@ end
     include("mgfw/test_pln_reference.jl")   # PLN Layer-1 forward-map reference gate
     include("mgfw/test_pln_demand.jl")      # PLN step 4 — §3.2-§3.4 demand sensitivity
     include("mgfw/test_geoevo.jl")          # GEO-EVO §3-6 — data-driven contract + grounded kernels
+    include("mgfw/test_mdl_mining.jl")      # trie miner ranks by MDL ΔL, not support (Franz Eq.7 gate)
 
     # ── Multi-Space (Stage 1 + Stage 2) ─────────────────────────────────────
     include("multispace/test_multispace.jl")
