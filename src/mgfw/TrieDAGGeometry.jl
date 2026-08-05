@@ -378,15 +378,24 @@ Computes TF-IDF-like weights for each pattern and returns top-k sorted by weight
 #     (larger ΔL, longer span, smaller start, lower type id) with NO frequency term. Frequency is
 #     licensed ONLY as a candidate-generation GATE (`occs >= 3`), applied BEFORE ΔL is computed.
 #
-# ⚠️ SOURCE PRECEDENCE, per `docs/specs/source_papers.md`: AdaptiMORK is LOWER-confidence than
-# MORK-WILLIAM and loses where they disagree — it carries ZERO theorems (MORK-WILLIAM has 3), zero
-# citations and zero measured results; its "10-100x speedup" figures are prefaced "we expect:".
-# They do NOT disagree here — both are description-length objectives and MORK-WILLIAM's acceptance
-# test is Franz's ℓ(f)+ℓ(r) < ℓ(x), which is the gate implemented below — so anchoring the ΔL
-# ARITHMETIC to AdaptiMORK §4.5 is safe. Recorded because the precedence matters the moment anyone
-# extends this using AdaptiMORK's §9.1 WeightedTriemap fields: those sit TWO layers of speculation
-# above the substrate, since MORK-WILLIAM's own §11 already lists the base fields as "not yet added
-# to MORK".
+# WHICH SOURCE IS AUTHORITATIVE FOR WHAT — per CLAIM, not a ranking of documents. These are internal
+# design notes by the architect, not academic submissions; counting citations or theorems would score
+# their GENRE, not their correctness, and would rate the most operationally specific document lowest.
+#   * the ACCEPTANCE CONDITION — Franz IC theory, ℓ(f)+ℓ(r) < ℓ(x) (Def. 2.1 Eq. 7). The formal
+#     foundation every WILLIAM paper builds on; that is the gate implemented below.
+#   * the ΔL ARITHMETIC — AdaptiMORK §4.5. The most SPECIFIC statement of the objective in the
+#     corpus, and the only one that spells out promotion/precedence/retirement sharing one ΔL. That
+#     specificity is why it is anchored to here.
+#   * Theorem 1 (heavy-first IC bound) — MORK-WILLIAM §4.1, which carries the 4-part proof. The
+#     clarifications note restates it near-verbatim, unattributed and unproved; cite the source.
+# The three AGREE — all are description-length objectives — so nothing here rests on adjudicating
+# between them.
+#
+# ⚠️ The one distinction that IS load-bearing is the author's own: AdaptiMORK prefaces its
+# performance figures with "Based on the design and theoretical analysis, we expect:" — PROJECTIONS,
+# labelled as such by the paper. Do not cite them as measurements. Separately, its §9.1
+# WeightedTriemap extensions assume a substrate that does not exist: MORK-WILLIAM's own §11 lists the
+# base fields as "not yet added to MORK". That is a build-order fact, not a quality judgement.
 #
 # So frequency keeps its licensed role — `trie_seed!`/`trie_grow!` remain the GENERATOR — and MDL
 # gain becomes the acceptance/ranking key. That is exactly AdaptiMORK's §4 architecture.
