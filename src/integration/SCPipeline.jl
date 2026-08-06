@@ -548,6 +548,53 @@ function _sexpr_to_mcore!(g::MCoreGraph, n::SNode,
             return add_prim!(g, Prim(:mm2_exec, arg_ids, EffectSet(UInt8(0x05))))
         end
 
+        # ── SOURCE CONTROL FLOW → MatchNode ──────────────────────────────────────────────────────
+        # `_compile_match!` (MM2Compiler.jl:232) implements §9.3's Conditional Equivalence theorem
+        #     if cond then T else E  →  (exec (p 0) cond T') (exec (p+1 0) (not cond) E')
+        #     "mutual exclusion of patterns ensures exactly one branch executes"
+        # and it has been UNREACHABLE FROM SOURCE since it was written. `MatchNode` was constructed
+        # in exactly one place — `BoundedSplit.jl:162`, the supercompiler's own splitter — so an
+        # `if`/`case` in a .metta file never reached the lowering that exists for it. MEASURED
+        # 2026-08-06 over Core's corpus: 177 clauses declined for control flow, against a proved
+        # lowering already in the tree.
+        #
+        # The emitted shape is upstream's own, from the MM2 tutorial
+        # (`MM2_Structuring_Code/mm2_programs/Control_04_Select_b_c.mm2`): ONE exec per arm, each
+        # keyed on its own discriminant, mutual exclusion doing the selection —
+        #     (exec 0 (, (case a)) (, a))   (exec 0 (, (case b)) (, b))   …
+        # No conditional primitive is involved; `ifnz` is a PURE_SPECIAL_FORM, not a PURE_OP.
+        #
+        # `_compile_match!` compiles `clauses[1]` only, delegating the rest to BoundedSplit, so a
+        # multi-arm form is built here as ONE MatchNode carrying every arm and split downstream.
+        if head isa SAtom
+            hname = (head::SAtom).name
+            if hname == "if" && length(items) == 4
+                # (if COND THEN ELSE) — match the condition against True / False.
+                scrut = _sexpr_to_mcore!(g, items[2], varmap)
+                tpat  = add_sym!(g, Sym(:True))
+                fpat  = add_sym!(g, Sym(:False))
+                tbody = _sexpr_to_mcore!(g, items[3], varmap)
+                fbody = _sexpr_to_mcore!(g, items[4], varmap)
+                return add_match!(g, MatchNode(scrut,
+                    MatchClause[MatchClause(tpat, tbody), MatchClause(fpat, fbody)]))
+            elseif hname == "case" && length(items) == 3 && items[3] isa SList
+                # (case SCRUT ((P1 B1) (P2 B2) …)) — one clause per arm, order preserved.
+                scrut = _sexpr_to_mcore!(g, items[2], varmap)
+                clauses = MatchClause[]
+                ok = true
+                for arm in (items[3]::SList).items
+                    if !(arm isa SList) || length((arm::SList).items) != 2
+                        ok = false; break            # unrecognised arm shape — fall through
+                    end
+                    a = (arm::SList).items
+                    push!(clauses, MatchClause(_sexpr_to_mcore!(g, a[1], varmap),
+                                               _sexpr_to_mcore!(g, a[2], varmap)))
+                end
+                ok && !isempty(clauses) && return add_match!(g, MatchNode(scrut, clauses))
+                # else: fall through to the generic Con path — carried, never dropped
+            end
+        end
+
         head_id = _sexpr_to_mcore!(g, head, varmap)
         field_ids = NodeID[_sexpr_to_mcore!(g, items[i], varmap) for i in 2:length(items)]
         if head isa SAtom
