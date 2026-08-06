@@ -303,9 +303,38 @@ function compile_program(
     g::MCoreGraph, root_ids::Vector{NodeID}
 )::Tuple{String, Vector{BiSimObligation}}
     ctx = CompileCtx(g)
-    atoms = compile_sequential!(ctx, root_ids)
 
-    program = join([sprint_exec(a) for a in atoms], "\n")
+    # ── PASS THROUGH WHAT WE CANNOT COMPILE — do not DROP it ─────────────────────────────────────
+    # `compile_node!` handles Prim(:mm2_exec), Prim(:kb_query), MatchNode and Choice, and returns
+    # `nothing` for everything else (MM2Compiler.jl:204). Joining only the compiled atoms therefore
+    # DELETED every other top-level form — most importantly GROUND FACTS, which are Sym/Con nodes.
+    #
+    # MEASURED 2026-08-06, and it is why Stage 5 was off by default:
+    #     (edge a b) (edge b c) (exec 0 (, (edge $x $y)) (, (path $x $y)))
+    #     mm2_compile=false -> (path a b) (path a c) (path b c)      correct closure
+    #     mm2_compile=true  -> []                                    EMPTY
+    # 3 top-level forms in, 3 MCore roots built, 1 form out: the exec rule survived and both facts
+    # were discarded, so the rule had nothing to fire on. Silent — no error, no warning, no count.
+    #
+    # Data is not something to COMPILE, it is something to CARRY. A node with no lowering is
+    # rendered back to its source form via `sprint_mcore_to_mm2` and emitted verbatim, so the
+    # program that comes out is the program that went in, with the compilable parts compiled.
+    #
+    # This is the third silent-drop of the day (the MeTTa-IL lane dropped non-`~>` forms; the Core
+    # emitter emitted rules that could never fire). Dropping what you do not understand is the
+    # single most expensive habit in this codebase, because the result is a WRONG ANSWER WITH NO
+    # DIAGNOSTIC — the failure shape that survives every green gate.
+    pieces = String[]
+    for nid in root_ids
+        atom = compile_node!(ctx, nid)
+        if atom === nothing
+            s = sprint_mcore_to_mm2(g, nid)
+            isempty(strip(s)) || push!(pieces, s)      # carried unchanged
+        else
+            push!(pieces, sprint_exec(atom))            # compiled
+        end
+    end
+    program = join(pieces, "\n")
 
     obligs = [BiSimObligation(k, mid, mm2id) for (k, mid, mm2id) in ctx.obligations]
 
