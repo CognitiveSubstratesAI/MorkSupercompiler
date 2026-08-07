@@ -229,6 +229,39 @@ function _compile_kb_query!(ctx::CompileCtx, node::Prim, id::NodeID)::MM2ExecAto
     MM2ExecAtom(pr, "(, $pat)", "(, ($tv $pat))", id, [:forward_sim])
 end
 
+"""
+🔴 THE §9.3 THEOREM THIS IMPLEMENTS IS UNSOUND ON THE REAL KERNEL, AND THIS EMITTER DOES NOT FIRE.
+
+Measured against the upstream MORK release binary, 2026-08-07 — see the CORRECTION block at
+`docs/specs/supercompiler/mm2_supercompiler_spec.md` §9.3 for the full evidence.
+
+  1. §9.3 proves branch selection via `(not cond)`. **MM2 HAS NO NEGATION SOURCE.**
+     `(, (not X))` matches nothing (`not` is just a term); `(I (not X))` panics at
+     `kernel/src/sources.rs:233`. `ASource::new` accepts only BTM/ACT/z3/`==`/`!=`.
+  2. What this function emits — `(, \$scrut \$pat)`, two BARE conjuncts — derives nothing:
+         (exec (2 0) (, ready True) go)   -> no output
+     because `ready`/`True` are symbols while the data is `(ready)`/`(True)`. Upstream's working
+     form combines discriminant and arm into ONE term:
+         (exec 0 (, (case a)) (, a))      -> a
+  3. It compiles `clauses[1]` ONLY. Outside the BoundedSplit driver, arms 2..N vanish silently.
+
+WHY NOBODY CAUGHT IT: `MatchNode` was constructed in exactly one place — `BoundedSplit.jl:162` — so
+this lowering was unreachable from source until `_sexpr_to_mcore!` was taught to emit `MatchNode`
+(SCPipeline.jl, 2026-08-07). A proof plus an implementation is not a working path.
+
+WHAT WORKS INSTEAD, and where it lives: rule SPECIALIZATION — substitute the arm pattern into the
+REDEX, one exec per arm, per upstream's `Control_04_Select_b_c.mm2`. That needs the rule HEAD, which
+this function cannot see (it receives only the body), so it is implemented as an IR→IR pass in
+`Core/src/compiler/Passes.jl` (`specialize_matches`) rather than here.
+
+⚠️ And the equality variant of that replacement is sound ONLY for single-clause heads: the
+else-branch relies on the then-branch consuming the redex, which silently loses answers when two
+clauses overlap. No mutual-exclusion primitive exists to fix it — which is precisely what §9.3
+assumed.
+
+This function is LEFT AS IS deliberately: correcting it needs the shape settled and `BisimVerifier`
+actually run to discharge the obligations recorded below, and nothing runs it today.
+"""
 function _compile_match!(ctx::CompileCtx, node::MatchNode, id::NodeID)::MM2ExecAtom
     scrut = sprint_mcore_to_mm2(ctx.g, node.scrut)
     pr = next_priority!(ctx)
