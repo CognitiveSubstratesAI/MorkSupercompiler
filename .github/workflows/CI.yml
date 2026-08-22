@@ -55,7 +55,7 @@ jobs:
       # JuliaFormatter than the pinned version, causing local/CI drift.
       - name: Check formatting
         run: |
-          julia -e 'using Pkg; Pkg.add(PackageSpec(name="JuliaFormatter", version="2.5.2"))'
+          julia -e 'using Pkg; Pkg.add(PackageSpec(name="JuliaFormatter", version="2.12.6"))'
           julia -e 'using JuliaFormatter; println("JuliaFormatter ", pkgversion(JuliaFormatter))'
           julia -e 'using JuliaFormatter; format(".")'
           if ! git diff --quiet; then
