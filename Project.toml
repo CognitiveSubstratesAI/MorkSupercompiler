@@ -8,7 +8,7 @@ HPC = "b1c2d3e4-f567-8901-abcd-ef0123456789"
 MORK = "162375cb-4023-4ef9-895b-22c0041d5c13"
 MORKTensorNetworks = "e1f2a3b4-c5d6-7890-abcd-ef1234567890"
 MPI = "da04e1cc-30fd-572f-bb4f-1f8673147195"
-PathMap = "a8b3d4e5-f012-4567-89ab-cdef01234567"
+PathMaps = "a8b3d4e5-f012-4567-89ab-cdef01234567"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 
 # Unregistered substrate deps as sibling path-sources. Julia 1.11+ propagates these to any
@@ -18,14 +18,14 @@ Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 HPC = {path = "../HPC"}
 MORK = {path = "../MORK"}
 MORKTensorNetworks = {path = "../MORKTensorNetworks"}
-PathMap = {path = "../PathMap"}
+PathMaps = {path = "../PathMap"}
 
 [compat]
 HPC = "0.1"
 MORK = "0.1"
 MORKTensorNetworks = "0.1"
 MPI = "0.20.26"
-PathMap = "0.3"
+PathMaps = "0.3"
 Random = "1.11"
 julia = "1.12"
 

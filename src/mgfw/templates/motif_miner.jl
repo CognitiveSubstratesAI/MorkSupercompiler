@@ -41,7 +41,7 @@ const TEMPLATE_TRIE_MOTIF_MINER = make_template(
 """
     motif_miner_lowering(t, region) → String
 
-Spec §10.3.2 — emit a MeTTa miner over the MORK PathMap.
+Spec §10.3.2 — emit a MeTTa miner over the MORK PathMaps.
 
 The mined motifs are stored under the `(motif ...)` prefix and ranked by
 the `(motif-count ...)` counter. The lowering wires the three stages

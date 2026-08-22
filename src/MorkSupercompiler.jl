@@ -36,7 +36,7 @@ QueryPlanner.jl — Algorithm 6 (EffectAwarePlanning) + variable flow
 module MorkSupercompiler
 
 using MORK
-using PathMap
+using PathMaps
 
 # Layer 1 — Surface syntax (s-expression parser)
 include("frontend/SExpr.jl")

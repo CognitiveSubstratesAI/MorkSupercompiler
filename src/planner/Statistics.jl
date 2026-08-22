@@ -14,7 +14,7 @@ Implements MM2 Supercompiler §5.1.1–§5.3.2:
   §5.3.2  EffectStats — pattern/effect cost/correlation/frequency
 """
 
-using PathMap:
+using PathMaps:
     read_zipper_at_path, zipper_val_count, zipper_to_next_val!, zipper_path, zipper_is_val,
     zipper_child_count
 using MORK: ExprArity, ExprSymbol, item_byte, byte_item, Space, space_val_count

@@ -13,7 +13,7 @@ Two strategies:
                             lookup.  Returns an Int; lower = more selective.
 """
 
-using PathMap: read_zipper_at_path, zipper_val_count
+using PathMaps: read_zipper_at_path, zipper_val_count
 using MORK: ExprArity, ExprSymbol, item_byte
 
 # ── Static ────────────────────────────────────────────────────────────────────
