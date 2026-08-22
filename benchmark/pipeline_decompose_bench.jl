@@ -55,15 +55,15 @@ function run_case(label, facts, baseline_prog; trials=3)
     end
 
     # Correctness check: decomposed output must match baseline
-    s_b = new_space();
+    s_b = new_space()
     space_add_all_sexpr!(s_b, facts)
-    space_add_all_sexpr!(s_b, baseline_prog);
+    space_add_all_sexpr!(s_b, baseline_prog)
     space_metta_calculus!(s_b, typemax(Int))
     out_b = space_dump_all_sexpr(s_b)
 
-    s_d = new_space();
+    s_d = new_space()
     space_add_all_sexpr!(s_d, facts)
-    space_add_all_sexpr!(s_d, decomposed_prog);
+    space_add_all_sexpr!(s_d, decomposed_prog)
     space_metta_calculus!(s_d, typemax(Int))
     out_d = space_dump_all_sexpr(s_d)
 

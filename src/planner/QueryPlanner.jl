@@ -63,7 +63,7 @@ function _collect_vars!(out, node::SNode)
         push!(out, (node::SVar).name)
     elseif node isa SList
         for c in (node::SList).items
-            ;
+
             _collect_vars!(out, c)
         end
     end

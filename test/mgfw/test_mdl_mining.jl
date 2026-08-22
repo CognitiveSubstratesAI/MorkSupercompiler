@@ -15,7 +15,7 @@ const M = MorkSupercompiler
 
 @testset "MDL gain ΔL(p,n) = n(p-1) - (p+1)" begin
     @test M.mdl_rule_gain(3, 10) == 16
-    @test M.mdl_rule_gain(5, 2)  == 2
+    @test M.mdl_rule_gain(5, 2) == 2
 
     # A LENGTH-1 PATTERN IS NEVER ADMISSIBLE, at any frequency. Replacing one symbol with one
     # reference saves nothing and still costs a rule body + name. Under the old support weight,
@@ -37,9 +37,9 @@ const M = MorkSupercompiler
 end
 
 @testset "compression condition gates the miner (Franz Def. 2.1 Eq. 7)" begin
-    mk(strs) = reduce(vcat, [M.parse_program(s) for s in strs]; init = M.SNode[])
-    run(strs; k = 10, d = 3) =
-        M.run_trie_miner(M.TEMPLATE_EVIDENCE_CAPSULE, mk(strs); k = k, max_depth = d)
+    mk(strs) = reduce(vcat, [M.parse_program(s) for s in strs]; init=M.SNode[])
+    run(strs; k=10, d=3) =
+        M.run_trie_miner(M.TEMPLATE_EVIDENCE_CAPSULE, mk(strs); k=k, max_depth=d)
 
     # EMPTY INPUT — no pattern can satisfy l(f)+l(r) < l(x) when l(x) = 0. Must halt, not error.
     @test isempty(run(String[]))
@@ -56,24 +56,27 @@ end
     @test all(length(p) >= 2 for (p, _) in got)           # ...and no length-1 rules, ever
 
     # EVERY admitted entry must satisfy the condition, on a mixed corpus
-    mixed = run(vcat(["(f a b)" for _ in 1:9], ["(g c d)" for _ in 1:7], ["(z$i)" for i in 1:15]))
+    mixed = run(
+        vcat(["(f a b)" for _ in 1:9], ["(g c d)" for _ in 1:7], ["(z$i)" for i in 1:15])
+    )
     @test all(w > 0 for (_, w) in mixed)
     @test all(M.mdl_rule_gain(length(p), 0) <= w for (p, w) in mixed)   # w is a real ΔL, not a proxy
 
     # DETERMINISM — the top-k boundary decides what reaches Smine, so the order must be stable
     # across runs on identical input, including ties.
-    a = run(["(f a b)" for _ in 1:9]); b = run(["(f a b)" for _ in 1:9])
+    a = run(["(f a b)" for _ in 1:9])
+    b = run(["(f a b)" for _ in 1:9])
     @test a == b
 
     # RANKED BY ΔL, DESCENDING — the ordering contract itself
-    @test issorted([w for (_, w) in mixed]; rev = true)
+    @test issorted([w for (_, w) in mixed]; rev=true)
 
     # the gate is a GATE, not a filter applied after truncation: disabling it admits more
-    unfiltered = M.PatternTrie(M.TEMPLATE_EVIDENCE_CAPSULE; k = 50)
+    unfiltered = M.PatternTrie(M.TEMPLATE_EVIDENCE_CAPSULE; k=50)
     atoms = mk(["(a$i b$i)" for i in 1:20])
     M.trie_seed!(unfiltered, atoms)
-    open_scored = M.trie_score!(unfiltered; compression_condition = false)
-    gated       = M.trie_score!(unfiltered; compression_condition = true)
+    open_scored = M.trie_score!(unfiltered; compression_condition=false)
+    gated = M.trie_score!(unfiltered; compression_condition=true)
     @test length(gated) <= length(open_scored)
     @test isempty(gated)                                   # nothing here compresses...
     @test !isempty(open_scored)                            # ...though candidates existed

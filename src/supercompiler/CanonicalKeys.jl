@@ -59,7 +59,7 @@ function extract_shape(g::MCoreGraph, id::NodeID)::CompactShape
     n = get_node(g, id)
     a1 = _node_arity(n)
     if a1 == 0
-        ;
+
         return CompactShape(0, 0, 0)
     end
     # depth 2: average arity of immediate children
@@ -248,9 +248,9 @@ function _collect_effect_sig(g::MCoreGraph, id::NodeID, max_depth::Int)::Canonic
     resources = Symbol[]
     _traverse_effect_sig!(g, id, max_depth, effects, resources)
     isempty(effects) && return CanonicalEffectSig()
-    sort!(effects);
+    sort!(effects)
     unique!(effects)
-    sort!(resources);
+    sort!(resources)
     unique!(resources)
     CanonicalEffectSig(effects, resources)
 end

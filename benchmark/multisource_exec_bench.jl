@@ -48,7 +48,7 @@ function run_case(n_sources::Int, k::Int; trials=2)
     println("    Decomposed into $n_stages stages")
 
     # Run decomposed, verify output
-    s = new_space();
+    s = new_space()
     space_add_all_sexpr!(s, facts)
     space_add_all_sexpr!(s, decomp)
     space_metta_calculus!(s, typemax(Int))

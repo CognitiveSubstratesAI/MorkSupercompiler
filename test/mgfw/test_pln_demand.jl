@@ -252,9 +252,9 @@ end
 @testset "compute_demand_field — HMP smoke + untagged factor errors" begin
     t = GLOBAL_REGISTRY.templates[:PLN_STV_HeuristicModusPonens]
     g = FactorGraph(t)
-    g.var_nodes[:A] = FactorNode(:A, :premise);
+    g.var_nodes[:A] = FactorNode(:A, :premise)
     g.var_nodes[:A].message = stv_to_pbox(0.8, 0.9)
-    g.var_nodes[:AB] = FactorNode(:AB, :premise);
+    g.var_nodes[:AB] = FactorNode(:AB, :premise)
     g.var_nodes[:AB].message = stv_to_pbox(0.7, 0.85)
     g.var_nodes[:B] = FactorNode(:B, :conclusion)
     g.factor_nodes[:mp] = FactorNode(:mp, :factor; is_factor=true, rule=:hmp)

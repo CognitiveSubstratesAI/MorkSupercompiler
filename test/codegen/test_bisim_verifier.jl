@@ -82,7 +82,7 @@ end
     # the source we use for the diff IS the same string, since this is a
     # trivial case (no MeTTa→MM2 semantic gap to exercise).
     verdict = verify_bisim(compiled_str, compiled_str, obligs;
-                           facts="hello", max_steps=10)
+        facts="hello", max_steps=10)
     # Self-verification of an identical pair MUST pass — sanity gate.
     @test verdict.forward_ok
     @test verdict.backward_ok

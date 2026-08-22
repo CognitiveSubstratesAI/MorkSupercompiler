@@ -67,7 +67,7 @@ end
     X2, Y2 = mark_dependent(X, Y, 1)
     Z = add_pbox(X2, Y2)
 
-    wX = width(X);
+    wX = width(X)
     wY = width(Y)
     bound = frechet_width_bound(wX, wY)
     @test width(Z) <= bound + 1e-9   # Lemma A.4 satisfied

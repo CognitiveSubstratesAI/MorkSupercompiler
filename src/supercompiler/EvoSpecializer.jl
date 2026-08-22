@@ -126,7 +126,7 @@ function _diff_nodes!(g, cid, pid, changes, max_changes)
     length(changes) >= max_changes && return nothing
     (!isvalid(cid) || !isvalid(pid)) && (cid != pid) &&
         begin
-            push!(changes, (cid, CHANGE_STRUCTURAL));
+            push!(changes, (cid, CHANGE_STRUCTURAL))
             return nothing
         end
     (!isvalid(cid) && !isvalid(pid)) && return nothing
@@ -135,7 +135,7 @@ function _diff_nodes!(g, cid, pid, changes, max_changes)
     pn = get_node(g, pid)
 
     if typeof(cn) != typeof(pn)
-        push!(changes, (cid, CHANGE_STRUCTURAL));
+        push!(changes, (cid, CHANGE_STRUCTURAL))
         return nothing
     end
 
@@ -148,10 +148,10 @@ function _diff_nodes!(g, cid, pid, changes, max_changes)
         return nothing
     end
     if cn isa Con && pn isa Con
-        cc = cn::Con;
+        cc = cn::Con
         pc = pn::Con
         if cc.head != pc.head || length(cc.fields) != length(pc.fields)
-            push!(changes, (cid, CHANGE_STRUCTURAL));
+            push!(changes, (cid, CHANGE_STRUCTURAL))
             return nothing
         end
         for (cf, pf) in zip(cc.fields, pc.fields)
@@ -160,7 +160,7 @@ function _diff_nodes!(g, cid, pid, changes, max_changes)
         return nothing
     end
     if cn isa App && pn isa App
-        ca = cn::App;
+        ca = cn::App
         pa = pn::App
         length(ca.args) != length(pa.args) &&
             (push!(changes, (cid, CHANGE_STRUCTURAL)); return nothing)

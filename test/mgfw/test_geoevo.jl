@@ -7,13 +7,17 @@ using Random: MersenneTwister
     # Structure lives in the space; the engine reads it. Two spaces with different param atoms
     # must yield different reads — proving the values are SOURCED FROM DATA, not hardcoded.
     s = MORK.new_space()
-    MORK.space_add_all_sexpr!(s, join([
-        "(geo-param lambda 0.25)",
-        "(geo-param mu 2.0)",
-        "(geo-param gamma 0.1)",
-        "(subgoal reach-door)",
-        "(subgoal pick-key)",
-    ], "\n"))
+    MORK.space_add_all_sexpr!(
+        s,
+        join(
+            [
+                "(geo-param lambda 0.25)",
+                "(geo-param mu 2.0)",
+                "(geo-param gamma 0.1)",
+                "(subgoal reach-door)",
+                "(subgoal pick-key)"
+            ], "\n")
+    )
 
     p = geo_params(s)
     @test p[:lambda] ≈ 0.25
@@ -37,7 +41,7 @@ using Random: MersenneTwister
 end
 
 @testset "GeoEvo v0 — grounded kernels (the fixed engine)" begin
-    p = Dict{Symbol,Float64}(:lambda => 1.0, :mu => 1.0, :gamma => 0.5, :tau => 1.0,
+    p = Dict{Symbol, Float64}(:lambda => 1.0, :mu => 1.0, :gamma => 0.5, :tau => 1.0,
         :alpha1 => 1.0, :alpha2 => 1.0, :alpha3 => 1.0, :budget => 1000.0)
 
     # Comp ∈ (0,1); ↑ in cover/reach, ↓ in gap (§3.4)
@@ -64,14 +68,18 @@ end
 @testset "GeoEvo v1a — backward g (PLN demand) over factors read from the space" begin
     # The rule set is DATA: an hmp factor concluding B from premises A, AB — stored as atoms.
     s = MORK.new_space()
-    MORK.space_add_all_sexpr!(s, join([
-        "(factor fmp hmp)",
-        "(conclusion fmp B)",
-        "(premise fmp A premise_1)",
-        "(premise fmp AB premise_2)",
-        "(stv A 0.8 0.9)",
-        "(stv AB 0.7 0.85)",
-    ], "\n"))
+    MORK.space_add_all_sexpr!(
+        s,
+        join(
+            [
+                "(factor fmp hmp)",
+                "(conclusion fmp B)",
+                "(premise fmp A premise_1)",
+                "(premise fmp AB premise_2)",
+                "(stv A 0.8 0.9)",
+                "(stv AB 0.7 0.85)"
+            ], "\n")
+    )
 
     g = geo_backward_g(s, :B)
     @test g[:B] ≈ 1.0                       # demand seeded at the goal
@@ -92,9 +100,12 @@ end
     # §2.4: an unknown premise (no stv atom) gets the NEUTRAL prior (½,0) — confidence 0, need=1.
     # NOT (0.5,0.5); the spec rejects high-confidence/(0,0) defaults for ignorance.
     su = MORK.new_space()
-    MORK.space_add_all_sexpr!(su, join([
-        "(factor fu negation)", "(conclusion fu Q)", "(premise fu Punk premise_1)",
-    ], "\n"))
+    MORK.space_add_all_sexpr!(
+        su,
+        join([
+                "(factor fu negation)", "(conclusion fu Q)", "(premise fu Punk premise_1)"
+            ], "\n")
+    )
     fgu = geo_factor_graph(su)
     @test fgu.var_nodes[:Punk].message.confidence ≈ 0.0   # ignorance = zero confidence (§2.4)
 end
@@ -104,11 +115,15 @@ end
 
     # subgoal motifs are DATA: (subgoal-motif id op) atoms
     sm = MORK.new_space()
-    MORK.space_add_all_sexpr!(sm, join([
-        "(subgoal-motif reach-door and)",
-        "(subgoal-motif reach-door move)",
-        "(subgoal-motif pick-key grasp)",
-    ], "\n"))
+    MORK.space_add_all_sexpr!(
+        sm,
+        join(
+            [
+                "(subgoal-motif reach-door and)",
+                "(subgoal-motif reach-door move)",
+                "(subgoal-motif pick-key grasp)"
+            ], "\n")
+    )
     motifs = geo_subgoal_motifs(sm)
     @test motifs["reach-door"] == Set([:and, :move])
     @test motifs["pick-key"] == Set([:grasp])
@@ -119,12 +134,16 @@ end
     @test geo_gap(Set([:a]), Set([:b])) ≈ 1.0
 
     # two demes with distinct operator profiles (set via eda_model — what evolve_demes! would learn)
-    d1 = Deme(1); d1.eda_model[:and] = 0.5; d1.eda_model[:move] = 0.5   # ~ reach-door
-    d2 = Deme(2); d2.eda_model[:grasp] = 1.0                            # = pick-key
+    d1 = Deme(1)
+    d1.eda_model[:and] = 0.5
+    d1.eda_model[:move] = 0.5   # ~ reach-door
+    d2 = Deme(2)
+    d2.eda_model[:grasp] = 1.0                            # = pick-key
     sgids, C, P, omega, sgap = geo_pairing([d1, d2], motifs, p)
 
     @test sgids == ["pick-key", "reach-door"]     # sorted
-    rd = findfirst(==("reach-door"), sgids); pk = findfirst(==("pick-key"), sgids)
+    rd = findfirst(==("reach-door"), sgids)
+    pk = findfirst(==("pick-key"), sgids)
     @test C[1, rd] > C[1, pk]                      # deme1 covers reach-door better
     @test C[2, pk] > C[2, rd]                      # deme2 covers pick-key better
     @test all(abs.(sum(P, dims=2) .- 1.0) .< 1e-9)  # π rows are distributions
@@ -148,14 +167,20 @@ end
 
     # one space carries BOTH the backward factors and the subgoal motifs — all data
     s = MORK.new_space()
-    MORK.space_add_all_sexpr!(s, join([
-        "(factor fmp hmp)", "(conclusion fmp G)",
-        "(premise fmp A premise_1)", "(premise fmp AB premise_2)",
-        "(stv A 0.8 0.9)", "(stv AB 0.7 0.85)",
-        "(subgoal-motif G and)", "(subgoal-motif G move)",
-    ], "\n"))
+    MORK.space_add_all_sexpr!(
+        s,
+        join(
+            [
+                "(factor fmp hmp)", "(conclusion fmp G)",
+                "(premise fmp A premise_1)", "(premise fmp AB premise_2)",
+                "(stv A 0.8 0.9)", "(stv AB 0.7 0.85)",
+                "(subgoal-motif G and)", "(subgoal-motif G move)"
+            ], "\n")
+    )
 
-    d = Deme(1); d.eda_model[:and] = 0.5; d.eda_model[:move] = 0.5
+    d = Deme(1)
+    d.eda_model[:and] = 0.5
+    d.eda_model[:move] = 0.5
     fit(store, id) = 0.5
     res = geo_step!([d], s, :G, p; fitness_fn=fit)
 
@@ -166,7 +191,8 @@ end
     @test res.generation ≥ 1                                        # forward round advanced
 
     # forward f proxy
-    df = Deme(2); df.fitnesses[UInt64(1)] = 0.9
+    df = Deme(2)
+    df.fitnesses[UInt64(1)] = 0.9
     @test geo_forward_f(df) ≈ 0.9
     @test geo_forward_f(Deme(3)) ≈ geo_reach(Set{Symbol}())         # empty deme → reach proxy
 
@@ -184,25 +210,32 @@ end
     fit(store, id) = (haskey(store.nodes, id) && store.nodes[id].head in motif) ? 1.0 : 0.0
 
     # EDA-guided sampler CONSUMES eda_model (acquires the biased operator)
-    d3 = Deme(3); geo_align_bias!(d3, Set([:grab]))
+    d3 = Deme(3)
+    geo_align_bias!(d3, Set([:grab]))
     geo_eda_sample!(d3, 5; rng=MersenneTwister(1))
     @test :grab in Set(n.head for n in values(d3.store.nodes))
 
     # STEERED: deme starts far from the subgoal (only :x); the coupling should pull it in.
-    d = Deme(1); d.eda_model[:x] = 1.0
+    d = Deme(1)
+    d.eda_model[:x] = 1.0
     _, _, _, om_init, _ = geo_pairing([d], geo_subgoal_motifs(s), p)   # initial Ω_align (≈1)
     rng = MersenneTwister(7)
     omegas = Float64[om_init[1]]
     for _ in 1:8
-        push!(omegas, geo_step!([d], s, :G, p; fitness_fn=fit, steer=true, rng=rng).omega_align[1])
+        push!(
+            omegas,
+            geo_step!([d], s, :G, p; fitness_fn=fit, steer=true, rng=rng).omega_align[1]
+        )
     end
     @test omegas[end] < omegas[1]                       # the coupling STEERED evolution (Ω_align↓)
     @test omegas[end] ≤ 0.1                             # FULLY CLOSED: Ω_align→0 (EDA-guided round, no random junk)
     @test geo_cover(geo_deme_ops(d), motif) ≈ 1.0       # CONVERGED: deme acquired the FULL subgoal motif
 
     # CONTROL: unsteered, the random forward variation cannot reach the subgoal ops
-    d2 = Deme(2); d2.eda_model[:x] = 1.0
-    rng2 = MersenneTwister(7); om2 = 1.0
+    d2 = Deme(2)
+    d2.eda_model[:x] = 1.0
+    rng2 = MersenneTwister(7)
+    om2 = 1.0
     for _ in 1:8
         om2 = geo_step!([d2], s, :G, p; fitness_fn=fit, steer=false, rng=rng2).omega_align[1]
     end
@@ -210,7 +243,8 @@ end
 end
 
 @testset "GeoEvo §7 — quantale crossover/mutation + building-block recombination" begin
-    a = Set([:x, :y]); b = Set([:y, :z])
+    a = Set([:x, :y])
+    b = Set([:y, :z])
     @test geo_xover_join(a, b) == Set([:x, :y, :z])                 # ⊕ = union (permissive)
     @test geo_xover_product(a, b) == Set([:y])                      # ⊗ = intersection (common)
     @test geo_xover_mask(Set([:x, :y]), Set([:p, :q]), Set([:x])) == Set([:x, :p, :q])  # x from a, p,q from b
@@ -228,7 +262,8 @@ end
 @testset "GeoEvo §3.9 — success metrics + §4.1/4.2 guidance capsule persistence" begin
     # §3.9 metrics over a convergent Ω_align trajectory
     omega = [1.0, 0.5, 0.2, 0.0, 0.0]
-    pi1 = [0.5 0.5; 0.5 0.5]; pi2 = [0.9 0.1; 0.1 0.9]
+    pi1 = [0.5 0.5; 0.5 0.5]
+    pi2 = [0.9 0.1; 0.1 0.9]
     mt = geo_metrics(omega, [pi1, pi2])
     @test mt.coupling_gain ≈ 1.0               # Ω_align converged 1.0 → 0.0
     @test mt.action_length ≈ 1.0               # Σ|ΔΩ| = 0.5+0.3+0.2+0
@@ -239,7 +274,8 @@ end
     p = geo_params(MORK.new_space())
     s = MORK.new_space()
     MORK.space_add_all_sexpr!(s, "(subgoal-motif G and)")
-    d = Deme(1); d.eda_model[:and] = 1.0
+    d = Deme(1)
+    d.eda_model[:and] = 1.0
     res = geo_step!([d], s, :G, p; fitness_fn=(st, id) -> 1.0)
     nwrote = geo_guidance_capsules!(s, res)
     @test nwrote > 0
@@ -292,7 +328,9 @@ end
     pop = [Set([:a, :b]), Set([:a, :b]), Set([:c, :d])]
     @test geo_diversity_bonus(Set([:c, :d]), pop) > geo_diversity_bonus(Set([:a, :b]), pop)
     # §3.7.4 corridor maintenance: retire low-yield arms, spawn near high-Comp
-    retire, spawn = geo_corridor_maintain([0.5, -0.2, 0.8], [0.1, 0.9, 0.3]; retire_below=0.0)
+    retire, spawn = geo_corridor_maintain(
+        [0.5, -0.2, 0.8], [0.1, 0.9, 0.3]; retire_below=0.0
+    )
     @test retire == [2]                                       # deme 2 (negative trend) retired
     @test spawn[1] == 2                                       # spawn near deme 2 (highest Comp 0.9)
 end
@@ -304,10 +342,15 @@ end
     edges = geo_subgoal_edges(se)
     @test edges["A"] == Set(["B"]) && edges["B"] == Set(["A", "C"])   # undirected
     motifs = Dict("A" => Set([:x]), "B" => Set([:y]), "C" => Set([:z]))
-    d = Deme(1); d.eda_model[:x] = 1.0                                # best-paired to A
+    d = Deme(1)
+    d.eda_model[:x] = 1.0                                # best-paired to A
     mig = geo_island_migrate([d], motifs, edges, p; rng=MersenneTwister(2))
     @test length(mig) == 1 && mig[1] == (1, "A", "B")                 # A → its ONLY neighbour B (never C)
-    @test isempty(geo_island_migrate([d], motifs, Dict{String, Set{String}}(), p; rng=MersenneTwister(2)))
+    @test isempty(
+        geo_island_migrate(
+            [d], motifs, Dict{String, Set{String}}(), p; rng=MersenneTwister(2)
+        )
+    )
 end
 
 @testset "GeoEvo §5.2 B — Pareto product-order + density-greedy (NOT hypervolume)" begin
@@ -337,7 +380,9 @@ end
     @test ng[1] ≈ 0.25 && ng[2] ≈ 1.0                                # F⁻¹g: high-variance dir shrunk ¼
     F = geo_knob_covariance([[1.0, 0.0], [-1.0, 0.0], [2.0, 0.0], [-2.0, 0.0]], ones(4))
     @test abs(F[1, 2]) < 1e-9 && F[2, 2] ≈ 0.0 && F[1, 1] > 0.0       # variance only in dim 1
-    @test all(isfinite, geo_mirror_step([0.0, 0.0], [1.0, 1.0], [0.0 0.0; 0.0 0.0]; ridge=1e-3))  # ridge → finite
+    @test all(
+        isfinite, geo_mirror_step([0.0, 0.0], [1.0, 1.0], [0.0 0.0; 0.0 0.0]; ridge=1e-3)
+    )  # ridge → finite
 end
 
 @testset "GeoEvo §5.2 D — Wasserstein/entropic-OT coupling (reuses geo_sinkhorn)" begin
@@ -345,7 +390,10 @@ end
     @test geo_ground_metric([Set([:a])], [Set([:a])])[1, 1] ≈ 0.0    # identical → 0
     @test geo_ground_metric([Set([:a])], [Set([:b])])[1, 1] ≈ 1.0    # disjoint → 1
     motifs = Dict("A" => Set([:x]), "B" => Set([:y]))
-    d1 = Deme(1); d1.eda_model[:x] = 1.0; d2 = Deme(2); d2.eda_model[:y] = 1.0
+    d1 = Deme(1)
+    d1.eda_model[:x] = 1.0
+    d2 = Deme(2)
+    d2.eda_model[:y] = 1.0
     P = geo_ot_couple([d1, d2], motifs, p)
     @test all(abs.(sum(P, dims=2) .- 1.0) .< 1e-9)                   # valid coupling (rows sum 1)
     @test P[1, 1] > P[1, 2]                                          # deme1 (x) couples to A (x), not B

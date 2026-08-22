@@ -123,12 +123,12 @@ function _run_trial_with_steps(
         t = Dict{ProfilePhase, Float64}()
         stats_time = 0.0
         if do_plan
-            s_tmp = new_space();
+            s_tmp = new_space()
             space_add_all_sexpr!(s_tmp, facts)
             stats_time = @elapsed collect_stats(s_tmp; sample_frac=sample_frac)
         end
         t[PHASE_STATS] = stats_time
-        plan_time = 0.0;
+        plan_time = 0.0
         prog_to_use = program
         if do_plan
             plan_time = @elapsed (prog_to_use = plan_static(program))
@@ -139,7 +139,7 @@ function _run_trial_with_steps(
             decompose_time = @elapsed (prog_to_use = decompose_program(prog_to_use))
         end
         t[PHASE_DECOMPOSE] = decompose_time
-        s = new_space();
+        s = new_space()
         space_add_all_sexpr!(s, facts)
         t[PHASE_LOAD] = @elapsed space_add_all_sexpr!(s, prog_to_use)
         steps_done = 0

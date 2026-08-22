@@ -148,16 +148,24 @@ function _lower_match_snode(n::SNode)::SNode
     items = (n::SList).items
     if length(items) == 4 && items[1] isa SAtom && (items[1]::SAtom).name == "match"
         pat = items[3]
-        sources = (pat isa SList && !isempty((pat::SList).items) &&
-                   (pat::SList).items[1] isa SAtom && ((pat::SList).items[1]::SAtom).name == ",") ?
-                  pat : SList(SNode[SAtom(","), pat])
+        sources =
+            if (
+                pat isa SList && !isempty((pat::SList).items) &&
+                (pat::SList).items[1] isa SAtom &&
+                ((pat::SList).items[1]::SAtom).name == ","
+            )
+                pat
+            else
+                SList(SNode[SAtom(","), pat])
+            end
         template = SList(SNode[SAtom(","), items[4]])
         return SList(SNode[SAtom("exec"), SAtom("0"), sources, template])
     end
     return n
 end
 
-_is_match_node(n::SNode) = n isa SList && length((n::SList).items) == 4 &&
+_is_match_node(n::SNode) =
+    n isa SList && length((n::SList).items) == 4 &&
     (n::SList).items[1] isa SAtom && ((n::SList).items[1]::SAtom).name == "match"
 
 function _lower_match_program(program::AbstractString)::String
@@ -179,17 +187,21 @@ end
 # opt-in flag) so the default 234-conformance path is untouched. SCOPE (Phase 1): body-form-FREE rules only —
 # RHS containing `if`/arithmetic/recursive calls needs the Phase-2 body-form lowering (MM2 has no built-in
 # `if`/arith); those RHS terms would be added VERBATIM, not evaluated.
-_is_eq_node(n::SNode) = n isa SList && length((n::SList).items) == 3 &&
+_is_eq_node(n::SNode) =
+    n isa SList && length((n::SList).items) == 3 &&
     (n::SList).items[1] isa SAtom && ((n::SList).items[1]::SAtom).name == "="
 
 function _lower_eq_snode(n::SNode)::SNode
     n isa SList || return n
     items = (n::SList).items
     if length(items) == 3 && items[1] isa SAtom && (items[1]::SAtom).name == "="
-        lhs = items[2]; rhs = items[3]
-        pattern  = SList(SNode[SAtom("I"), lhs])                                    # source the redex
-        template = SList(SNode[SAtom("O"), SList(SNode[SAtom("+"), rhs]),           # add reduct
-                                           SList(SNode[SAtom("-"), lhs])])          # remove redex
+        lhs = items[2]
+        rhs = items[3]
+        pattern = SList(SNode[SAtom("I"), lhs])                                    # source the redex
+        template = SList(
+            SNode[SAtom("O"), SList(SNode[SAtom("+"), rhs]),           # add reduct
+                SList(SNode[SAtom("-"), lhs])]
+        )          # remove redex
         return SList(SNode[SAtom("exec"), SAtom("0"), pattern, template])
     end
     return n
@@ -203,9 +215,9 @@ end
 
 # Body of a saturation rule `(==> BODY HEAD)`: a `(, p₁ … pₙ)` conjunction → all premises;
 # a single pattern → one premise.
-function _sat_body_ids!(g::MCoreGraph, body::SNode, vm::Dict{String,Int})::Vector{NodeID}
+function _sat_body_ids!(g::MCoreGraph, body::SNode, vm::Dict{String, Int})::Vector{NodeID}
     if body isa SList && !isempty((body::SList).items) &&
-       (body::SList).items[1] isa SAtom && ((body::SList).items[1]::SAtom).name == ","
+        (body::SList).items[1] isa SAtom && ((body::SList).items[1]::SAtom).name == ","
         its = (body::SList).items
         return NodeID[_sexpr_to_mcore!(g, its[i], vm) for i in 2:length(its)]
     end
@@ -279,8 +291,10 @@ function execute!(s::Space, program::AbstractString; opts::SCOptions=SC_DEFAULTS
             g = MCoreGraph()
             kb = KBState(g)
             rule_ctr = 0
-            _is_rule(sn) = sn isa SList && length((sn::SList).items) == 3 &&
-                (sn::SList).items[1] isa SAtom && ((sn::SList).items[1]::SAtom).name == "==>"
+            _is_rule(sn) =
+                sn isa SList && length((sn::SList).items) == 3 &&
+                (sn::SList).items[1] isa SAtom &&
+                ((sn::SList).items[1]::SAtom).name == "==>"
             # RULES come from the `program` text — variables are PRESERVED there. (The space DUMP
             # renders each atom's vars positionally/anonymously, which destroys the cross-pattern
             # var sharing a join needs, so rules can't be recovered from the dump.) One fresh varmap
@@ -290,9 +304,9 @@ function execute!(s::Space, program::AbstractString; opts::SCOptions=SC_DEFAULTS
                 _is_rule(sn) || continue
                 try
                     items = (sn::SList).items                        # (==> BODY HEAD)
-                    vm = Dict{String,Int}()
+                    vm = Dict{String, Int}()
                     body_ids = _sat_body_ids!(g, items[2], vm)
-                    head_id  = _sexpr_to_mcore!(g, items[3], vm)
+                    head_id = _sexpr_to_mcore!(g, items[3], vm)
                     rule_ctr += 1
                     rid = add_sym!(g, Sym(Symbol("__sat_rule_$rule_ctr")))
                     push!(sat_rules, Rule(head_id, body_ids, rid))
@@ -308,7 +322,9 @@ function execute!(s::Space, program::AbstractString; opts::SCOptions=SC_DEFAULTS
                     qn = parse_program(opts.magic_query)
                     if !isempty(qn)
                         qid = _sexpr_to_mcore!(g, only(qn))
-                        ms = magic_sets_transform(g, sat_rules, qid; bound_position = opts.magic_bound)
+                        ms = magic_sets_transform(
+                            g, sat_rules, qid; bound_position=opts.magic_bound
+                        )
                         sat_rules = ms.rewritten_rules
                         for seed in ms.magic_seeds
                             isvalid(seed) && kb_add_fact!(kb, seed)
@@ -349,9 +365,15 @@ function execute!(s::Space, program::AbstractString; opts::SCOptions=SC_DEFAULTS
             # TODO(resource-budget): the spec puts resource bounds on splitting/allocation (§6.2
             # BoundedSplit, approx §5.5), NOT on closure rounds. When a workload risks OOM, replace this
             # round backstop with a Sys.free_memory()-derived memory/time budget that aborts-with-warning.
-            sat_backstop = opts.sat_max_rounds > 0 ? opts.sat_max_rounds : max(1000, 4 * length(kb.facts))
+            sat_backstop = if opts.sat_max_rounds > 0
+                opts.sat_max_rounds
+            else
+                max(1000, 4 * length(kb.facts))
+            end
             n_facts_derived = (_program_has_negation(kb) ? saturate_stratified! :
-                                                           saturate!)(kb; max_rounds=sat_backstop)
+                               saturate!)(
+                kb; max_rounds=sat_backstop
+            )
             n_kb_facts = length(kb.facts)
             # write-back: serialize each DERIVED fact (not base) and add it to the live Space
             if n_facts_derived > 0
@@ -411,12 +433,13 @@ function execute!(s::Space, program::AbstractString; opts::SCOptions=SC_DEFAULTS
                 # Build residual atom: prefer the driven final_id when terminated cleanly
                 # (:value or :fold). For :blocked / :max_steps the driver couldn't decide,
                 # so keep the original source atom in the residual program.
-                atom_str = if (dr.terminated === :value || dr.terminated === :fold) &&
-                              isvalid(dr.final_id)
-                    sprint_mcore(g_drive, dr.final_id)
-                else
-                    sprint_program(SNode[node])
-                end
+                atom_str =
+                    if (dr.terminated === :value || dr.terminated === :fold) &&
+                        isvalid(dr.final_id)
+                        sprint_mcore(g_drive, dr.final_id)
+                    else
+                        sprint_program(SNode[node])
+                    end
                 push!(driven_atoms, atom_str)
             end
             program_driven = join(driven_atoms, "\n")
@@ -492,8 +515,10 @@ which would turn the next desync into a silently wrong option value instead of a
 This form has no argument list to get wrong.
 """
 @inline function _with_field(o::SCOptions, ::Val{F}, v) where {F}
-    SCOptions(ntuple(i -> fieldname(SCOptions, i) === F ? v : getfield(o, i),
-                     Val(fieldcount(SCOptions)))...)
+    SCOptions(
+        ntuple(i -> fieldname(SCOptions, i) === F ? v : getfield(o, i),
+            Val(fieldcount(SCOptions)))...
+    )
 end
 
 """
@@ -529,7 +554,7 @@ end
 # their literal id; named vars get ids offset by NAMED_VAR_BASE to avoid clashing with numeric ones.
 const NAMED_VAR_BASE = 100_000
 function _sexpr_to_mcore!(g::MCoreGraph, n::SNode,
-                          varmap::Dict{String,Int}=Dict{String,Int}())::NodeID
+    varmap::Dict{String, Int}=Dict{String, Int}())::NodeID
     if n isa SAtom
         return add_sym!(g, Sym(Symbol((n::SAtom).name)))
     elseif n isa SVar
@@ -571,12 +596,15 @@ function _sexpr_to_mcore!(g::MCoreGraph, n::SNode,
             if hname == "if" && length(items) == 4
                 # (if COND THEN ELSE) — match the condition against True / False.
                 scrut = _sexpr_to_mcore!(g, items[2], varmap)
-                tpat  = add_sym!(g, Sym(:True))
-                fpat  = add_sym!(g, Sym(:False))
+                tpat = add_sym!(g, Sym(:True))
+                fpat = add_sym!(g, Sym(:False))
                 tbody = _sexpr_to_mcore!(g, items[3], varmap)
                 fbody = _sexpr_to_mcore!(g, items[4], varmap)
-                return add_match!(g, MatchNode(scrut,
-                    MatchClause[MatchClause(tpat, tbody), MatchClause(fpat, fbody)]))
+                return add_match!(
+                    g,
+                    MatchNode(scrut,
+                        MatchClause[MatchClause(tpat, tbody), MatchClause(fpat, fbody)])
+                )
             elseif hname == "case" && length(items) == 3 && items[3] isa SList
                 # (case SCRUT ((P1 B1) (P2 B2) …)) — one clause per arm, order preserved.
                 scrut = _sexpr_to_mcore!(g, items[2], varmap)
@@ -584,11 +612,15 @@ function _sexpr_to_mcore!(g::MCoreGraph, n::SNode,
                 ok = true
                 for arm in (items[3]::SList).items
                     if !(arm isa SList) || length((arm::SList).items) != 2
-                        ok = false; break            # unrecognised arm shape — fall through
+                        ok = false
+                        break            # unrecognised arm shape — fall through
                     end
                     a = (arm::SList).items
-                    push!(clauses, MatchClause(_sexpr_to_mcore!(g, a[1], varmap),
-                                               _sexpr_to_mcore!(g, a[2], varmap)))
+                    push!(
+                        clauses,
+                        MatchClause(_sexpr_to_mcore!(g, a[1], varmap),
+                            _sexpr_to_mcore!(g, a[2], varmap))
+                    )
                 end
                 ok && !isempty(clauses) && return add_match!(g, MatchNode(scrut, clauses))
                 # else: fall through to the generic Con path — carried, never dropped

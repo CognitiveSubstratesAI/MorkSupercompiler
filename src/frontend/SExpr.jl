@@ -41,8 +41,9 @@ end
 # whitespace byte is < 0x80, so all bytes of a multi-byte UTF-8 char (→, 𝜑, …) are non-delimiter
 # non-whitespace and flow through verbatim as symbol bytes — there is NO String char-boundary
 # indexing, so nothing can land mid-codepoint.  (The prior String/byte-step parser crashed on `→`.)
-@inline _ws_byte(b::UInt8)::Bool  = b < 0x80 && isspace(Char(b))     # ASCII whitespace only (multi-byte ⇒ symbol byte)
-@inline _sym_byte(b::UInt8)::Bool = !_ws_byte(b) && b != UInt8('(') && b != UInt8(')') && b != UInt8(';')
+@inline _ws_byte(b::UInt8)::Bool = b < 0x80 && isspace(Char(b))     # ASCII whitespace only (multi-byte ⇒ symbol byte)
+@inline _sym_byte(b::UInt8)::Bool =
+    !_ws_byte(b) && b != UInt8('(') && b != UInt8(')') && b != UInt8(';')
 
 # ── Parser ────────────────────────────────────────────────────────────────────
 

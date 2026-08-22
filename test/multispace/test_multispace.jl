@@ -10,7 +10,7 @@ end
 
 @testset "enable_multi_space — zero overhead when off" begin
     enable_multi_space!(false)
-    s = new_space();
+    s = new_space()
     space_add_all_sexpr!(s, "(edge 0 1)")
     # run! with multi-space OFF — must work exactly as before
     r = run!(s, raw"(exec 0 (, (edge $x $y)) (, (path $x $y)))")

@@ -192,7 +192,7 @@ function _tree_similarity(a::SNode, b::SNode)::Float64
         return (a::SVar).name == (b::SVar).name ? 1.0 : 0.8  # vars: similar even if different name
     end
     if a isa SList && b isa SList
-        ai = (a::SList).items;
+        ai = (a::SList).items
         bi = (b::SList).items
         isempty(ai) && isempty(bi) && return 1.0
         (isempty(ai) || isempty(bi)) && return 0.0

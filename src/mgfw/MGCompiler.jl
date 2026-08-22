@@ -44,12 +44,12 @@ struct BackendProfile
     trie::AffinityLevel   # Trie/PathMap runtime
     tensor::AffinityLevel   # GPU tensor kernels
     core::AffinityLevel   # the SEARCH-MACHINE presentation — branch-heavy proof search / typed
-                          # backward chaining. Spec §9 calls this slot "PeTTa" (Prolog-based), but
-                          # WE REPLACED PeTTa WITH CORE: Core's interpreter carries SLG variant
-                          # tabling + Van Gelder WFS (`tnot`, 3-valued UNDEFINED), swipl-oracle
-                          # verified 39/39. There is no PeTTa in this stack (no FFI — the substrate
-                          # stays Julia-native), so naming the field `petta` named a backend we do
-                          # not have and cannot select.
+    # backward chaining. Spec §9 calls this slot "PeTTa" (Prolog-based), but
+    # WE REPLACED PeTTa WITH CORE: Core's interpreter carries SLG variant
+    # tabling + Van Gelder WFS (`tnot`, 3-valued UNDEFINED), swipl-oracle
+    # verified 39/39. There is no PeTTa in this stack (no FFI — the substrate
+    # stays Julia-native), so naming the field `petta` named a backend we do
+    # not have and cannot select.
 end
 
 BackendProfile(; mm2=MEDIUM, mork=MEDIUM, factor=LOW, trie=LOW, tensor=NONE, core=LOW) =
@@ -246,19 +246,19 @@ function backend_neutral_optimize(
                     5
                 end
                 base = if g == GEOM_TRIE
-                    ;
+
                     log2(max(1, n))
                 elseif g == GEOM_DAG
-                    ;
+
                     sqrt(Float64(n))
                 elseif g == GEOM_FACTOR
-                    ;
+
                     Float64(n)
                 elseif g == GEOM_TENSOR_SPARSE
-                    ;
+
                     Float64(n) * 0.1
                 elseif g == GEOM_TENSOR_DENSE
-                    ;
+
                     Float64(n)^1.5
                 else
                     Float64(n)^2
@@ -313,7 +313,8 @@ function select_backend(
     # Was `>= MEDIUM`, which under the strongest-first enum means "MEDIUM or WORSE" — it fired on
     # MEDIUM/LOW/NONE and never on HIGH, i.e. it was true exactly when the comment said it should
     # be false. See `affinity_at_least`.
-    is_hybrid = affinity_at_least(profile.factor, MEDIUM) && affinity_at_least(profile.trie, MEDIUM)
+    is_hybrid =
+        affinity_at_least(profile.factor, MEDIUM) && affinity_at_least(profile.trie, MEDIUM)
 
     BackendChoice(primary, fallback, is_hybrid)
 end

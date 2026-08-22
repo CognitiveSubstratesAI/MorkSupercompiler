@@ -262,13 +262,13 @@ function sprint_mcore(g::MCoreGraph, id::NodeID)::String
     !isvalid(id) && return "nil"
     node = get_node(g, id)
     if node isa Sym
-        ;
+
         return string(node.name)
     elseif node isa Lit
-        ;
+
         return string(node.val)
     elseif node isa Var
-        ;
+
         return "\$x$(node.ix)"
     elseif node isa Con
         parts = join([sprint_mcore(g, f) for f in node.fields], " ")

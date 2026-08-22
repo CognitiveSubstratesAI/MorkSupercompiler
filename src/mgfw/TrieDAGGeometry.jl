@@ -504,9 +504,11 @@ mdl_rule_gain(plen::Int, count::Int)::Int = count * (plen - 1) - (plen + 1)
 patterns with ΔL > 0 — so a corpus with no compressible structure correctly yields NOTHING rather
 than the least-bad frequent symbols. Pass `false` to rank without the gate (diagnostics only).
 """
-function trie_score!(trie::PatternTrie; compression_condition::Bool=true)::Vector{Tuple{Vector{Symbol}, Float64}}
+function trie_score!(
+    trie::PatternTrie; compression_condition::Bool=true
+)::Vector{Tuple{Vector{Symbol}, Float64}}
     _score_subtrie!(trie.root, trie.root.count + 1)
-    _rebuild_topk!(trie; compression_condition = compression_condition, by = :mdl)
+    _rebuild_topk!(trie; compression_condition=compression_condition, by=:mdl)
     trie.top_k
 end
 
@@ -530,7 +532,9 @@ end
 # silently dropped high-frequency seeds: on `(chop tree wood) x2 …` with k=5, `:wood` was cut, so
 # `[:chop,:tree,:wood]` — the genuinely compressing pattern, ΔL=4 — was NEVER GROWN and the miner
 # returned nothing. The gate was right; the generator had been blinded. Frequency belongs here.
-function _rebuild_topk!(trie::PatternTrie; compression_condition::Bool=false, by::Symbol=:support)
+function _rebuild_topk!(
+    trie::PatternTrie; compression_condition::Bool=false, by::Symbol=:support
+)
     all_entries = Tuple{Vector{Symbol}, Float64}[]
     _collect_entries!(trie.root, all_entries)
     if by === :support
@@ -538,13 +542,13 @@ function _rebuild_topk!(trie::PatternTrie; compression_condition::Bool=false, by
         # prefers the more explanatory branch. Counts are read from the trie, not from `weight`.
         counts = Dict{Vector{Symbol}, Int}()
         _collect_counts!(trie.root, counts)
-        sort!(all_entries; by = x -> (-get(counts, x[1], 0), -length(x[1]), string.(x[1])))
+        sort!(all_entries; by=x -> (-get(counts, x[1], 0), -length(x[1]), string.(x[1])))
     else
         # Franz Def. 2.1 Eq. 7 — STRICT: l(f)+l(r) < l(x), so ΔL must be > 0, not >= 0.
         compression_condition && filter!(e -> e[2] > 0.0, all_entries)
         # AdaptiMORK §4.4's total order: larger ΔL, then LONGER span, then lexicographic for
         # determinism — the top-k boundary decides what reaches Smine, so it must be stable.
-        sort!(all_entries; by = x -> (-x[2], -length(x[1]), string.(x[1])))
+        sort!(all_entries; by=x -> (-x[2], -length(x[1]), string.(x[1])))
     end
     trie.top_k = all_entries[1:min(trie.k, length(all_entries))]
 end

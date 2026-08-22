@@ -48,7 +48,7 @@ content (whitespace-trimmed). For empty `(, )`, returns `""`.
 function _comma_inner(s::AbstractString)::String
     t = strip(s)
     if startswith(t, "(,")
-        inner = strip(t[3:end - 1])    # drop "(," and ")"
+        inner = strip(t[3:(end - 1)])    # drop "(," and ")"
         return String(inner)
     end
     return String(t)
@@ -143,13 +143,16 @@ function batch_space_ops(atoms::Vector{MM2ExecAtom})::Vector{MM2ExecAtom}
             # downstream verification (verify_bisim) checks whole-program equivalence
             # so per-atom traceability is enough.
             first = atoms[ixs[1]]
-            push!(out, MM2ExecAtom(
-                pri,
-                merged_pattern,
-                merged_template,
-                first.source_node,
-                first.proof_obligs
-            ))
+            push!(
+                out,
+                MM2ExecAtom(
+                    pri,
+                    merged_pattern,
+                    merged_template,
+                    first.source_node,
+                    first.proof_obligs
+                )
+            )
         end
     end
     out
@@ -197,13 +200,16 @@ function fuse_identical_patterns(atoms::Vector{MM2ExecAtom})::Vector{MM2ExecAtom
         else
             merged_template = _comma_join([_comma_inner(atoms[i].template) for i in ixs])
             first = atoms[ixs[1]]
-            push!(out, MM2ExecAtom(
-                first.priority,
-                first.pattern,
-                merged_template,
-                first.source_node,
-                first.proof_obligs
-            ))
+            push!(
+                out,
+                MM2ExecAtom(
+                    first.priority,
+                    first.pattern,
+                    merged_template,
+                    first.source_node,
+                    first.proof_obligs
+                )
+            )
         end
     end
     out

@@ -295,13 +295,13 @@ function sprint_mcore_to_mm2(g::MCoreGraph, id::NodeID)::String
     !isvalid(id) && return "\$_"
     n = get_node(g, id)
     if n isa Sym
-        ;
+
         return string((n::Sym).name)
     elseif n isa Lit
-        ;
+
         return string((n::Lit).val)
     elseif n isa Var
-        ;
+
         return "\$x$((n::Var).ix)"
     elseif n isa Con
         c = n::Con

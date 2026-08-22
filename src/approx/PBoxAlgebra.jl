@@ -121,11 +121,11 @@ function mark_dependent(a::PBox, b::PBox, bit::Int)::Tuple{PBox, PBox}
     sig_b = copy(b.correlation_sig)
     # Extend BitVectors if needed
     while length(sig_a) < bit
-        ;
+
         push!(sig_a, false)
     end
     while length(sig_b) < bit
-        ;
+
         push!(sig_b, false)
     end
     sig_a[bit] = true
@@ -188,7 +188,7 @@ function _add_pbox_frechet(X::PBox, Y::PBox)::PBox
     isempty(X.intervals) && return Y
     isempty(Y.intervals) && return X
 
-    wX = width(X);
+    wX = width(X)
     wY = width(Y)
     wmin = min(wX, wY)
 

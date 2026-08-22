@@ -32,27 +32,27 @@ Effect algebra from §4.1.
 abstract type Effect end
 
 struct ReadEffect <: Effect
-    ;
+
     resource::SpaceID
 end
 struct WriteEffect <: Effect
-    ;
+
     resource::SpaceID
 end
 struct AppendEffect <: Effect
-    ;
+
     resource::SpaceID
 end
 struct CreateEffect <: Effect
-    ;
+
     resource::SpaceID
 end
 struct DeleteEffect <: Effect
-    ;
+
     resource::SpaceID
 end
 struct ObserveEffect <: Effect
-    ;
+
     resource::SpaceID
 end
 struct PureEffect <: Effect end

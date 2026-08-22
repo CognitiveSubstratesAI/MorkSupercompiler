@@ -358,11 +358,11 @@ end
     tpl = GeometryTemplate[]
     for (name, prof) in [
         (:tensor, BackendProfile(NONE, NONE, NONE, NONE, HIGH, NONE)),
-        (:core,   BackendProfile(NONE, NONE, NONE, NONE, NONE, HIGH)),
+        (:core, BackendProfile(NONE, NONE, NONE, NONE, NONE, HIGH)),
         (:factor, BackendProfile(NONE, NONE, HIGH, NONE, NONE, NONE)),
-        (:trie,   BackendProfile(NONE, NONE, NONE, HIGH, NONE, NONE)),
-        (:mm2,    BackendProfile(HIGH, NONE, NONE, NONE, NONE, NONE)),
-        (:mork,   BackendProfile(NONE, HIGH, NONE, NONE, NONE, NONE)),
+        (:trie, BackendProfile(NONE, NONE, NONE, HIGH, NONE, NONE)),
+        (:mm2, BackendProfile(HIGH, NONE, NONE, NONE, NONE, NONE)),
+        (:mork, BackendProfile(NONE, HIGH, NONE, NONE, NONE, NONE))
     ]
         @test select_backend(prof, tpl).primary === name   # every declared backend is REACHABLE
     end
@@ -379,7 +379,7 @@ end
     for tmpl in [GeometryTemplate[], [TEMPLATE_HEURISTIC_MP]]
         prof = affinity_analysis(tmpl)
         @test prof.tensor === NONE   # never scored — update this test when Stage 1 learns tensor
-        @test prof.core   === LOW    # never scored — update when Stage 1 learns the search machine
+        @test prof.core === LOW    # never scored — update when Stage 1 learns the search machine
     end
 end
 
@@ -388,7 +388,7 @@ end
     # is emitted as a metadata line and `polish` renumbers priorities for :mm2 and returns the code
     # UNCHANGED for everything else. A caller reading `choice.primary == :tensor` and concluding "a
     # tensor lowering ran" would be wrong, so make that checkable rather than folklore.
-    @test  lowering_implemented(:mm2)
+    @test lowering_implemented(:mm2)
     for b in (:mork, :factor, :trie, :tensor, :core)
         @test !lowering_implemented(b)
     end
@@ -406,19 +406,19 @@ end
     # lines above for precisely this reason, which is what makes the slip easy to miss.
     tpl = GeometryTemplate[]
     hyb(f, t) = select_backend(BackendProfile(LOW, LOW, f, t, NONE, NONE), tpl).is_hybrid
-    @test  hyb(HIGH,   HIGH)     # both strong  ⇒ hybrid            (was FALSE before the fix)
-    @test  hyb(HIGH,   MEDIUM)   # both ≥ MEDIUM ⇒ hybrid
-    @test  hyb(MEDIUM, MEDIUM)
-    @test !hyb(NONE,   NONE)     # both weakest ⇒ NOT hybrid        (was TRUE before the fix)
+    @test hyb(HIGH, HIGH)     # both strong  ⇒ hybrid            (was FALSE before the fix)
+    @test hyb(HIGH, MEDIUM)   # both ≥ MEDIUM ⇒ hybrid
+    @test hyb(MEDIUM, MEDIUM)
+    @test !hyb(NONE, NONE)     # both weakest ⇒ NOT hybrid        (was TRUE before the fix)
     @test !hyb(MEDIUM, LOW)      # one below threshold ⇒ not hybrid
-    @test !hyb(LOW,    HIGH)
+    @test !hyb(LOW, HIGH)
 
     # the predicate itself — reads in AFFINITY terms, not enum-integer terms
-    @test  affinity_at_least(HIGH,   MEDIUM)
-    @test  affinity_at_least(MEDIUM, MEDIUM)
-    @test !affinity_at_least(LOW,    MEDIUM)
-    @test !affinity_at_least(NONE,   MEDIUM)
-    @test  affinity_at_least(HIGH,   HIGH)
+    @test affinity_at_least(HIGH, MEDIUM)
+    @test affinity_at_least(MEDIUM, MEDIUM)
+    @test !affinity_at_least(LOW, MEDIUM)
+    @test !affinity_at_least(NONE, MEDIUM)
+    @test affinity_at_least(HIGH, HIGH)
     @test !affinity_at_least(MEDIUM, HIGH)
 end
 

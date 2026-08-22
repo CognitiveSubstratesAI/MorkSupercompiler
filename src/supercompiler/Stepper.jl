@@ -340,7 +340,7 @@ function _try_match(
     end
 
     if pat isa Con && scrut_node isa Con
-        pat_con = pat::Con;
+        pat_con = pat::Con
         scrut_con = scrut_node::Con
         pat_con.head != scrut_con.head && return nothing
         length(pat_con.fields) != length(scrut_con.fields) && return nothing

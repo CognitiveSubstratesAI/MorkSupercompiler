@@ -193,7 +193,7 @@ function collect_stats(btm, total_atoms::Int, sample_size::Int)::MORKStatistics
         tag0 = try
             byte_item(b0)
         catch
-            ;
+
             continue
         end
         tag0 isa ExprArity || continue
@@ -206,7 +206,7 @@ function collect_stats(btm, total_atoms::Int, sample_size::Int)::MORKStatistics
         tag1 = try
             byte_item(b1)
         catch
-            ;
+
             continue
         end
         tag1 isa ExprSymbol || continue
@@ -236,7 +236,7 @@ function collect_stats(btm, total_atoms::Int, sample_size::Int)::MORKStatistics
                 atag = try
                     byte_item(ab)
                 catch
-                    ;
+
                     continue
                 end
                 is_var = atag isa ExprNewVar || atag isa ExprVarRef

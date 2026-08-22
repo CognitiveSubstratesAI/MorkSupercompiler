@@ -133,17 +133,21 @@ include("mgfw/templates/references.jl")
 # backward demand field. All structure (params/subgoals/factors) is read from MORK atoms at
 # runtime — see the anti-hardcode contract at the head of GeoEvo.jl.
 include("mgfw/GeoEvo.jl")
-export geo_params, geo_subgoals, geo_comp, geo_score, geo_sinkhorn, geo_feff, geo_effort, geo_sigma
+export geo_params,
+    geo_subgoals, geo_comp, geo_score, geo_sinkhorn, geo_feff, geo_effort, geo_sigma
 export geo_factor_graph, geo_backward_g
-export geo_deme_ops, geo_weakness, geo_subgoal_motifs, geo_cover, geo_gap, geo_reach, geo_pairing
+export geo_deme_ops,
+    geo_weakness, geo_subgoal_motifs, geo_cover, geo_gap, geo_reach, geo_pairing
 export geo_forward_f, geo_splice_check, geo_bandit, geo_step!
 export geo_align_bias!, geo_eda_sample!, geo_evolve_steered!
-export geo_xover_join, geo_xover_product, geo_xover_mask, geo_mutate_add, geo_mutate_restrict, geo_recombine
+export geo_xover_join,
+    geo_xover_product, geo_xover_mask, geo_mutate_add, geo_mutate_restrict, geo_recombine
 export geo_metrics, geo_guidance_capsules!
 export geo_mine_factors, geo_fg_sample, geo_evolve_blocks!
 export geo_side_choice, geo_progress, geo_diversity_bonus, geo_corridor_maintain
 export geo_subgoal_edges, geo_island_migrate                                            # §5.2 A
-export geo_objective_vector, geo_dominates, geo_pareto_front, geo_density_greedy, geo_score_mo  # §5.2 B
+export geo_objective_vector,
+    geo_dominates, geo_pareto_front, geo_density_greedy, geo_score_mo  # §5.2 B
 export geo_knob_covariance, geo_natural_grad, geo_mirror_step                           # §5.2 C
 export geo_ground_metric, geo_ot_couple                                                 # §5.2 D
 

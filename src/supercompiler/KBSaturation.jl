@@ -220,7 +220,8 @@ function saturate!(kb::KBState; max_rounds::Int=1000)::Int
     for round in 1:max_rounds
         delta_old = copy(kb.delta)
         if isempty(delta_old)
-            converged = true; break   # fixed point reached
+            converged = true
+            break   # fixed point reached
         end
 
         kb.delta = Fact[]
@@ -234,7 +235,8 @@ function saturate!(kb::KBState; max_rounds::Int=1000)::Int
 
         total_new += new_this_round
         if new_this_round == 0
-            converged = true; break
+            converged = true
+            break
         end
     end
 
@@ -242,9 +244,10 @@ function saturate!(kb::KBState; max_rounds::Int=1000)::Int
     # (the dedup gate collapses identical values, not freshly-minted ones) and gets truncated
     # at the round cap. Surface it — the pragmatic stand-in for the supercompilation
     # homeomorphic-embedding whistle — rather than returning a partial result as if complete.
-    converged || @warn "saturate!: reached max_rounds=$max_rounds without a fixpoint — likely an " *
-                       "unbounded value-generating rule; add a bounding comparison guard (e.g. (< \$x K)). " *
-                       "Result is truncated, not a fixpoint."
+    converged ||
+        @warn "saturate!: reached max_rounds=$max_rounds without a fixpoint — likely an " *
+            "unbounded value-generating rule; add a bounding comparison guard (e.g. (< \$x K)). " *
+            "Result is truncated, not a fixpoint."
 
     total_new
 end
@@ -301,8 +304,9 @@ function _stratify(kb::KBState)::Union{Vector{Vector{Rule}}, Nothing}
             _is_negated_premise(g, bid) || continue
             nv = _premise_vars!(g, (get_node(g, bid)::Con).fields[1], Set{Int}())
             unbound = setdiff(nv, posvars)
-            isempty(unbound) || @warn "stratified NAF: unsafe rule — negated premise variable(s) " *
-                "$(collect(unbound)) not bound by a positive premise; result may be unsound."
+            isempty(unbound) ||
+                @warn "stratified NAF: unsafe rule — negated premise variable(s) " *
+                    "$(collect(unbound)) not bound by a positive premise; result may be unsound."
         end
     end
     n = length(derived)
@@ -310,14 +314,14 @@ function _stratify(kb::KBState)::Union{Vector{Vector{Rule}}, Nothing}
         changed = false
         for (h, q, neg) in edges
             want = neg ? stratum[q] + 1 : stratum[q]
-            stratum[h] < want && (stratum[h] = want; changed = true)
+            stratum[h] < want && (stratum[h]=want; changed=true)
         end
         changed || break
     end
     for (h, q, neg) in edges                               # constraint check: neg ⇒ strictly higher
         neg && stratum[q] >= stratum[h] && return nothing  # cycle through negation → non-stratifiable
     end
-    maxs = maximum(values(stratum); init = 0)
+    maxs = maximum(values(stratum); init=0)
     strata = [Rule[] for _ in 0:maxs]
     for r in rules
         push!(strata[stratum[_fact_head(g, r.head_id)] + 1], r)
@@ -337,7 +341,7 @@ function saturate_stratified!(kb::KBState; max_rounds::Int=1000)::Int
     strata = _stratify(kb)
     if strata === nothing
         @warn "stratified NAF: program is NON-stratifiable (recursion through negation) — needs " *
-              "well-founded semantics (tnot), not supported; running flat saturation (negation unsound here)."
+            "well-founded semantics (tnot), not supported; running flat saturation (negation unsound here)."
         return saturate!(kb; max_rounds)
     end
     saved, total = kb.rules, 0
@@ -398,7 +402,7 @@ end
 const _GUARD_OPS = Set{Symbol}(Symbol.(["<", ">", "<=", ">=", "==", "!="]))
 
 _is_guard_premise(g::MCoreGraph, id::NodeID)::Bool =
-    (n = get_node(g, id); n isa Con && (n::Con).head in _GUARD_OPS)
+    (n=get_node(g, id); n isa Con && (n::Con).head in _GUARD_OPS)
 
 # Type-PRESERVING numeric parse: Int stays Int, float stays Float64.
 #
@@ -419,25 +423,31 @@ _is_guard_premise(g::MCoreGraph, id::NodeID)::Bool =
 _kb_num(t::AbstractString) = MORK.grounded_num(t)
 
 _atom_text(n)::Union{String, Nothing} =
-    n isa Sym ? string((n::Sym).name) :
-    n isa Lit ? string((n::Lit).val)  : nothing
+    if n isa Sym
+        string((n::Sym).name)
+    elseif n isa Lit
+        string((n::Lit).val)
+    else
+        nothing
+    end
 
 # Evaluate a guard premise under `bindings`: true/false when both operands are GROUND
 # and comparable, or `nothing` when an operand is still unbound/structured (the
 # partial-evaluation "defer" case — an undecidable guard drops the tuple, never
 # deriving on an unconfirmed guard).
 function _eval_guard_premise(g::MCoreGraph, pid::NodeID,
-                             bindings::Dict{Int, NodeID})::Union{Bool, Nothing}
+    bindings::Dict{Int, NodeID})::Union{Bool, Nothing}
     gcon = get_node(g, _instantiate(g, pid, bindings))
     (gcon isa Con && length((gcon::Con).fields) >= 2) || return nothing
     op = (gcon::Con).head
     sa = _atom_text(get_node(g, (gcon::Con).fields[1]))
     sb = _atom_text(get_node(g, (gcon::Con).fields[2]))
     (sa === nothing || sb === nothing) && return nothing
-    fa = _kb_num(sa); fb = _kb_num(sb)          # NOT tryparse(Float64,…) — see _kb_num
+    fa = _kb_num(sa)
+    fb = _kb_num(sb)          # NOT tryparse(Float64,…) — see _kb_num
     num = fa !== nothing && fb !== nothing
-    op === Symbol("<")  && return num ? (fa <  fb) : nothing
-    op === Symbol(">")  && return num ? (fa >  fb) : nothing
+    op === Symbol("<") && return num ? (fa < fb) : nothing
+    op === Symbol(">") && return num ? (fa > fb) : nothing
     op === Symbol("<=") && return num ? (fa <= fb) : nothing
     op === Symbol(">=") && return num ? (fa >= fb) : nothing
     op === Symbol("==") && return num ? (fa == fb) : (sa == sb)
@@ -459,8 +469,11 @@ const _ARITH_OPS = Dict{Symbol, Function}(
     Symbol("/") => (/), Symbol("%") => rem)
 
 _is_arith_premise(g::MCoreGraph, id::NodeID)::Bool =
-    (n = get_node(g, id); n isa Con && (n::Con).head in keys(_ARITH_OPS) &&
-                          length((n::Con).fields) == 3)
+    (
+        n=get_node(g, id);
+        n isa Con && (n::Con).head in keys(_ARITH_OPS) &&
+            length((n::Con).fields) == 3
+    )
 
 # Resolve a field NodeID through bindings to a numeric value (or `nothing` if unbound/non-numeric).
 function _num_arg(g::MCoreGraph, id::NodeID, bindings::Dict{Int, NodeID})
@@ -469,7 +482,8 @@ function _num_arg(g::MCoreGraph, id::NodeID, bindings::Dict{Int, NodeID})
         haskey(bindings, (n::Var).ix) || return nothing
         n = get_node(g, bindings[(n::Var).ix])
     end
-    t = _atom_text(n); t === nothing && return nothing
+    t = _atom_text(n)
+    t === nothing && return nothing
     _kb_num(t)                                   # NOT tryparse(Float64,…) — see _kb_num
 end
 
@@ -483,7 +497,7 @@ function _apply_arith_premise(g::MCoreGraph, pid::NodeID, bindings::Dict{Int, No
     # `rem(::Int, 0)` throws a Julia DivideError; a host exception must not escape saturation, so
     # DEFER (the premise is undecidable) rather than crash the round.
     (_ARITH_OPS[con.head] === rem && fb isa Integer && fb == 0) && return :defer
-    r    = _ARITH_OPS[con.head](fa, fb)
+    r = _ARITH_OPS[con.head](fa, fb)
     # `string(r)` directly — the old `isinteger(r) ? string(Int(r))` demoted every integral FLOAT
     # result to an Int string, so `(+ 1.5 2.5 $z)` bound `$z` to `4` rather than `4.0`. Julia's own
     # promotion now decides: Int⊕Int stays exact Int, any Float operand promotes.
@@ -492,7 +506,9 @@ function _apply_arith_premise(g::MCoreGraph, pid::NodeID, bindings::Dict{Int, No
     if cn isa Var
         ix = (cn::Var).ix
         haskey(bindings, ix) || begin
-            nb = copy(bindings); nb[ix] = add_sym!(g, Sym(Symbol(rstr))); return nb
+            nb = copy(bindings)
+            nb[ix] = add_sym!(g, Sym(Symbol(rstr)))
+            return nb
         end
         return _atom_text(get_node(g, bindings[ix])) == rstr ? bindings : nothing
     end
@@ -506,11 +522,13 @@ end
 # transient (see `saturate_stratified!` / `_stratify`). Safety: `inner`'s variables must be
 # bound by positive premises (warned in `_stratify`). Detected by head, like guards/arith.
 _is_negated_premise(g::MCoreGraph, id::NodeID)::Bool =
-    (n = get_node(g, id); n isa Con && (n::Con).head === :not && length((n::Con).fields) == 1)
+    (n=get_node(g, id); n isa Con && (n::Con).head === :not && length((n::Con).fields) == 1)
 
 # NAF holds (keep the tuple) iff the instantiated inner pattern has NO matching fact.
 _eval_negated_premise(kb::KBState, pid::NodeID, bindings::Dict{Int, NodeID})::Bool =
-    isempty(_match_fact(kb, _instantiate(kb.g, (get_node(kb.g, pid)::Con).fields[1], bindings)))
+    isempty(
+        _match_fact(kb, _instantiate(kb.g, (get_node(kb.g, pid)::Con).fields[1], bindings))
+    )
 
 """
     _match_body_with_facts(kb, body_ids) -> Vector{Tuple{Dict{Int,NodeID}, Vector{NodeID}}}
@@ -529,13 +547,15 @@ function _match_body_with_facts(
 )::Vector{Tuple{Dict{Int, NodeID}, Vector{NodeID}}}
     isempty(body_ids) && return [(Dict{Int, NodeID}(), NodeID[])]
 
-    guards    = NodeID[id for id in body_ids if _is_guard_premise(kb.g, id)]
-    arith     = NodeID[id for id in body_ids if _is_arith_premise(kb.g, id)]
-    negated   = NodeID[id for id in body_ids if _is_negated_premise(kb.g, id)]
-    relations = NodeID[id for id in body_ids
-                       if !_is_guard_premise(kb.g, id) && !_is_arith_premise(kb.g, id) &&
-                          !_is_negated_premise(kb.g, id)]
-    ordered   = sort(relations; by=id -> _premise_cardinality(kb, id))
+    guards = NodeID[id for id in body_ids if _is_guard_premise(kb.g, id)]
+    arith = NodeID[id for id in body_ids if _is_arith_premise(kb.g, id)]
+    negated = NodeID[id for id in body_ids if _is_negated_premise(kb.g, id)]
+    relations = NodeID[
+        id for id in body_ids
+        if !_is_guard_premise(kb.g, id) && !_is_arith_premise(kb.g, id) &&
+            !_is_negated_premise(kb.g, id)
+    ]
+    ordered = sort(relations; by=id -> _premise_cardinality(kb, id))
 
     results = Tuple{Dict{Int, NodeID}, Vector{NodeID}}[(Dict{Int, NodeID}(), NodeID[])]
 
@@ -558,10 +578,14 @@ function _match_body_with_facts(
     # premise is ready/deferred for all results together — test on the first.
     remaining = arith
     while !isempty(remaining) && !isempty(results)
-        ready = NodeID[]; deferred = NodeID[]
+        ready = NodeID[]
+        deferred = NodeID[]
         for ap in remaining
-            (_apply_arith_premise(kb.g, ap, results[1][1]) === :defer) ?
-                push!(deferred, ap) : push!(ready, ap)
+            if (_apply_arith_premise(kb.g, ap, results[1][1]) === :defer)
+                push!(deferred, ap)
+            else
+                push!(ready, ap)
+            end
         end
         isempty(ready) && break    # no progress: remaining inputs never bind
         for ap in ready
@@ -607,7 +631,7 @@ function _facts_unify(g::MCoreGraph, pat_id::NodeID, fact_id::NodeID)::Bool
     pn isa Sym && fn isa Sym && return (pn::Sym).name == (fn::Sym).name
     pn isa Lit && fn isa Lit && return (pn::Lit).val == (fn::Lit).val
     if pn isa Con && fn isa Con
-        pc = pn::Con;
+        pc = pn::Con
         fc = fn::Con
         pc.head != fc.head && return false
         length(pc.fields) != length(fc.fields) && return false
@@ -621,11 +645,13 @@ end
 # by NodeID identity — otherwise a join on a shared var (e.g. `(path $x $y),(edge $y $z)`) never binds.
 function _node_equal(g::MCoreGraph, a::NodeID, b::NodeID)::Bool
     a == b && return true
-    na = get_node(g, a); nb = get_node(g, b)
+    na = get_node(g, a)
+    nb = get_node(g, b)
     na isa Sym && nb isa Sym && return (na::Sym).name == (nb::Sym).name
     na isa Lit && nb isa Lit && return (na::Lit).val == (nb::Lit).val
     if na isa Con && nb isa Con
-        nca = na::Con; ncb = nb::Con
+        nca = na::Con
+        ncb = nb::Con
         (nca.head == ncb.head && length(nca.fields) == length(ncb.fields)) || return false
         return all(_node_equal(g, x, y) for (x, y) in zip(nca.fields, ncb.fields))
     end
@@ -648,7 +674,7 @@ function _merge_bindings(
         return existing
     end
     if pn isa Con && get_node(g, fact_id) isa Con
-        pc = pn::Con;
+        pc = pn::Con
         fc = get_node(g, fact_id)::Con
         cur = existing
         for (pf, ff) in zip(pc.fields, fc.fields)

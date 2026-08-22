@@ -247,7 +247,7 @@ function bgc_priority(
     (fx <= 0.0 || gx <= 0.0) && return -Inf
     curr = log(fx) + log(gx)
     prev_x === nothing && return curr / step_cost
-    fp = get(f, prev_x, 0.0);
+    fp = get(f, prev_x, 0.0)
     gp = get(g, prev_x, 0.0)
     (fp <= 0.0 || gp <= 0.0) && return curr / step_cost
     prev = log(fp) + log(gp)

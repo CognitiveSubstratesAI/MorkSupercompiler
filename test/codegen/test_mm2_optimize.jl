@@ -11,7 +11,7 @@ _atom(p, q, pat, tmpl) = MM2ExecAtom(
     atoms = [
         _atom(3, 0, "(, p3)", "(, t3)"),
         _atom(1, 0, "(, p1)", "(, t1)"),
-        _atom(2, 0, "(, p2)", "(, t2)"),
+        _atom(2, 0, "(, p2)", "(, t2)")
     ]
     sorted = schedule_static(atoms)
     @test sorted[1].priority == MM2Priority(1, 0)
@@ -30,7 +30,7 @@ end
     atoms = [
         _atom(1, 2, "(, a)", "(, x)"),
         _atom(1, 0, "(, b)", "(, y)"),
-        _atom(1, 1, "(, c)", "(, z)"),
+        _atom(1, 1, "(, c)", "(, z)")
     ]
     sorted = schedule_static(atoms)
     @test sorted[1].priority == MM2Priority(1, 0)
@@ -43,7 +43,7 @@ end
     atoms = [
         _atom(1, 0, "(, (kb fact1))", "(, result1)"),
         _atom(1, 0, "(, (kb fact2))", "(, result2)"),
-        _atom(2, 0, "(, foo)", "(, bar)"),
+        _atom(2, 0, "(, foo)", "(, bar)")
     ]
     batched = batch_space_ops(atoms)
     @test length(batched) == 2          # 2 same-priority merged + 1 unique
@@ -59,7 +59,7 @@ end
     atoms = [
         _atom(1, 0, "(, a)", "(, x)"),
         _atom(2, 0, "(, b)", "(, y)"),
-        _atom(3, 0, "(, c)", "(, z)"),
+        _atom(3, 0, "(, c)", "(, z)")
     ]
     batched = batch_space_ops(atoms)
     @test length(batched) == 3
@@ -70,8 +70,8 @@ end
 @testset "batch_space_ops — preserves first-occurrence priority order" begin
     atoms = [
         _atom(5, 0, "(, p5a)", "(, t5a)"),
-        _atom(2, 0, "(, p2)",  "(, t2)"),
-        _atom(5, 0, "(, p5b)", "(, t5b)"),
+        _atom(2, 0, "(, p2)", "(, t2)"),
+        _atom(5, 0, "(, p5b)", "(, t5b)")
     ]
     batched = batch_space_ops(atoms)
     @test length(batched) == 2
@@ -84,7 +84,7 @@ end
     atoms = [
         _atom(1, 0, "(, (hello))", "(, world1)"),
         _atom(2, 0, "(, (hello))", "(, world2)"),
-        _atom(3, 0, "(, (other))", "(, single)"),
+        _atom(3, 0, "(, (other))", "(, single)")
     ]
     fused = fuse_identical_patterns(atoms)
     @test length(fused) == 2
@@ -97,7 +97,7 @@ end
 @testset "fuse_identical_patterns — whitespace differences treated as equal" begin
     atoms = [
         _atom(1, 0, "(, (foo))", "(, a)"),
-        _atom(2, 0, " (, (foo)) ", "(, b)"),    # extra whitespace
+        _atom(2, 0, " (, (foo)) ", "(, b)")    # extra whitespace
     ]
     fused = fuse_identical_patterns(atoms)
     @test length(fused) == 1
@@ -106,7 +106,7 @@ end
 @testset "fuse_identical_patterns — distinct patterns pass through" begin
     atoms = [
         _atom(1, 0, "(, (a))", "(, x)"),
-        _atom(2, 0, "(, (b))", "(, y)"),
+        _atom(2, 0, "(, (b))", "(, y)")
     ]
     fused = fuse_identical_patterns(atoms)
     @test length(fused) == 2
@@ -140,7 +140,7 @@ end
 
     unmerged_atoms = [
         _atom(1, 0, "(, (a \$x))", "(, (seen_a \$x))"),
-        _atom(1, 0, "(, (b \$y))", "(, (seen_b \$y))"),
+        _atom(1, 0, "(, (b \$y))", "(, (seen_b \$y))")
     ]
     merged_atoms = batch_space_ops(unmerged_atoms)
     @test length(merged_atoms) == 1

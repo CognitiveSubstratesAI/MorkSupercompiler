@@ -222,7 +222,8 @@ function magic_sets_transform(
         (hn isa Con && (hn::Con).head === query_head) || continue
         for bid in r.body_ids
             bn = get_node(g, bid)
-            bn isa Con && (bn::Con).head !== query_head && (bn::Con).head in derived_preds &&
+            bn isa Con && (bn::Con).head !== query_head &&
+                (bn::Con).head in derived_preds &&
                 return MagicSetsResult(copy(rules), NodeID[], :_no_magic)
         end
     end

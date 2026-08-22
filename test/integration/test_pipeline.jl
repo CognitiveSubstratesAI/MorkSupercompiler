@@ -82,7 +82,7 @@ end
 @testset "run! — drop-in for space_metta_calculus!" begin
     facts = "(edge 0 1) (edge 1 2) (edge 2 3)"
     prog = raw"(exec 0 (, (edge $x $y) (edge $y $z) (edge $z $w)) (, (dtrans $x $w)))"
-    s = new_space();
+    s = new_space()
     space_add_all_sexpr!(s, facts)
     r = run!(s, prog)
     @test r isa SCResult
@@ -95,7 +95,7 @@ end
 @testset "plan! — includes decomposition" begin
     facts = "(edge 0 1) (edge 1 2) (edge 2 3)"
     prog = raw"(exec 0 (, (edge $x $y) (edge $y $z) (edge $z $w)) (, (dtrans $x $w)))"
-    s = new_space();
+    s = new_space()
     space_add_all_sexpr!(s, facts)
     steps = plan!(s, prog)
     out = space_dump_all_sexpr(s)

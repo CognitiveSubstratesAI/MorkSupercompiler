@@ -37,7 +37,8 @@ Limitations:
   fairness obligation would require comparing branch-exploration orderings.
 """
 
-using MORK: Space, new_space, space_add_all_sexpr!, space_metta_calculus!,
+using MORK:
+    Space, new_space, space_add_all_sexpr!, space_metta_calculus!,
     space_dump_all_sexpr
 
 # ── VerifyResult — per-obligation discharge status ────────────────────────────
@@ -170,16 +171,25 @@ function verify_bisim(
     for o in obligations
         d, why = if o.kind === :forward_sim
             forward_ok,
-            forward_ok ? "source atoms ⊆ MM2 atoms" :
-            "source has $(length(setdiff(source_atoms, mm2_atoms))) atoms missing from MM2"
+            if forward_ok
+                "source atoms ⊆ MM2 atoms"
+            else
+                "source has $(length(setdiff(source_atoms, mm2_atoms))) atoms missing from MM2"
+            end
         elseif o.kind === :backward_sim
             backward_ok,
-            backward_ok ? "MM2 atoms ⊆ source atoms" :
-            "MM2 has $(length(setdiff(mm2_atoms, source_atoms))) atoms missing from source"
+            if backward_ok
+                "MM2 atoms ⊆ source atoms"
+            else
+                "MM2 has $(length(setdiff(mm2_atoms, source_atoms))) atoms missing from source"
+            end
         elseif o.kind === :fairness
             fairness_ok,
-            fairness_ok ? "both halted (src=$src_steps, mm2=$mm2_steps, budget=$max_steps)" :
-            "step budget exhausted (src=$src_steps, mm2=$mm2_steps, budget=$max_steps)"
+            if fairness_ok
+                "both halted (src=$src_steps, mm2=$mm2_steps, budget=$max_steps)"
+            else
+                "step budget exhausted (src=$src_steps, mm2=$mm2_steps, budget=$max_steps)"
+            end
         else
             false, "unknown obligation kind: $(o.kind)"
         end

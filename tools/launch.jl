@@ -16,10 +16,10 @@
 #       load_from: "my-app.act"   # optional: load from file
 
 try
-    ;
-    using Revise;
+
+    using Revise
 catch
-    ;
+
 end
 using MorkSupercompiler, MORK
 
@@ -81,8 +81,8 @@ function _load_config!(reg::SpaceRegistry, path::String)
         if cur_load !== nothing && isfile(cur_load)
             load_space!(reg, cur_name, cur_load)
         end
-        cur_name = nothing;
-        cur_role = :app;
+        cur_name = nothing
+        cur_role = :app
         cur_load = nothing
     end
 

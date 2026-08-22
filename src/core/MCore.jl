@@ -378,37 +378,37 @@ function get_node(g::MCoreGraph, id::NodeID)::MCoreNode
     !isvalid(id) && error("NULL_NODE has no node")
     tag, idx = g.index[id.idx]
     if tag == TAG_SYM
-        ;
+
         return g.syms[idx]
     elseif tag == TAG_VAR
-        ;
+
         return g.vars[idx]
     elseif tag == TAG_LIT
-        ;
+
         return g.lits[idx]
     elseif tag == TAG_CON
-        ;
+
         return g.cons[idx]
     elseif tag == TAG_APP
-        ;
+
         return g.apps[idx]
     elseif tag == TAG_ABS
-        ;
+
         return g.abss[idx]
     elseif tag == TAG_LET
-        ;
+
         return g.lets[idx]
     elseif tag == TAG_MATCH
-        ;
+
         return g.matches[idx]
     elseif tag == TAG_CHOICE
-        ;
+
         return g.choices[idx]
     elseif tag == TAG_PRIM
-        ;
+
         return g.prims[idx]
     elseif tag == TAG_MREF
-        ;
+
         return g.refs[idx]
     else
         error("unknown tag $tag")

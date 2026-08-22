@@ -31,7 +31,9 @@ using Random: AbstractRNG, default_rng
 
 "Cheap line-split of the space dump (the geo capsules are flat s-exprs)."
 function _geo_dump_lines(s::MORK.Space)::Vector{SubString{String}}
-    filter!(l -> !isempty(l), strip.(split(MORK.space_dump_all_sexpr(s), "\n"; keepempty=false)))
+    filter!(
+        l -> !isempty(l), strip.(split(MORK.space_dump_all_sexpr(s), "\n"; keepempty=false))
+    )
 end
 
 """
@@ -41,8 +43,8 @@ Read `(geo-param <name> <value>)` capsules. The returned defaults are FALLBACKS 
 only (documented §3.4/§3.5 values); the operative numbers live in the space and are tunable at
 runtime. Nothing here is a hardcoded policy — only safe fallbacks so an empty space still runs.
 """
-function geo_params(s::MORK.Space)::Dict{Symbol,Float64}
-    p = Dict{Symbol,Float64}(:lambda => 1.0, :mu => 1.0, :gamma => 0.5, :tau => 1.0,
+function geo_params(s::MORK.Space)::Dict{Symbol, Float64}
+    p = Dict{Symbol, Float64}(:lambda => 1.0, :mu => 1.0, :gamma => 0.5, :tau => 1.0,
         :alpha1 => 1.0, :alpha2 => 1.0, :alpha3 => 1.0, :budget => 1000.0,
         :eta => 0.1, :fisher_ridge => 1.0e-6, :alpha_w => 1.0, :beta_k => 1.0)   # §4.4 / §19.6.3
     for a in _geo_dump_lines(s)
@@ -68,11 +70,13 @@ end
 geo_sigma(x::Float64) = 1.0 / (1.0 + exp(-x))
 
 "§3.4  Comp = σ(α1·Cover + α2·Reach − α3·Gap).  All weights read from `p` (the space)."
-geo_comp(cover::Float64, reach::Float64, gap::Float64, p::Dict{Symbol,Float64})::Float64 =
+geo_comp(cover::Float64, reach::Float64, gap::Float64, p::Dict{Symbol, Float64})::Float64 =
     geo_sigma(p[:alpha1] * cover + p[:alpha2] * reach - p[:alpha3] * gap)
 
 "§3.5  Score(U) = Δ(φ+ψ) − λ·ΔCost + μ·ΔAlign.  λ,μ read from `p`."
-geo_score(dphi::Float64, dpsi::Float64, dcost::Float64, dalign::Float64, p::Dict{Symbol,Float64})::Float64 =
+geo_score(
+    dphi::Float64, dpsi::Float64, dcost::Float64, dalign::Float64, p::Dict{Symbol, Float64}
+)::Float64 =
     (dphi + dpsi) - p[:lambda] * dcost + p[:mu] * dalign
 
 """
@@ -82,18 +86,25 @@ geo_score(dphi::Float64, dpsi::Float64, dcost::Float64, dalign::Float64, p::Dict
 (entropic-OT style). Returns rows that sum to 1, so π_{m,·} is a distribution over analytical
 manifolds for each deme m. τ read from `p`. Pure & deterministic.
 """
-function geo_sinkhorn(C::Matrix{Float64}, p::Dict{Symbol,Float64}; iters::Int=20)::Matrix{Float64}
+function geo_sinkhorn(
+    C::Matrix{Float64}, p::Dict{Symbol, Float64}; iters::Int=20
+)::Matrix{Float64}
     K = exp.(p[:tau] .* C)
     for _ in 1:iters
-        rs = sum(K, dims=2); rs[rs .== 0] .= 1.0; K = K ./ rs
-        cs = sum(K, dims=1); cs[cs .== 0] .= 1.0; K = K ./ cs
+        rs = sum(K; dims=2)
+        rs[rs .== 0] .= 1.0
+        K = K ./ rs
+        cs = sum(K; dims=1)
+        cs[cs .== 0] .= 1.0
+        K = K ./ cs
     end
-    rs = sum(K, dims=2); rs[rs .== 0] .= 1.0
+    rs = sum(K; dims=2)
+    rs[rs .== 0] .= 1.0
     return K ./ rs
 end
 
 "§3.1/§3.10  Effective fitness F_eff = F − γ·W (weakness regularizer).  γ read from `p`."
-geo_feff(fitness::Float64, weakness::Float64, p::Dict{Symbol,Float64})::Float64 =
+geo_feff(fitness::Float64, weakness::Float64, p::Dict{Symbol, Float64})::Float64 =
     fitness - p[:gamma] * weakness
 
 """
@@ -116,7 +127,11 @@ geo_effort(neg_log_edit_lik::Float64, kl_to_prior::Float64, diversity::Float64):
 # Nothing here is hardcoded: change a factor atom → the backward field changes (test asserts it).
 
 _geo_ensure_var!(g::FactorGraph, name::Symbol) =
-    (haskey(g.var_nodes, name) || (g.var_nodes[name] = FactorNode(name, :premise; is_factor=false)); name)
+    (
+        haskey(g.var_nodes, name) ||
+            (g.var_nodes[name] = FactorNode(name, :premise; is_factor=false));
+        name
+    )
 
 """
     geo_factor_graph(space) -> FactorGraph
@@ -130,17 +145,23 @@ function geo_factor_graph(s::MORK.Space)::FactorGraph
     for a in _geo_dump_lines(s)
         m = match(r"^\(stv\s+(\S+)\s+(-?[\d.][\d.eE+-]*)\s+(-?[\d.][\d.eE+-]*)\s*\)$", a)
         m === nothing && continue
-        stvs[Symbol(m.captures[1])] = (parse(Float64, m.captures[2]), parse(Float64, m.captures[3]))
+        stvs[Symbol(m.captures[1])] = (
+            parse(Float64, m.captures[2]), parse(Float64, m.captures[3])
+        )
     end
     for a in _geo_dump_lines(s)
         if (m = match(r"^\(factor\s+(\S+)\s+(\S+?)\s*\)$", a)) !== nothing
             f = Symbol(m.captures[1])
-            g.factor_nodes[f] = FactorNode(f, :boundary; is_factor=true, rule=Symbol(m.captures[2]))
+            g.factor_nodes[f] = FactorNode(
+                f, :boundary; is_factor=true, rule=Symbol(m.captures[2])
+            )
         elseif (m = match(r"^\(premise\s+(\S+)\s+(\S+)\s+(\S+?)\s*\)$", a)) !== nothing
-            f = Symbol(m.captures[1]); v = _geo_ensure_var!(g, Symbol(m.captures[2]))
+            f = Symbol(m.captures[1])
+            v = _geo_ensure_var!(g, Symbol(m.captures[2]))
             push!(g.edges, FactorEdge(v, f, Symbol(m.captures[3])))
         elseif (m = match(r"^\(conclusion\s+(\S+)\s+(\S+?)\s*\)$", a)) !== nothing
-            f = Symbol(m.captures[1]); v = _geo_ensure_var!(g, Symbol(m.captures[2]))
+            f = Symbol(m.captures[1])
+            v = _geo_ensure_var!(g, Symbol(m.captures[2]))
             push!(g.edges, FactorEdge(v, f, :conclusion))
         end
     end
@@ -158,7 +179,9 @@ end
 over the factors read from `space` (via `compute_demand_field`). Higher demand = a subgoal/premise
 the goal more needs evidence for. The geodesic backward signal that v1's two-ends coupling consumes.
 """
-function geo_backward_g(s::MORK.Space, goal::Symbol; budget::Int=1000)::Dict{Symbol, Float64}
+function geo_backward_g(
+    s::MORK.Space, goal::Symbol; budget::Int=1000
+)::Dict{Symbol, Float64}
     _, dem = compute_demand_field(goal, geo_factor_graph(s), budget)
     return dem
 end
@@ -228,13 +251,16 @@ All weights (α1,α2,α3,τ) read from `p` (data). Pure — produces the couplin
 forward engine's `_sample_candidates` consuming `eda_model` (it currently samples randomly — a
 documented forward-completeness gap, NOT faked here).
 """
-function geo_pairing(demes::Vector{Deme}, motifs::Dict{String, Set{Symbol}}, p::Dict{Symbol, Float64})
+function geo_pairing(
+    demes::Vector{Deme}, motifs::Dict{String, Set{Symbol}}, p::Dict{Symbol, Float64}
+)
     sgids = sort(collect(keys(motifs)))
     M, K = length(demes), length(sgids)
     C = zeros(Float64, M, K)
     G = zeros(Float64, M, K)
     for (m, d) in enumerate(demes)
-        ops = geo_deme_ops(d); r = geo_reach(ops)
+        ops = geo_deme_ops(d)
+        r = geo_reach(ops)
         for (k, sg) in enumerate(sgids)
             motif = motifs[sg]
             C[m, k] = geo_comp(geo_cover(ops, motif), r, geo_gap(ops, motif), p)
@@ -267,23 +293,29 @@ subgoal k): splice = f(m)·g(k)·Comp[m,k], where g(k) = backward demand at subg
 Returns `(deme, subgoal, splice, gap)` rows sorted by descending splice (lowest action first).
 """
 function geo_splice_check(demes::Vector{Deme}, motifs::Dict{String, Set{Symbol}},
-        backward_g::Dict{Symbol, Float64}, p::Dict{Symbol, Float64})
+    backward_g::Dict{Symbol, Float64}, p::Dict{Symbol, Float64})
     sgids, C, _, _, _ = geo_pairing(demes, motifs, p)
     out = NamedTuple[]
     for (m, d) in enumerate(demes)
-        f = geo_forward_f(d); ops = geo_deme_ops(d)
+        f = geo_forward_f(d)
+        ops = geo_deme_ops(d)
         for (k, sg) in enumerate(sgids)
             g = get(backward_g, Symbol(sg), 0.0)
-            push!(out, (deme=m, subgoal=sg, splice=f * g * C[m, k], gap=geo_gap(ops, motifs[sg])))
+            push!(
+                out,
+                (deme=m, subgoal=sg, splice=f * g * C[m, k], gap=geo_gap(ops, motifs[sg]))
+            )
         end
     end
-    sort!(out; by = x -> -x.splice)
+    sort!(out; by=x -> -x.splice)
     return out
 end
 
 "§5.1.5/§3.7 deme bandit: compute allocation ∝ softmax of the sliding-window Score-trend, with a
 bonus for high maxₖ Comp. Returns normalized per-deme weights. τ read from `p`."
-function geo_bandit(score_trend::Vector{Float64}, comp_max::Vector{Float64}, p::Dict{Symbol, Float64})::Vector{Float64}
+function geo_bandit(
+    score_trend::Vector{Float64}, comp_max::Vector{Float64}, p::Dict{Symbol, Float64}
+)::Vector{Float64}
     isempty(score_trend) && return Float64[]
     w = exp.(p[:tau] .* score_trend) .* (1.0 .+ comp_max)
     s = sum(w)
@@ -310,7 +342,9 @@ function geo_align_bias!(d::Deme, motif::Set{Symbol}; strength::Float64=2.0)
         d.eda_model[op] = get(d.eda_model, op, 0.0) + strength
     end
     z = sum(values(d.eda_model))
-    z > 0 && for k in collect(keys(d.eda_model)); d.eda_model[k] /= z; end
+    z > 0 && for k in collect(keys(d.eda_model))
+        d.eda_model[k] /= z
+    end
     return d
 end
 
@@ -323,13 +357,17 @@ it CONSUMES `eda_model` (unlike the shared random `_sample_candidates`). Determi
 """
 function geo_eda_sample!(d::Deme, n::Int; rng::AbstractRNG=default_rng())
     isempty(d.eda_model) && return d
-    ops = collect(keys(d.eda_model)); w = collect(values(d.eda_model)); z = sum(w)
+    ops = collect(keys(d.eda_model))
+    w = collect(values(d.eda_model))
+    z = sum(w)
     z <= 0 && return d
     for _ in 1:n
-        r = rand(rng) * z; acc = 0.0; chosen = ops[end]
+        r = rand(rng) * z
+        acc = 0.0
+        chosen = ops[end]
         for i in eachindex(ops)
             acc += w[i]
-            r <= acc && (chosen = ops[i]; break)
+            r <= acc && (chosen=ops[i]; break)
         end
         d.fitnesses[dag_intern!(d.store, chosen)] = 0.0
     end
@@ -350,8 +388,8 @@ mask-based) and full §8 (n-ary factor-graph EDA + belief propagation) remain as
 shared `evolve_demes!` random round is still used on the unsteered path.
 """
 function geo_evolve_steered!(demes::Vector{Deme}, motifs::Dict{String, Set{Symbol}},
-        fitness_fn::Function, p::Dict{Symbol, Float64}; n_cand::Int=12, top_k::Int=5,
-        rng::AbstractRNG=default_rng())
+    fitness_fn::Function, p::Dict{Symbol, Float64}; n_cand::Int=12, top_k::Int=5,
+    rng::AbstractRNG=default_rng())
     sgids, C, _, _, _ = geo_pairing(demes, motifs, p)
     for (m, d) in enumerate(demes)
         isempty(sgids) || geo_align_bias!(d, motifs[sgids[argmax(@view C[m, :])]])
@@ -359,13 +397,16 @@ function geo_evolve_steered!(demes::Vector{Deme}, motifs::Dict{String, Set{Symbo
         for id in collect(keys(d.store.nodes))
             d.fitnesses[id] = fitness_fn(d.store, id)
         end
-        scored = sort(collect(d.fitnesses); by = x -> -x[2])
+        scored = sort(collect(d.fitnesses); by=x -> -x[2])
         best_f = isempty(scored) ? 0.0 : scored[1][2]
         top = [id for (id, f) in scored if f >= best_f - 1e-9]    # elite = best-fitness tier (Occam, drops the worse)
         length(top) > top_k && (top = top[1:top_k])
         counts = Dict{Symbol, Int}()
         for id in top
-            haskey(d.store.nodes, id) && (counts[d.store.nodes[id].head] = get(counts, d.store.nodes[id].head, 0) + 1)
+            haskey(d.store.nodes, id) && (
+                counts[d.store.nodes[id].head] =
+                    get(counts, d.store.nodes[id].head, 0) + 1
+            )
         end
         empty!(d.eda_model)                                       # re-estimate from survivors (the fix)
         tot = max(1, sum(values(counts)))
@@ -385,8 +426,10 @@ toward its best-paired subgoal motif and EDA-sampled from that bias BEFORE the f
 two ends genuinely pull each other (Ω_align↓). With `steer=false` it is the v1c MVP (coupling
 measured, forward variation random). All structure read from `space`; nothing hardcoded.
 """
-function geo_step!(demes::Vector{Deme}, s::MORK.Space, goal::Symbol, p::Dict{Symbol, Float64};
-        fitness_fn::Function, steer::Bool=false, n_inject::Int=12, rng::AbstractRNG=default_rng())
+function geo_step!(demes::Vector{Deme}, s::MORK.Space, goal::Symbol,
+    p::Dict{Symbol, Float64};
+    fitness_fn::Function, steer::Bool=false, n_inject::Int=12,
+    rng::AbstractRNG=default_rng())
     motifs = geo_subgoal_motifs(s)
     if steer && !isempty(motifs) && !isempty(demes)
         geo_evolve_steered!(demes, motifs, fitness_fn, p; n_cand=n_inject, rng=rng)  # EDA-guided — closes the loop (Gap→0)
@@ -396,7 +439,11 @@ function geo_step!(demes::Vector{Deme}, s::MORK.Space, goal::Symbol, p::Dict{Sym
     bwd = geo_backward_g(s, goal)
     sgids, C, π, omega, sgap = geo_pairing(demes, motifs, p)
     splices = geo_splice_check(demes, motifs, bwd, p)
-    comp_max = isempty(sgids) ? zeros(Float64, length(demes)) : [maximum(@view C[m, :]) for m in 1:length(demes)]
+    comp_max = if isempty(sgids)
+        zeros(Float64, length(demes))
+    else
+        [maximum(@view C[m, :]) for m in 1:length(demes)]
+    end
     trend = [geo_forward_f(d) for d in demes]                 # MVP Score-trend proxy = forward f
     alloc = geo_bandit(trend, comp_max, p)
     return (subgoals=sgids, comp=C, pairing=π, omega_align=omega, subgoal_gap=sgap,
@@ -436,17 +483,21 @@ product/mask variety — and return the `n` children that best COVER `motif`. Co
 into a full coverer, which neither parent reaches alone.
 """
 function geo_recombine(parents::Vector{Set{Symbol}}, motif::Set{Symbol};
-        rng::AbstractRNG=default_rng(), n::Int=4)::Vector{Set{Symbol}}
+    rng::AbstractRNG=default_rng(), n::Int=4)::Vector{Set{Symbol}}
     length(parents) < 2 && return copy(parents)
     children = Set{Symbol}[]
     for i in 1:length(parents), j in (i + 1):length(parents)   # systematic joins = building-block combine
         push!(children, geo_xover_join(parents[i], parents[j]))
     end
     for _ in 1:max(n, 4)                                        # product/mask variety
-        a = parents[rand(rng, 1:length(parents))]; b = parents[rand(rng, 1:length(parents))]
-        push!(children, rand(rng, Bool) ? geo_xover_product(a, b) : geo_xover_mask(a, b, motif))
+        a = parents[rand(rng, 1:length(parents))]
+        b = parents[rand(rng, 1:length(parents))]
+        push!(
+            children,
+            rand(rng, Bool) ? geo_xover_product(a, b) : geo_xover_mask(a, b, motif)
+        )
     end
-    sort!(children; by = c -> -geo_cover(c, motif))
+    sort!(children; by=c -> -geo_cover(c, motif))
     return children[1:min(n, length(children))]
 end
 
@@ -473,8 +524,14 @@ function geo_metrics(omega_seq::Vector{Float64}, pairing_seq::Vector{<:AbstractM
         mu = action_length / length(deltas)
         sqrt(sum((d - mu)^2 for d in deltas) / length(deltas))
     end
-    pi_stability = length(pairing_seq) >= 2 ? sum(abs.(pairing_seq[end] .- pairing_seq[end - 1])) : 0.0
-    return (coupling_gain=coupling_gain, action_length=action_length, evenness=evenness, pi_stability=pi_stability)
+    pi_stability =
+        length(pairing_seq) >= 2 ? sum(abs.(pairing_seq[end] .- pairing_seq[end - 1])) : 0.0
+    return (
+        coupling_gain=coupling_gain,
+        action_length=action_length,
+        evenness=evenness,
+        pi_stability=pi_stability
+    )
 end
 
 """
@@ -538,25 +595,31 @@ then EXPAND by adding the op with the highest co-occurrence with the chosen set 
 belief-propagation-lite). Preserves the mined building blocks; stops when no co-occurrence signal
 remains (won't glue unrelated ops). Full loopy/junction-tree BP is the deeper §8.3.
 """
-function geo_fg_sample(marg::Dict{Symbol, Float64}, fac::Dict{Tuple{Symbol, Symbol}, Float64};
-        rng::AbstractRNG=default_rng(), n::Int=4, size::Int=3)
+function geo_fg_sample(marg::Dict{Symbol, Float64},
+    fac::Dict{Tuple{Symbol, Symbol}, Float64};
+    rng::AbstractRNG=default_rng(), n::Int=4, size::Int=3)
     isempty(marg) && return Set{Symbol}[]
-    ops = collect(keys(marg)); w = collect(values(marg)); z = sum(w)
+    ops = collect(keys(marg))
+    w = collect(values(marg))
+    z = sum(w)
     cooc(a, b) = get(fac, a < b ? (a, b) : (b, a), 0.0)
     out = Set{Symbol}[]
     for _ in 1:n
-        r = rand(rng) * z; acc = 0.0; seed = ops[end]
+        r = rand(rng) * z
+        acc = 0.0
+        seed = ops[end]
         for i in eachindex(ops)
             acc += w[i]
-            r <= acc && (seed = ops[i]; break)
+            r <= acc && (seed=ops[i]; break)
         end
         chosen = Set([seed])
         while length(chosen) < size
-            best = nothing; bestv = 0.0
+            best = nothing
+            bestv = 0.0
             for o in ops
                 o in chosen && continue
                 v = maximum((cooc(o, c) for c in chosen); init=0.0)   # ⊕ = max over chosen members
-                v > bestv && (best = o; bestv = v)
+                v > bestv && (best=o; bestv=v)
             end
             best === nothing && break
             push!(chosen, best)
@@ -580,12 +643,13 @@ One round of block-based GEO-EVO over a population of op-sets, USING §7 (`geo_r
 backward subgoal the recombination is biased toward. Returns the new population (elite + offspring).
 """
 function geo_evolve_blocks!(pop::Vector{Set{Symbol}}, motif::Set{Symbol}, fitness;
-        rng::AbstractRNG=default_rng(), n::Int=8, elite::Int=4, size::Int=3)
-    scored = sort([(s, float(fitness(s))) for s in pop]; by = x -> -x[2])
+    rng::AbstractRNG=default_rng(), n::Int=8, elite::Int=4, size::Int=3)
+    scored = sort([(s, float(fitness(s))) for s in pop]; by=x -> -x[2])
     keep = Set{Symbol}[s for (s, _) in scored[1:min(elite, length(scored))]]
     fits = Float64[float(fitness(s)) for s in keep]
     marg, fac = geo_mine_factors(keep, fits)                              # §8.2 mine co-occurrence
-    offspring = isempty(marg) ? Set{Symbol}[] : geo_fg_sample(marg, fac; rng=rng, n=n, size=size)  # §8.3
+    offspring =
+        isempty(marg) ? Set{Symbol}[] : geo_fg_sample(marg, fac; rng=rng, n=n, size=size)  # §8.3
     append!(offspring, geo_recombine(keep, motif; rng=rng, n=n))         # §7 building-block recombine
     return vcat(keep, offspring)
 end
@@ -602,7 +666,7 @@ geo_side_choice(fwd_cost::Float64, bwd_cost::Float64, c_star::Float64)::Symbol =
 "§3.7.1 progress test — a deme stays in the corridor iff it raised φ+ψ+μ·align AND its per-step cost
 is within the band [cmin, cmax]. μ read from `p`."
 geo_progress(dphi::Float64, dpsi::Float64, dalign::Float64, cost::Float64,
-        p::Dict{Symbol, Float64}; cmin::Float64=0.0, cmax::Float64=Inf)::Bool =
+    p::Dict{Symbol, Float64}; cmin::Float64=0.0, cmax::Float64=Inf)::Bool =
     (dphi + dpsi + p[:mu] * dalign) > 0.0 && cmin <= cost <= cmax
 
 "§3.7.3 diversity guard — novelty = mean Gap of `ops` to the whole population (duplicates count as
@@ -620,7 +684,7 @@ end
 maxₖ Comp — where to spawn replacements (high-coupling waypoints / meet-points, the §3.7.4 preference).
 """
 function geo_corridor_maintain(score_trend::Vector{Float64}, comp_max::Vector{Float64};
-        retire_below::Float64=0.0)
+    retire_below::Float64=0.0)
     retire = [m for m in eachindex(score_trend) if score_trend[m] < retire_below]
     spawn_near = sortperm(comp_max; rev=true)
     return (retire, spawn_near)
@@ -653,7 +717,8 @@ end
 Migration graph is DATA; re-points which motif `geo_evolve_steered!` steers the deme toward.
 """
 function geo_island_migrate(demes::Vector{Deme}, motifs::Dict{String, Set{Symbol}},
-        edges::Dict{String, Set{String}}, p::Dict{Symbol, Float64}; rng::AbstractRNG=default_rng())
+    edges::Dict{String, Set{String}}, p::Dict{Symbol, Float64};
+    rng::AbstractRNG=default_rng())
     sgids, C, _, _, _ = geo_pairing(demes, motifs, p)
     out = Tuple{Int, String, String}[]
     isempty(sgids) && return out
@@ -661,12 +726,15 @@ function geo_island_migrate(demes::Vector{Deme}, motifs::Dict{String, Set{Symbol
         from = sgids[argmax(@view C[m, :])]
         nbr = [k for (k, sg) in enumerate(sgids) if sg in get(edges, from, Set{String}())]
         isempty(nbr) && continue
-        w = [exp(p[:tau] * C[m, k]) for k in nbr]; z = sum(w)
+        w = [exp(p[:tau] * C[m, k]) for k in nbr]
+        z = sum(w)
         z == 0 && continue
-        r = rand(rng) * z; acc = 0.0; chosen = nbr[end]
+        r = rand(rng) * z
+        acc = 0.0
+        chosen = nbr[end]
         for (i, k) in enumerate(nbr)
             acc += w[i]
-            r <= acc && (chosen = k; break)
+            r <= acc && (chosen=k; break)
         end
         push!(out, (m, from, sgids[chosen]))
     end
@@ -675,7 +743,9 @@ end
 
 # ── B — multiobjective via Pareto product-order + density-greedy (NOT hypervolume) ─────────────
 "§5.2/§19 objective vector (F_eff, D, W_evid, Align) — all MAXIMIZED under the product order."
-geo_objective_vector(feff::Float64, diversity::Float64, w_evid::Float64, align::Float64)::NTuple{4, Float64} =
+geo_objective_vector(
+    feff::Float64, diversity::Float64, w_evid::Float64, align::Float64
+)::NTuple{4, Float64} =
     (feff, diversity, w_evid, align)
 
 "Product-order dominance (dependence_dichotomy §2 Def 1): `a` dominates `b` iff ≥ in all dims, > in one."
@@ -695,44 +765,58 @@ max marginal `gain(e, chosen)/cost(e)` while Σcost ≤ `budget`. For a submodul
 (1−e^{−ρ})-approximation to the budget-constrained optimum. The faithful §5.2 multiobjective selector
 (hypervolume is absent from the canonical theory spec).
 """
-function geo_density_greedy(elements::Vector{T}, gain::Function, cost::Function, budget::Float64) where {T}
-    chosen = T[]; spent = 0.0; pool = collect(elements)
+function geo_density_greedy(
+    elements::Vector{T}, gain::Function, cost::Function, budget::Float64
+) where {T}
+    chosen = T[]
+    spent = 0.0
+    pool = collect(elements)
     while !isempty(pool)
-        best = nothing; bestratio = -Inf; bestcost = 0.0
+        best = nothing
+        bestratio = -Inf
+        bestcost = 0.0
         for e in pool
-            c = float(cost(e)); c <= 0 && continue
+            c = float(cost(e))
+            c <= 0 && continue
             spent + c > budget && continue
             ratio = float(gain(e, chosen)) / c
-            ratio > bestratio && (best = e; bestratio = ratio; bestcost = c)
+            ratio > bestratio && (best=e; bestratio=ratio; bestcost=c)
         end
         best === nothing && break
-        push!(chosen, best); spent += bestcost
+        push!(chosen, best)
+        spent += bestcost
         pool = filter(e -> !(e === best), pool)
     end
     return chosen
 end
 
 "§19.6.3 cost-normalized multiobjective move score: Δ(φ+ψ) − λΔCost + α·ΔW_evid − β·ΔK_comp + μ·ΔAlign."
-geo_score_mo(dphi::Float64, dpsi::Float64, dcost::Float64, dw_evid::Float64, dk_comp::Float64,
-        dalign::Float64, p::Dict{Symbol, Float64})::Float64 =
-    (dphi + dpsi) - p[:lambda] * dcost + p[:alpha_w] * dw_evid - p[:beta_k] * dk_comp + p[:mu] * dalign
+geo_score_mo(dphi::Float64, dpsi::Float64, dcost::Float64, dw_evid::Float64,
+    dk_comp::Float64,
+    dalign::Float64, p::Dict{Symbol, Float64})::Float64 =
+    (dphi + dpsi) - p[:lambda] * dcost + p[:alpha_w] * dw_evid - p[:beta_k] * dk_comp +
+    p[:mu] * dalign
 
 # ── C — natural-gradient / mirror-descent in knob space (§4.4 NES/CMA-style) ────────────────────
 # self-contained SPD solve (Gaussian elimination, partial pivot) — avoids a LinearAlgebra dependency
 function _geo_solve(A::Matrix{Float64}, b::Vector{Float64})::Vector{Float64}
-    n = length(b); M = copy(A); x = copy(b)
+    n = length(b)
+    M = copy(A)
+    x = copy(b)
     for k in 1:n
         pr = k
         for i in (k + 1):n
             abs(M[i, k]) > abs(M[pr, k]) && (pr = i)
         end
         if pr != k
-            M[k, :], M[pr, :] = M[pr, :], M[k, :]; x[k], x[pr] = x[pr], x[k]
+            M[k, :], M[pr, :] = M[pr, :], M[k, :]
+            x[k], x[pr] = x[pr], x[k]
         end
         piv = abs(M[k, k]) < 1.0e-300 ? 1.0e-300 : M[k, k]
         for i in (k + 1):n
             f = M[i, k] / piv
-            M[i, :] .-= f .* M[k, :]; x[i] -= f * x[k]
+            M[i, :] .-= f .* M[k, :]
+            x[i] -= f * x[k]
         end
     end
     y = zeros(n)
@@ -747,9 +831,12 @@ function _geo_solve(A::Matrix{Float64}, b::Vector{Float64})::Vector{Float64}
 end
 
 "§4.4 Fisher-like preconditioner: fitness-weighted covariance of knob perturbations (NES/CMA-style)."
-function geo_knob_covariance(samples::Vector{Vector{Float64}}, weights::Vector{Float64})::Matrix{Float64}
+function geo_knob_covariance(
+    samples::Vector{Vector{Float64}}, weights::Vector{Float64}
+)::Matrix{Float64}
     isempty(samples) && return zeros(0, 0)
-    d = length(samples[1]); wz = sum(weights)
+    d = length(samples[1])
+    wz = sum(weights)
     wz <= 0 && return zeros(d, d)
     mu = zeros(d)
     for i in eachindex(samples)
@@ -765,8 +852,11 @@ function geo_knob_covariance(samples::Vector{Vector{Float64}}, weights::Vector{F
 end
 
 "§4.4/§5.2 natural gradient g̃ = (F + ridge·I)⁻¹ g (Fisher-preconditioned ≈ Riemannian geodesic step)."
-function geo_natural_grad(grad::Vector{Float64}, F::Matrix{Float64}; ridge::Float64=1.0e-6)::Vector{Float64}
-    n = length(grad); Fr = copy(F)
+function geo_natural_grad(
+    grad::Vector{Float64}, F::Matrix{Float64}; ridge::Float64=1.0e-6
+)::Vector{Float64}
+    n = length(grad)
+    Fr = copy(F)
     for i in 1:n
         Fr[i, i] += ridge
     end
@@ -775,7 +865,7 @@ end
 
 "§4.4 natural-gradient / mirror knob step θ' = θ + η·(F+ridge·I)⁻¹ g."
 geo_mirror_step(theta::Vector{Float64}, grad::Vector{Float64}, F::Matrix{Float64};
-        eta::Float64=0.1, ridge::Float64=1.0e-6)::Vector{Float64} =
+    eta::Float64=0.1, ridge::Float64=1.0e-6)::Vector{Float64} =
     theta .+ eta .* geo_natural_grad(grad, F; ridge=ridge)
 
 # ── D — Wasserstein / entropic-OT coupling between 𝒮 and ℳ (§5.2; reuses geo_sinkhorn) ──────────
@@ -790,7 +880,9 @@ geo_ground_metric(a::Vector{Set{Symbol}}, b::Vector{Set{Symbol}})::Matrix{Float6
 `geo_sinkhorn` over exp(τ·(−Gap)) — the Schrödinger-bridge coupling ρ ∝ f·g (§3.2). Reuses the
 existing Sinkhorn solver (does NOT reimplement OT).
 """
-function geo_ot_couple(demes::Vector{Deme}, motifs::Dict{String, Set{Symbol}}, p::Dict{Symbol, Float64})
+function geo_ot_couple(
+    demes::Vector{Deme}, motifs::Dict{String, Set{Symbol}}, p::Dict{Symbol, Float64}
+)
     sgids = sort(collect(keys(motifs)))
     M, K = length(demes), length(sgids)
     (M == 0 || K == 0) && return zeros(M, K)

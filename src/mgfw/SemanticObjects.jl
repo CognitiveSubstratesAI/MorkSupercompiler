@@ -132,40 +132,40 @@ abstract type MGType end
 struct MGUnit <: MGType end                           # 1
 struct MGVoid <: MGType end                           # 0
 struct MGBase <: MGType
-    ;
+
     name::Symbol
 end             # Base(σ)
 struct MGProd <: MGType
-    ;
-    a::MGType;
+
+    a::MGType
     b::MGType
 end     # A × B
 struct MGSum <: MGType
-    ;
-    a::MGType;
+
+    a::MGType
     b::MGType
 end     # A + B
 struct MGFun <: MGType
-    ;
-    dom::MGType;
+
+    dom::MGType
     cod::MGType
 end # A → B
 struct MGSemType <: MGType
-    ;
+
     sem::SemanticType
 end        # Rel/Prog/Model/Codec
 struct MGPres <: MGType
-    ;
+
     pres::PresType
 end           # Pres(G,A)
 struct MGRewrite <: MGType
-    ;
-    geom::GeomTag;
+
+    geom::GeomTag
     a::MGType
 end # Rewrite(G,A)
 struct MGCost <: MGType
-    ;
-    geom::GeomTag;
+
+    geom::GeomTag
     a::MGType
 end # Cost(G,A)
 

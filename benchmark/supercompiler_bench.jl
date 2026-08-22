@@ -21,8 +21,8 @@ using BenchmarkTools
 
 function measure_planning(program::String, label::String)
     t_static = @elapsed for _ in 1:1000
-        ;
-        plan_static(program);
+
+        plan_static(program)
     end
     println("  [static]  $label: $(round(t_static*1000/1000, sigdigits=3)) ms/plan")
 end
@@ -55,8 +55,8 @@ function bench_execution(facts::String, program::String, steps::Int, label::Stri
     # Report
     report = plan_report(
         begin
-            s3=new_space();
-            space_add_all_sexpr!(s3, facts);
+            s3=new_space()
+            space_add_all_sexpr!(s3, facts)
             s3
         end,
         program

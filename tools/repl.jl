@@ -11,10 +11,10 @@
 # Use this REPL + Revise for all development.
 
 try
-    ;
-    using Revise;
+
+    using Revise
 catch
-    ;
+
 end
 
 using MorkSupercompiler
