@@ -2,4 +2,15 @@
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
 MORK = "162375cb-4023-4ef9-895b-22c0041d5c13"
 MorkSupercompiler = "d4e7c9f0-1234-5678-abcd-ef0123456789"
-PathMap = "a8b3d4e5-f012-4567-89ab-cdef01234567"
+PathMaps = "a8b3d4e5-f012-4567-89ab-cdef01234567"
+
+# ⚠️ PATHS RECORDED HERE, NOT ONLY IN THE MANIFEST (added 2026-08-23). These three were dev-linked
+# the old way — `Pkg.develop` wrote the paths into Manifest.toml and Project.toml said nothing. That
+# is unrecoverable if the Manifest is ever deleted: `Pkg.instantiate()` then goes to the REGISTRY and
+# fails with "expected package `PathMaps [a8b3d4e5]` to be registered". Measured today while
+# regenerating this environment after the PathMap -> PathMaps rename.
+# The DIRECTORY is still `PathMap`; only the package/module name changed.
+[sources]
+MORK = {path = "../../MORK"}
+MorkSupercompiler = {path = ".."}
+PathMaps = {path = "../../PathMap"}
