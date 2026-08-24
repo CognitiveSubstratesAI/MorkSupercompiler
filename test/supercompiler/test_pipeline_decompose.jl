@@ -223,3 +223,59 @@ end
     @test length(parse_program(out)) >= 3
     @test occursin(SC_TMP_PREFIX, out)
 end
+
+# ── N4 regression: NO STAGE MAY BE DISCONNECTED (added 2026-08-24) ────────────
+#
+# 🔴 WHAT THIS CATCHES, MEASURED. `decompose_exec` used to pre-sort sources by `static_score`
+# alone — variable-fraction, no connectivity — so on a corpus where that disagrees with
+# cardinality it grouped two sources SHARING NO VARIABLE into stage 1:
+#
+#     (c $i $j)  static 0.667  card  20      (a K $i) static 0.333 card 300
+#     (b K $j)   static 0.333  card 300      <- shares NO variable with (a K $i)
+#
+#     was: (, (a K $i) (b K $j)) -> _sc_tmp0   CARTESIAN PRODUCT, 90000 atoms
+#     now: (, (a K $i) (c $i $j)) -> _sc_tmp0  connected on $i,       20 atoms   (4500x)
+#
+# That is the O(K^n) blowup this module exists to PREVENT, produced by its own pre-sort. The
+# assertion below is structural, so it holds without a corpus and cannot be satisfied by luck.
+@testset "decompose — every stage is CONNECTED (N4 regression)" begin
+    prog = raw"(exec 0 (, (c $i $j) (a K $i) (b K $j)) (O (+ (out $i $j))))"
+    stages = parse_program(decompose_program(prog))
+    @test length(stages) >= 2
+
+    for st in stages
+        items = (st::SList).items
+        ci = conjunction_index(items)
+        ci === nothing && continue
+        srcs = (items[ci]::SList).items[2:end]
+        length(srcs) <= 1 && continue
+        # every source after the first shares a variable with the union of those before it
+        bound = collect_var_names(srcs[1])
+        for k in 2:length(srcs)
+            vs = collect_var_names(srcs[k])
+            @test !isdisjoint(vs, bound)   # a disconnected pair here IS the cartesian product
+            union!(bound, vs)
+        end
+    end
+end
+
+@testset "decompose — connectivity reorder PRESERVES the answer set" begin
+    # A reordering may change cost, never results.
+    s = new_space()
+    space_add_all_sexpr!(
+        s, join([["(a K $i)" for i in 1:30]; ["(b K $j)" for j in 1:30];
+                 ["(c $i $i)" for i in 1:5]], " ")
+    )
+    prog = raw"(exec 0 (, (c $i $j) (a K $i) (b K $j)) (O (+ (out $i $j))))"
+    answers = p -> begin
+        sp = new_space()
+        space_add_all_sexpr!(
+            sp, join([["(a K $i)" for i in 1:30]; ["(b K $j)" for j in 1:30];
+                      ["(c $i $i)" for i in 1:5]], " ")
+        )
+        execute!(sp, p; opts=SCOptions(plan=false, decompose=true, max_steps=50))
+        sort([ln for ln in split(space_dump_all_sexpr(sp), "\n") if occursin("(out ", ln)])
+    end
+    @test answers(prog) == answers(plan_program(s, prog))
+    @test length(answers(prog)) == 5
+end

@@ -230,4 +230,4 @@ Base.:(==)(::SVar, ::SList) = false
 
 export SNode, SAtom, SVar, SList
 export parse_program, parse_sexpr, sprint_sexpr, sprint_program
-export count_vars, count_atoms, is_conjunction, is_ground
+export count_vars, count_atoms, is_conjunction, is_ground, conjunction_index

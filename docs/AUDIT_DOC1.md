@@ -169,7 +169,29 @@ sources — exactly the O(K^n) blowup `PipelineDecompose` exists to prevent. MOR
 ⇒ **N4 is the binding constraint on the default path.** No improvement to any estimator upstream of
 it can reach execution while it stands.
 
-### The fix, decided 2026-08-24 — and TWO plausible-sounding versions were REJECTED
+### ✅ FIXED 2026-08-24 — and TWO plausible-sounding versions were REJECTED first
+
+**MEASURED AFTER THE FIX, same corpus:**
+
+    planned    : (, (c $i $j) (a K $i) (b K $j))
+    decomposed : (exec 0 (, (a K $i) (c $i $j)) (, (_sc_tmp0 $i $j)))     <- connected on $i
+                 (exec 0 (, (_sc_tmp0 $i $j) (b K $j)) (O (+ (out $i $j))))
+
+    first-stage intermediate _sc_tmp0 :  20 atoms   (was 90000 — 4500x)
+    answers(original) == answers(planned) : true, 20 answers both ways
+
+Two gates added in `test/supercompiler/test_pipeline_decompose.jl`: a STRUCTURAL one (every source
+after the first in any stage shares a variable with the union of those before it — holds without a
+corpus, cannot be satisfied by luck) and an answer-set equivalence one (a reordering may change
+cost, never results).
+
+Implementation: `_connectivity_order` replaces the bare `sortperm(static_score)`, plus
+`_promote_connected` inside `_build_chain!` because `_connectivity_order` establishes connectivity
+against the union of all previously chosen sources while each later stage actually joins
+`_sc_tmpN`, which carries only the FLOW VARS — a source connected via a variable that did not flow
+into the intermediate would otherwise head a disconnected stage deeper in the chain.
+
+### The design, and the two rejected alternatives
 
 **✅ THE ONE TO BUILD: connectivity as a CONSTRAINT ON THE EXISTING SORT, not a replacement.**
 When choosing which sources go into a stage, prefer ones sharing a variable with what is already
@@ -181,7 +203,9 @@ one. Small, local, no new dependency, and it removes the measured harm directly.
 leaving two orderings to reason about instead of one.
 
 **❌ REJECTED — "refuse to group disconnected sources".** *Refuse* is the wrong verb: `decompose`
-has to emit something. The constraint formulation above is what "refuse" was reaching for.
+has to emit something. The constraint formulation above is what "refuse" was reaching for. Note the
+fallback in `_connectivity_order` is exactly this point: when NOTHING connects (first pick, or a
+genuinely disconnected query) it takes the full pool rather than failing.
 
 **🔗 Same property, two layers apart.** Routing on CONNECTIVITY — every conjunct shares a variable
 ⇒ join, else stock — is also what separated the leapfrog predictor's 5/5 from 0/4

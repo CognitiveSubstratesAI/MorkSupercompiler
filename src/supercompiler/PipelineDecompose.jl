@@ -69,6 +69,89 @@ function flow_vars(
     sort!(collect(intersect(introduced, needed_later)))
 end
 
+# ── Source ordering — CONNECTIVITY IS A CONSTRAINT, static_score only breaks ties ─────────────
+
+"""
+    _connectivity_order(sources) -> Vector{Int}
+
+Order sources so that each one after the first SHARES A VARIABLE with those already chosen,
+breaking ties by `static_score`, and on equal scores by original position — so wherever
+connectivity does not bind, the previous stable `sortperm(static_score)` behaviour is preserved.
+
+🔴 WHY THIS EXISTS — MEASURED 2026-08-24. This was `sortperm(static_score.(sources))`, full stop.
+`static_score` is variable-fraction only: no stats, no btm, and NO CONNECTIVITY. It therefore
+prefers ground-heavy patterns, and on a corpus where that disagrees with cardinality it grouped two
+sources SHARING NO VARIABLE into the first stage:
+
+    (c \$i \$j)  static 0.667  card  20      <- best by cardinality, worst by static_score
+    (a K \$i)   static 0.333  card 300
+    (b K \$j)   static 0.333  card 300      <- shares NO variable with (a K \$i)
+
+    was:  (, (a K \$i) (b K \$j)) -> _sc_tmp0     CARTESIAN PRODUCT, 90000 atoms
+    now:  (, (a K \$i) (c \$i \$j)) -> _sc_tmp0    connected on \$i,        20 atoms   (4500x)
+
+i.e. the pre-sort of the module whose whole purpose is the Rule-of-64 fix (O(K^n) -> O(K^2)/stage)
+could itself produce the O(K^n) blowup. Connectivity is the property that decides whether a stage
+IS a join; cardinality proxies are what drift.
+
+⚠️ THIS IS A CONSTRAINT, NOT A REPLACEMENT, and two other designs were rejected (see
+`docs/AUDIT_DOC1.md` §N4): consuming QueryPlanner's order would make this transform depend on a
+stage that is OPTIONAL (`plan=false` is valid) and need a fallback anyway; "refuse to group
+disconnected sources" is not implementable as stated, since the chain has to emit something.
+
+⚠️ WHAT THIS DOES **NOT** FIX (N3/N4 interact — do not read this as closure): among CONNECTED
+candidates the choice is still `static_score`, the same variable-fraction heuristic that is wrong in
+the same direction as `estimate_cardinality`. This removes the CATASTROPHIC case and leaves the
+ordinary one.
+"""
+function _connectivity_order(sources::AbstractVector{<:SNode})::Vector{Int}
+    n = length(sources)
+    n <= 1 && return collect(1:n)
+
+    scores = static_score.(sources)
+    vars = Set{String}[collect_var_names(src) for src in sources]
+
+    remaining = collect(1:n)
+    order = Int[]
+    bound = Set{String}()
+
+    while !isempty(remaining)
+        # Candidates joined to what is already chosen. Empty on the FIRST pick (nothing is bound
+        # yet) and for a genuinely disconnected query — in both cases fall back to the full pool
+        # rather than failing, because the chain must still emit something.
+        connected = filter(i -> !isdisjoint(vars[i], bound), remaining)
+        pool = isempty(connected) ? remaining : connected
+
+        # `argmin` on a Vector returns the FIRST minimum, and `pool` preserves original order,
+        # so ties break by position exactly as the previous MergeSort did.
+        best = pool[argmin(Float64[scores[i] for i in pool])]
+
+        push!(order, best)
+        union!(bound, vars[best])
+        deleteat!(remaining, findfirst(==(best), remaining))
+    end
+    order
+end
+
+"""
+    _promote_connected(srcs, bound) -> Vector{SNode}
+
+Move the first source sharing a variable with `bound` to the front, preserving relative order
+otherwise. No-op when the head already connects, or when nothing does.
+
+Needed because `_connectivity_order` establishes connectivity against the union of ALL previously
+chosen sources, while each later stage actually joins `_sc_tmpN`, which carries only the FLOW VARS.
+A source connected via a variable that did not flow into the intermediate would otherwise head a
+disconnected stage deeper in the chain.
+"""
+function _promote_connected(srcs::Vector{SNode}, bound::Set{String})::Vector{SNode}
+    isempty(srcs) && return srcs
+    isdisjoint(collect_var_names(srcs[1]), bound) || return srcs
+    k = findfirst(sr -> !isdisjoint(collect_var_names(sr), bound), srcs)
+    k === nothing && return srcs
+    SNode[srcs[k]; srcs[1:(k - 1)]; srcs[(k + 1):end]]
+end
+
 # ── Decomposition ─────────────────────────────────────────────────────────────
 
 """
@@ -122,10 +205,8 @@ function decompose_exec(atom::SNode; counter::Base.RefValue{Int}=Ref(0))::Decomp
     suffix = collect(items[(conj_idx + 1):end])
     final_template = length(suffix) == 1 ? suffix[1] : SList([SAtom(","); suffix])
 
-    # Pre-order sources by static selectivity
-    scores = static_score.(sources)
-    perm = sortperm(scores; alg=MergeSort)
-    ordered_sources = sources[perm]
+    # Order sources: connectivity constrains, static_score breaks ties (see _connectivity_order).
+    ordered_sources = sources[_connectivity_order(sources)]
 
     stages = SNode[]
     _build_chain!(stages, prefix, ordered_sources, final_template, counter)
@@ -156,6 +237,10 @@ function _build_chain!(
 
     # Flow variables: introduced in first_srcs AND needed in rest_srcs OR final template
     all_vars = flow_vars(sources, split_at, n; final_template=final_template)
+
+    # The next stage joins `tmp_source` (carrying exactly `all_vars`) with rest_srcs[1], so make
+    # sure that head actually connects to it — connectivity at EVERY level, not just the first.
+    rest_srcs = _promote_connected(rest_srcs, Set(all_vars))
 
     # Intermediate atom: _sc_tmp0, _sc_tmp1, ...
     tmp_id = counter[]

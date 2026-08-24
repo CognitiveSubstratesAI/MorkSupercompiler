@@ -402,7 +402,7 @@ end
 
 export EffectKind, EFF_PURE, EFF_READ, EFF_APPEND, EFF_WRITE, EFF_OBSERVE
 export effects_commute
-export JoinNode, build_join_nodes, build_join_nodes_dynamic
+export JoinNode, build_join_nodes, build_join_nodes_dynamic, collect_var_names
 export plan_join_order, plan_join_order_static
 export plan_conjunction, plan_conjunction_dynamic
 export plan_program, plan_program_dynamic
