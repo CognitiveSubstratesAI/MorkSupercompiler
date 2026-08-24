@@ -85,8 +85,8 @@ end
     @test 0.0 < structural_similarity(a, d) < 1.0   # partial match
 end
 
-# §4.2.3 Algorithm 4 — ApplyRule (UncertainModusPonens)
-@testset "ApplyRule — UncertainModusPonens (Algorithm 4, §4.2.3)" begin
+# §4.3 Algorithm 4 — ApplyRule (UncertainModusPonens)
+@testset "ApplyRule — UncertainModusPonens (Algorithm 4, §4.3)" begin
     premise = pbox_interval(0.8, 0.9, 0.95)
     rule_str = pbox_interval(0.9, 1.0, 0.9)
 

@@ -93,3 +93,43 @@ end
     # (b \$x) has fewer atoms → should come first
     @test order[1] == 2   # b is more selective
 end
+
+# ── Known-answer gate (added 2026-08-24) ──────────────────────────────────────
+#
+# 🔴 WHY THIS TESTSET EXISTS — and it is NOT about one defect.
+#
+# All 158 assertions across test/approx/ + test_evo_specializer.jl are SHAPE
+# checks: `hi > lo`, `bound >= sum(widths)`, `result isa X`, `probabilities[1] ≈
+# 0.95`. Three passes over this paper in four months — the 2026-04-25 extraction,
+# the 2026-04-29 existence audit (`docs/AUDIT_DOC2.md`), and the 2026-08-24
+# execution cross-check — and only the last caught a wrong ANSWER, because it was
+# the only one that compared against a KNOWN one. A suite that never states the
+# truth cannot observe a lie.
+#
+# Assertions here MUST compare against ground truth the test itself establishes.
+# Add to this testset, not to the shape checks above.
+@testset "known-answer gate — estimators vs ground truth" begin
+    using MORK
+    n = 100
+    s = new_space()
+    space_add_all_sexpr!(s, join(["(edge $i $(i + 1))" for i in 0:(n - 1)], " "))
+    stats = collect_stats(s)
+    src = parse_sexpr("(edge \$x \$y)")
+
+    # Ground truth: exactly `n` atoms match `(edge $x $y)`.
+    @test estimate_cardinality(src, stats) == n
+    @test dynamic_count(s.btm, src) == n
+
+    # D1 (`docs/AUDIT_DOC2.md` §Correction): Algorithm 2's p-box does NO sampling.
+    # It takes the EXACT full-space count and rescales it by total/sqrt(total) as
+    # if it had sampled, so the interval EXCLUDES the truth by ~10x at n=100 and
+    # diverges as sqrt(n).
+    #
+    # ⚠️ @test_broken IS DELIBERATE — the approx lane is PARKED, so this records
+    # the defect executably instead of fixing code nothing calls. It flips to a
+    # FAILURE ("Unexpectedly Pass") the moment the behaviour changes, which is the
+    # whole point: the gate outlives the parking.
+    r = estimate_cardinality_pbox(src, stats, s.btm; confidence=0.95)
+    lo, hi = r.pbox.intervals[1]
+    @test_broken lo <= n <= hi
+end

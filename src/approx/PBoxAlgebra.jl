@@ -7,8 +7,12 @@ Implements §2 of the Approximate Supercompilation spec (Goertzel, Oct 2025):
         MulPBox, WidenPBox, merge_overlapping
   §2.3  Fréchet-Hoeffding bounds: P(X≤x, Y≤y) ∈ [max(Fx+Fy-1,0), min(Fx,Fy)]
   §7.1  Theorem A.2 — Error Composition: width(E_total) ≤ Σ width(Eᵢ) + O(n²·w_max²)
-  §7.3  Lemma A.4 — P-Box Width Under Fréchet: w_{X+Y} ≤ wX + wY + 2·min(wX,wY)
-  §7.3  Lemma A.5 — Hoeffding Bound: P(|X̄_n - E[X]| > t) ≤ 2·exp(-2nt²/(b-a)²)
+  A.4   Lemma A.4 — P-Box Width Under Fréchet: w_{X+Y} ≤ wX + wY + 2·min(wX,wY)
+  A.4   Lemma A.5 — Hoeffding Bound: P(|X̄_n - E[X]| > t) ≤ 2·exp(-2nt²/(b-a)²)
+
+⚠️ SECTION NUMBERS CORRECTED 2026-08-24. A.4/A.5 were cited here as "§7.3" — the paper's §7 has
+only §7.1 and §7.2; both lemmas live in APPENDIX A.4 (p.20). Alg 4 is §4.3, not "§4.2.3".
+The invented numbers came from the spec extraction, not the paper.
 
 The correlation_sig BitVector (§2.2): when two PBoxes share set bits, they are
 statistically dependent → Fréchet bounds are used instead of the independence
@@ -213,7 +217,15 @@ function _add_pbox_frechet(X::PBox, Y::PBox)::PBox
     merge_overlapping(PBox(new_intervals, new_probs, sum(new_probs), sig))
 end
 
-# ── MulPBox — multiplication (for UncertainModusPonens §4.2.3) ───────────────
+# ── MulPBox — multiplication (for UncertainModusPonens §4.3) ────────────────
+#
+# 🔴 UNSPECIFIED BY THE PAPER. `MultiplyPBox` appears ONLY as a call site inside Algorithm 4 and
+# is never defined — §2.3.1 promises the operation list ("Each operation in our p-box algebra
+# corresponds to a common pattern in program execution:") and the list is ABSENT from the PDF
+# itself (verified 2026-08-24: 20pp, no images/figures/tables, so nothing was lost in extraction).
+# ⇒ The semantics below are OURS. They cannot be verified against the paper and need their own
+#   oracle. See docs/specs/supercompiler/approximate_metta_supercompilation_spec.md, register
+#   "UNSPECIFIED BY THE PAPER".
 
 """
     mul_pbox(X::PBox, Y::PBox) -> PBox
@@ -249,7 +261,13 @@ function mul_pbox(X::PBox, Y::PBox)::PBox
     merge_overlapping(PBox(new_intervals, new_probs, sum(new_probs), sig))
 end
 
-# ── WidenPBox — depth-factor widening (Algorithm 4 §4.2.3) ───────────────────
+# ── WidenPBox — depth-factor widening (Algorithm 4, §4.3) ───────────────────
+#
+# 🔴 UNSPECIFIED BY THE PAPER — same hole as MulPBox above. `WidenPBox` is invoked by Algorithm 4
+# and defined nowhere. ⚠️ THIS RE-SCOPES A FILED DEFECT: the `[lo/factor, hi*factor]` rule below
+# NARROWS a negative lower bound ([-1,1], factor 2 -> [-0.5,2.0]), which matters for §4.1's
+# [-1,1] truth option. That is NOT a deviation from the paper (there is nothing to deviate from);
+# it is an unspecified choice awaiting an oracle. Filed as D3 in docs/AUDIT_DOC2.md.
 
 """
     widen_pbox(pb::PBox, factor::Float64) -> PBox
@@ -359,7 +377,7 @@ end
 """
     frechet_width_bound(wX::Float64, wY::Float64) -> Float64
 
-Lemma A.4 (P-Box Width Under Fréchet Bounds, §7.3):
+Lemma A.4 (P-Box Width Under Fréchet Bounds, Appendix A.4):
 w_{X+Y} ≤ wX + wY + 2·min(wX, wY)
 
 The 2·min term is the additional uncertainty from unknown correlation structure.
@@ -369,7 +387,7 @@ frechet_width_bound(wX::Float64, wY::Float64)::Float64 = wX + wY + 2.0 * min(wX,
 """
     hoeffding_bound(n::Int, t::Float64; a=0.0, b=1.0) -> Float64
 
-Lemma A.5 (Hoeffding Bound for P-Boxes, §7.3):
+Lemma A.5 (Hoeffding Bound for P-Boxes, Appendix A.4):
 P(|X̄_n - E[X]| > t) ≤ 2·exp(-2nt²/(b-a)²)
 
 Returns the tail probability bound for `n` independent samples from [a,b].

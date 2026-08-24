@@ -5,7 +5,7 @@ Implements §4 of the Approximate Supercompilation spec (Goertzel, Oct 2025):
   §4.1  UncertainFact struct (predicate, arguments, truth_pbox, confidence, derivation)
   §4.2.1 Conjunction (AND) — 3 cases: independent, perfectly correlated, Fréchet
   §4.2.2 Algorithm 3 — MatchWithUncertainty (structural similarity with quadratic decay)
-  §4.2.3 Algorithm 4 — ApplyRule (UncertainModusPonens with depth widening)
+  §4.3   Algorithm 4 — ApplyRule (UncertainModusPonens with depth widening)
   §4.4   Convergence theorem: p-box width → O(1/√(nr)) under semi-naive + sampling
 
 The `confidence` field (§4.1) captures meta-uncertainty — "how sure are we about
@@ -233,15 +233,15 @@ function match_with_uncertainty(
     pbox_interval(lo, hi, confidence)
 end
 
-# ── §4.2.3 Algorithm 4 — ApplyRule (UncertainModusPonens) ────────────────────
+# ── §4.3 Algorithm 4 — ApplyRule (UncertainModusPonens) ──────────────────────
 
-const DEPTH_FACTOR_PER_STEP = 0.1   # §4.2.3: linear growth 0.1/step
+const DEPTH_FACTOR_PER_STEP = 0.1   # §4.3: linear growth 0.1/step
 
 """
     apply_rule(premise_pbox::PBox, rule_strength_pbox::PBox,
                inference_depth::Int) -> PBox
 
-Algorithm 4 (ApplyRule / UncertainModusPonens) from §4.2.3.
+Algorithm 4 (ApplyRule / UncertainModusPonens) from §4.3.
 
 Steps:
 
