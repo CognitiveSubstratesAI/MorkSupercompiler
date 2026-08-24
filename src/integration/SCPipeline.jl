@@ -238,9 +238,27 @@ function execute!(s::Space, program::AbstractString; opts::SCOptions=SC_DEFAULTS
     end
 
     # Stage 2 — plan join order
+    #
+    # 🔴 ROUTED TO THE DYNAMIC ESTIMATOR 2026-08-24. This called `plan_program(program, stats)`,
+    # the STATS variant, whose `estimate_cardinality` is histogram+fallback based. MEASURED on a
+    # corpus with a 100x selectivity split on a leading ground argument, it does not discriminate:
+    #     (a K1 $i) truth 20   -> 4020      (a K2 $i) truth 2000 -> 4020
+    #     (b $i $v) truth 2000 -> 1005      <- and it ranks the UNSELECTIVE source cheapest
+    # `plan_program(s, program)` dispatches to `plan_program_dynamic`, which reaches
+    # `dynamic_count` — exact on the same corpus (20 / 2000 / 2000), and where the ground-argument
+    # prefix extension of `8317b3b` lives. Until this change that work was UNREACHABLE from the
+    # pipeline: the fixed function was never called on the live path.
+    #
+    # ⚠️ PRECONDITION, CHECKED: `plan_program_dynamic` requires `btm` to hold background facts but
+    # NOT the exec atoms being planned. The pipeline adds the program at STAGE 6
+    # (`space_add_all_sexpr!`), so at stage 2 the space holds background only. Safe here; do not
+    # move this stage after stage 6.
+    #
+    # ⚠️ `plan_report` remains STATS-based — there is no dynamic report variant. It therefore
+    # describes the stats ESTIMATE, not the plan that was emitted. Do not read the two as agreeing.
     program_planned, plan_str = if opts.plan_join_order
         t = @elapsed begin
-            planned = plan_program(program, stats)
+            planned = plan_program(s, program)
             pstr = plan_report(program, stats)
         end
         timings[:plan] = t
