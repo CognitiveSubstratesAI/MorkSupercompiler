@@ -40,8 +40,10 @@ function explain(s::Space, program::AbstractString)::String
     for (atom_idx, node) in enumerate(nodes)
         node isa SList || continue
         items = (node::SList).items
-        (length(items) < 3 || !is_conjunction(items[2])) && continue
-        conj = items[2]::SList
+        length(items) < 3 && continue
+        ci = conjunction_index(items)
+        ci === nothing && continue
+        conj = items[ci]::SList
         sources = conj.items[2:end]
         length(sources) <= 1 && continue
         any_multi = true

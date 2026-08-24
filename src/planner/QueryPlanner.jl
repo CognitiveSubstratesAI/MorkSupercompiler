@@ -266,18 +266,20 @@ function _plan_atom(node::SNode, stats::MORKStatistics)::SNode
     node isa SList || return node
     items = (node::SList).items
     length(items) < 3 && return node
-    is_conjunction(items[2]) || return node
-    new_conj = plan_conjunction(items[2]::SList, stats)
-    SList([items[1], new_conj, items[3:end]...])
+    ci = conjunction_index(items)
+    ci === nothing && return node
+    new_conj = plan_conjunction(items[ci]::SList, stats)
+    SList([items[1:(ci - 1)]; new_conj; items[(ci + 1):end]])
 end
 
 function _plan_atom_dynamic(node::SNode, btm)::SNode
     node isa SList || return node
     items = (node::SList).items
     length(items) < 3 && return node
-    is_conjunction(items[2]) || return node
-    new_conj = plan_conjunction_dynamic(items[2]::SList, btm)
-    SList([items[1], new_conj, items[3:end]...])
+    ci = conjunction_index(items)
+    ci === nothing && return node
+    new_conj = plan_conjunction_dynamic(items[ci]::SList, btm)
+    SList([items[1:(ci - 1)]; new_conj; items[(ci + 1):end]])
 end
 
 """
@@ -296,8 +298,9 @@ function plan_report(program::AbstractString, stats::MORKStatistics)::String
         # `a < 3 || (!b && continue)` (&& binds tighter than ||), so a short node like `!(fib 15)`
         # (2 items) skipped the `continue` and hit `items[2]::SList` with the SAtom `15` → TypeError.
         length(items) < 3 && continue
-        is_conjunction(items[2]) || continue
-        conj = items[2]::SList
+        ci = conjunction_index(items)
+        ci === nothing && continue
+        conj = items[ci]::SList
         sources = conj.items[2:end]
         length(sources) <= 1 && continue
 
@@ -305,7 +308,14 @@ function plan_report(program::AbstractString, stats::MORKStatistics)::String
         perm = plan_join_order(jnodes)
 
         println(io, "\nPattern: ", sprint_sexpr(items[1]))
-        println(io, "  Sources (original order, estimated cardinality):")
+        println(
+            io,
+            "  🔴 REPORT USES THE **STATS** ESTIMATOR (estimate_cardinality). SCPipeline stage 2 ",
+            "plans with the\n     **DYNAMIC** one (dynamic_count) since 2026-08-24, so THIS ORDER ",
+            "IS NOT NECESSARILY THE ONE EMITTED.\n     The two disagree exactly where a leading ",
+            "ground argument is selective. No dynamic report variant exists yet."
+        )
+        println(io, "  Sources (original order, STATS-estimated cardinality):")
         for (k, (s, jn)) in enumerate(zip(sources, jnodes))
             println(
                 io,

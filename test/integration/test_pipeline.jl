@@ -129,7 +129,10 @@ end
     @test r isa SCResult
     @test r.approx_result isa ApproxPipelineResult
     @test haskey(r.timings, :approx)
-    @test r.approx_result.within_tolerance
+    # 🔴 D4 — see test/approx/test_approx_pipeline.jl and docs/AUDIT_DOC2.md. Phase 4's bound is
+    # t + n^2*t^2, strictly greater than t, so within_tolerance cannot hold once anything is
+    # BOUNDED. Passed until 2026-08-24 only because the exec-shape slot bug meant nothing was.
+    @test_broken r.approx_result.within_tolerance
     @test r.approx_result.error_budget_used >= 0.0
 end
 

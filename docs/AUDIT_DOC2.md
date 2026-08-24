@@ -209,6 +209,30 @@ bound explicitly, as a **pair** — `[max(Fx+Fy−1, 0), min(Fx, Fy)]` — and w
 upper half. D2 is a real deviation; D3 is an unspecified choice. Triaging them as one kind was the
 error.
 
+### 🔴 D4 — Phase 4's verification is UNREACHABLE BY CONSTRUCTION · found 2026-08-24
+
+`ApproxPipeline.jl:334` checks `total_bound <= error_tolerance` where
+`total_bound = error_composition_bound(op_widths)` and every BOUNDED sig contributes exactly
+`error_tolerance`. Theorem A.2's bound is `sum(w) + O(n^2 * w_max^2)`, implemented with constant 1,
+so for a single op of width `t` it returns `t + t^2`, which is **greater than `t` for every t > 0**:
+
+    t=0.5   -> 0.75       t=0.1   -> 0.11       t=0.05  -> 0.0525
+    t=0.01  -> 0.0101     t=0.001 -> 0.001001
+
+⇒ `within_tolerance` is `false` the moment ANYTHING is approximated. Phase 4 can only "pass" when
+Phase 1 identified nothing.
+
+**How it stayed green for four months, and it is the same shape as D1/D2/D3:** `_is_approximable_node`
+tested `items[2]`, which is the **loc** of an exec atom, so no exec program was ever approximable,
+`op_widths` was always empty, and the bound was `0.0` — vacuously within tolerance. Two tests
+asserted `within_tolerance` with comments claiming the opposite reason
+(*"3-source pattern -> approximated within tolerance"*). Correcting the slot index made the pipeline
+actually approximate, and both tests went red. They are now `@test_broken` with this explanation.
+
+**Reach: PARKED lane, opt-in only** (`use_approx=true`). Not fixed here — fixing it means choosing
+what Theorem A.2's `O(.)` constant should be, or comparing against a per-op budget rather than the
+composed bound. That is a design decision inside a lane we have deliberately stopped work on.
+
 ## Test status — green, and green does not mean verified
 
 All 5 approx test files pass under `tools/run_tests.sh` (real exit codes): 158 assertions,

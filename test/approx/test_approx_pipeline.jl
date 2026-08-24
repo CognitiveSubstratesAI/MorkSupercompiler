@@ -109,7 +109,18 @@ end
     @test haskey(result.phase_timings, PHASE_SPECIALIZATION)
     @test haskey(result.phase_timings, PHASE_VERIFICATION)
     @test result.error_budget_used >= 0.0
-    @test result.within_tolerance   # 3-source pattern → approximated within tolerance
+    # 🔴 D4 (docs/AUDIT_DOC2.md) — Phase 4's verification is UNREACHABLE BY CONSTRUCTION.
+    # error_composition_bound([t]) = t + n^2*t^2 = t + t^2 > t for EVERY t > 0, so
+    # `total_bound <= error_tolerance` is false the moment any node is BOUNDED.
+    # MEASURED 2026-08-24: t=0.1 -> 0.11; t=0.05 -> 0.0525; t=0.001 -> 0.001001.
+    #
+    # This assertion passed until 2026-08-24 for the OPPOSITE of the reason its comment gave:
+    # `_is_approximable_node` tested items[2], which is the LOC of an exec atom, so nothing was
+    # ever approximated, op_widths was empty and the bound was 0.0 — vacuously "within tolerance".
+    # Fixing the slot index made the pipeline actually approximate, which exposed D4.
+    # @test_broken because the approx lane is PARKED: this records the defect and flips to a
+    # FAILURE if Phase 4 is ever corrected.
+    @test_broken result.within_tolerance
 end
 
 @testset "run_approx_pipeline — STATISTICAL sigs not cacheable" begin

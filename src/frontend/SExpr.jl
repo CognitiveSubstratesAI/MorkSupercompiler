@@ -193,6 +193,26 @@ is_conjunction(node::SNode) =
     (node.items[1]::SAtom).name == ","
 
 """
+    conjunction_index(items::Vector{SNode}) -> Union{Int, Nothing}
+
+Index of the `(, …)` conjunction inside an atom's item list, or `nothing`.
+
+🔴 SEARCH FOR IT — DO NOT HARD-CODE THE SLOT. The two atom shapes in this tree put the
+conjunction at DIFFERENT indices:
+
+    (exec <loc> (, srcs) (O …))        <- index 3   ← what MORK actually executes
+    ((phase \$p) (, srcs) (O res))      <- index 2   ← rule-definition form
+
+MEASURED 2026-08-24: `_plan_atom`, `_plan_atom_dynamic`, `Explainer` and `ApproxPipeline`
+all hard-coded index 2, so QueryPlanner returned EVERY exec atom unchanged — the planner
+was a no-op on the only shape MORK runs, while `test_query_planner.jl` pinned the rule
+shape and stayed green. `PipelineDecompose.decompose_exec` had it right all along
+(`findfirst`, with a comment naming index 3); this helper is that logic, shared.
+"""
+conjunction_index(items::Vector{SNode})::Union{Int, Nothing} =
+    findfirst(i -> is_conjunction(items[i]), eachindex(items))
+
+"""
 Return true iff `node` contains no variables (is fully ground).
 """
 is_ground(node::SNode) = count_vars(node) == 0

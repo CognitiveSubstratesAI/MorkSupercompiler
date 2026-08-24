@@ -293,13 +293,18 @@ function run_approx_pipeline(
         for node in nodes
             node isa SList || (push!(planned_nodes, node); continue)
             items = (node::SList).items
-            if length(items) >= 3 && is_conjunction(items[2])
-                sources = (items[2]::SList).items[2:end]
+            ci = length(items) >= 3 ? conjunction_index(items) : nothing
+            if ci !== nothing
+                conj = items[ci]::SList
+                sources = conj.items[2:end]
                 order = plan_join_order_approx(
                     sources, stats, s.btm; weights=weights, error_tolerance=error_tolerance
                 )
-                new_conj = SList([items[2].items[1]; sources[order]])
-                push!(planned_nodes, SList([items[1], new_conj, items[3:end]...]))
+                new_conj = SList([conj.items[1]; sources[order]])
+                push!(
+                    planned_nodes,
+                    SList([items[1:(ci - 1)]; new_conj; items[(ci + 1):end]])
+                )
             else
                 push!(planned_nodes, node)
             end
@@ -350,8 +355,9 @@ function _is_approximable_node(node::SNode, stats::MORKStatistics, tol::Float64)
     node isa SList || return false
     items = (node::SList).items
     length(items) < 3 && return false
-    is_conjunction(items[2]) || return false
-    sources = (items[2]::SList).items[2:end]
+    ci = conjunction_index(items)
+    ci === nothing && return false
+    sources = (items[ci]::SList).items[2:end]
     # Approximable if ≥3 sources (high fan-out) OR any source has high cardinality
     length(sources) >= 3 && return true
     any(s -> estimate_cardinality(s, stats) > stats.total_atoms ÷ 4, sources)
