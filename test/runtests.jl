@@ -69,6 +69,7 @@ end
     include("integration/test_explainer.jl")
     include("integration/test_adaptive_planner.jl")
     include("integration/test_mm2_roundtrip.jl")   # A-4: compiler → runtime seam
+    include("integration/test_corpus_differential.jl")   # run! vs plain MORK over the real .mm2 corpus — the workload fixture that hand-written unit tests could not supply
 
     # ── Multi-Geometry Framework (Doc 3) ─────────────────────────────────────
     include("mgfw/test_mgfw.jl")
