@@ -66,24 +66,30 @@ The spec defines `confidence` TWICE, as DIFFERENT quantities, and never reconcil
 type error to stop it, because both are `Float64` and the paper gave them the same name. Filed
 upstream: `docs/upstream-issues/Approximate-MeTTa-Supercompilation-confidence-two-definitions.md`
 
-🔴 AND THE §2.2 QUANTITY CAN NOW EXCEED 1.0, which "total probability mass" cannot. `mul_pbox`'s
-dependent branch uses `min(px,py) >= px*py`, and constructors set `confidence = sum(new_probs)`.
-MEASURED on two multi-interval p-boxes sharing a correlation bit: dependent 1.6, independent 1.0.
-(Single-interval p-boxes hide it — `min(1,1) == 1*1`.) Reachable only since `correlation_sig` was
-seeded on 2026-08-25; before that nothing was ever dependent.
+🔴🔴 SEPARATE AND CONFIRMED **OUR** BUG: THE MASS RULE OVER-COUNTS, AGAINST AN EXPLICIT CONSTRAINT.
+§2.3 states it in as many words — "you can't have more probability mass in the joint distribution
+than in either marginal, **and the total mass must sum correctly**". `mul_pbox`'s dependent branch
+uses `min(px,py) >= px*py` while constructors set `confidence = sum(new_probs)`. MEASURED on two
+multi-interval p-boxes sharing a correlation bit: **dependent sum(probs) = 1.6, independent 1.0**.
+Single-interval p-boxes hide it entirely (`min(1,1) == 1*1`), which is why it survived.
 
-TWO OF THE THREE CANDIDATE FIXES ARE WRONG:
-  · RENORMALISE — divides the probabilities down, NARROWING the mass. The unsafe direction; it
-    undoes exactly what Fréchet is for. Out.
-  · CLAMP THE SCALAR to 1.0 while leaving `probabilities` alone — `confidence` then disagrees with
-    `sum(probabilities)` INSIDE THE SAME STRUCT. Two fields silently contradicting each other is
-    worse than one field being unusual. Out.
-  · THE LIVE OPTION: under Fréchet this IS an over-countable MASS BOUND, not a probability, so the
-    things to fix are the CONSUMERS that treat it as one — `ApproxMOSES.jl:109` multiplies by it
-    (`avg_fitness.confidence * h`), and this constructor inherits it wholesale.
+⚠️ THIS WAS BRIEFLY MIS-FILED AS AN UPSTREAM DEFECT. Our spec extraction had DROPPED the
+"total mass must sum correctly" clause, so §2.3 read as silent and a report was drafted claiming
+the paper violates its own field definition. Withdrawn. The paper states the constraint; the
+Fréchet result it gives bounds the joint **CDF** and never prescribes an interval-PROBABILITY
+rule. `min(px,py)` is OURS, and it assigns every pair its pointwise upper bound — which is
+attainable pointwise but NOT SIMULTANEOUSLY, so the collection is not a distribution.
 
-Deliberately left as-is: the correct local change depends on which quantity the field is meant to
-be, which is the upstream naming question.
+FIX DIRECTION (non-trivial, deliberately not attempted here):
+  · RENORMALISE — divides the probabilities down, NARROWING intervals' mass. Unsafe. Out.
+  · CLAMP THE SCALAR only — `confidence` then contradicts `sum(probabilities)` in the same struct.
+    Two fields silently disagreeing is worse than one being unusual. Out.
+  · WHAT IS ACTUALLY REQUIRED: a mass allocation that respects the Fréchet bounds per pair AND
+    sums to 1. Taking every upper bound is not such an allocation. This is a real piece of work,
+    not a patch, and it needs an oracle — §2.3 gives the CDF inequality but no algorithm.
+
+Reachable only since `correlation_sig` was seeded on 2026-08-25; before that nothing was ever
+dependent, so every combination took the product rule and the sums were correct by construction.
 """
 function UncertainFact(pred::Symbol, args::Vector{String}, pb::PBox)::UncertainFact
     UncertainFact(pred, args, pb, pb.confidence, ProofTree())
