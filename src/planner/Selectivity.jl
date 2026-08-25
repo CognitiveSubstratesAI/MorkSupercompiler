@@ -9,8 +9,9 @@ Two strategies:
                             fully-variable atoms score 1.
 
   dynamic_count(btm, src) — count atoms in `btm` whose encoded prefix matches
-                            the head symbol + arity of `src`.  O(1) PathMap
-                            lookup.  Returns an Int; lower = more selective.
+                            the head symbol + arity of `src`.  EXACT, and
+                            🔴 LINEAR IN THE SUBTRIE — see its docstring.
+                            Returns an Int; lower = more selective.
 """
 
 using PathMaps: read_zipper_at_path, zipper_val_count
@@ -47,6 +48,20 @@ prefix = [arity_byte(3), sym_size_byte(6), 'p','a','r','i','t','y']
 
 Returns `typemax(Int)` if the head cannot be encoded (too long, nested head, etc.)
 so that unencodable sources sort last (least selective).
+
+🔴 COST: **O(subtrie), NOT O(1)** — MEASURED 2026-08-25, and this docstring said "O(1) PathMap
+lookup" until then. `zipper_val_count` has two paths and NEITHER is constant time:
+`val_count_below_root` -> `node_val_count` SUMS RECURSIVELY over all children (memoised only
+within one call, by a freshly allocated `Dict`), and when the prefix ends mid-edge it falls back to
+`deepcopy(z)` plus a full `zipper_to_next_val!` iteration (`Zipper.jl:658-678`).
+
+    n atoms       1_000    4_000    16_000    64_000
+    dynamic_count  1.03 ms  2.26 ms  17.19 ms  57.33 ms       (~1 ms per 1k atoms, flat)
+
+⚠️ THIS MATTERS NOW: `SCPipeline` stage 2 and `Explainer.explain` were both routed to this function
+on 2026-08-24 because it is EXACT. Exact it is; free it is not. It is called ONCE PER SOURCE per
+planning decision, so a conjunction over k broad sources costs k subtrie walks. Do not read the old
+"O(1)" as licence to call it in a loop over a large space.
 """
 function dynamic_count(btm, src::SNode)::Int
     src isa SList || return 1          # bare atom/var: treat as 1 match

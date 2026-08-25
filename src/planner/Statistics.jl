@@ -49,7 +49,41 @@ EffectStats() = EffectStats(
 """
     MORKStatistics
 
-All 6 fields from the MM2 Supercompiler §5.1.1 `MORKStatistics` structure:
+All 6 fields from the MM2 Supercompiler §5.1.1 `MORKStatistics` structure.
+
+🔴🔴 **FOUR OF THE EIGHT DO NOT DO WHAT THIS LIST SAYS. AUDITED 2026-08-25 — read this before
+trusting any field.** The struct mirrors §5.1.1's field NAMES, which is why it reads as capability.
+
+| field | reality |
+|---|---|
+| `total_atoms` | ✅ live and correct |
+| `pattern_shape_histogram` | ⚠️ LIVE (`predicate_counts`, `estimate_cardinality`) but **BIASED** — see `collect_stats` |
+| `argument_selectivity` | 🔴 **measures GROUNDNESS, not selectivity** — see below |
+| `sample_size` | ✅ informational |
+| `node_type_counts` | ⚠️ computed and merged, **never read for any decision** |
+| `correlation_matrix` | ⚠️ computed and merged, **never read for any decision** |
+| `predicate_fanout` | 🔴 **ALWAYS EMPTY** — `fanout_acc` is declared at the top of `collect_stats`, never written, and the struct is handed a fresh empty `Dict` literal |
+| `pattern_match_cache` | 🔴 **ALWAYS EMPTY** — `cache` is declared, never written |
+
+**`predicate_fanout` being empty is a MISSING SPEC FACTOR, not just a dead field.** §5.1.2's
+Algorithm 2 reads `fanout ← stats.predicate_fanout[pred].avg` and then `base_count *= fanout`.
+We never collect it and never apply it, so `estimate_cardinality` omits a multiplication the
+algorithm requires.
+
+**`argument_selectivity` LOST A DIMENSION IN THE PORT.** §5.1.1 types it
+`Map<(Predicate, ArgPos), Histogram>` and Algorithm 2 calls **`selectivity.estimate(arg)`** — it is
+queried WITH THE ARGUMENT VALUE. Ours is `Dict{Tuple{String,Int}, Float64}`: one scalar per
+position, computed as `fixed/total` = the fraction of occurrences where that position is
+non-variable. So it answers "is this position usually ground?" (measured 1.0 for every position it
+recorded) and the multiply in `estimate_cardinality:361` is a NO-OP.
+⇒ The value discrimination that `(a K1 \$i)` vs `(a K2 \$i)` needs is IN THE SPEC and was dropped
+here. It is not, as an earlier note in this tree claimed, structurally impossible — that verdict was
+about our narrowed type, not about Algorithm 2.
+
+Fields are DOCUMENTED rather than deleted deliberately: a field that is declared, merged and never
+written reads as capability, and recording that is the point. Deletion is a separate change (it
+touches `_merge_mork_stats`, the test constructor, and every positional construction — and Revise
+cannot hot-reload a replaced struct field).
 
 node_type_counts         — atoms per M-Core node type (Sym/Con/Prim/…)
 pattern_shape_histogram  — atom count per (head, depth-2 arity) shape key
@@ -370,10 +404,15 @@ end
 """
     prefix_sample_count(btm, src::SNode; sample_size=nothing) -> Int
 
-Algorithm 3 (PrefixSampling) from §5.1.3.
-Uses read_zipper_at_path for O(1) exact subtrie count — equivalent to
-perfect sampling when the PathMap is fully indexed (no need for bootstrap_variance
-since PathMap provides exact counts, not estimates).
+Algorithm 3 (PrefixSampling) from §5.1.3 — **in name only; see the cost and fidelity notes.**
+
+Delegates to `dynamic_count`, which gives an EXACT subtrie count, so the spec's
+`bootstrap_variance` is genuinely unnecessary here.
+
+🔴 BUT THE COMPLEXITY CLAIM WAS FALSE. This said "O(1) exact subtrie count" until 2026-08-25.
+MEASURED: ~1 ms per 1,000 atoms, flat — 1.03 ms at n=1k, 57.33 ms at n=64k. It is **O(subtrie)**.
+The spec caps sample size at sqrt(|space|) precisely "for sublinear overhead"; delegating to an
+exact linear count keeps the NAME of Algorithm 3 while discarding the property the cap existed for.
 """
 function prefix_sample_count(btm, src::SNode; sample_size=nothing)::Int
     dynamic_count(btm, src)
