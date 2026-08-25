@@ -57,10 +57,69 @@ function UncertainFact(pred::Symbol, args::Vector{String}, pb::PBox)::UncertainF
 end
 
 """
+    CORRELATION_SIG_WIDTH
+
+Width of the `correlation_sig` BitVector seeded at base facts. 64 bits, hashed rather than one bit
+per fact, so the signature stays fixed-size as the fact base grows.
+
+🔴 A COLLISION IS SAFE BY CONSTRUCTION. Two unrelated facts hashing to the same bit are treated as
+DEPENDENT, which routes their combination through Fréchet bounds instead of the product rule —
+a WIDER interval. Over-reporting uncertainty is the safe direction; the unsafe direction is
+claiming independence that does not hold, which is what an unseeded signature does everywhere.
+
+⚠️⚠️ **64 IS A STARTING POINT, NOT A TUNED VALUE, AND IT IS TOO NARROW FOR A REAL KB.** Birthday
+collisions at this width, COMPUTED not estimated:
+
+      5 distinct facts -> P(>=1 collision)  14.8%
+     10                                     52.3%
+     20                                     96.4%
+     50                                    100.0%
+
+So beyond a few dozen facts essentially every pair collides, everything is FALSELY DEPENDENT, and
+the mechanism degenerates to "always Fréchet" — safe, but barely more informative than no
+dependence tracking, just uniformly wider. SAFE AND USEFUL DIVERGE FAST HERE.
+
+Two ways out, and choosing between them needs a WORKLOAD, not an opinion:
+  (a) widen the signature so collisions are rare at KB scale (cheap, still approximate);
+  (b) seed from actual PROVENANCE — the ancestor set — rather than a hash of the fact's identity.
+      That is arguably what §2.2 intends and it eliminates false dependence outright, at the cost
+      of signature growth proportional to the fact base.
+Do not tune this number without measuring which regime the workload lives in. It is deliberately
+recorded as unmeasured so it does not quietly become a constant nobody questions.
+"""
+const CORRELATION_SIG_WIDTH = 64
+
+"""
+    _seed_correlation_sig(pred, args) -> BitVector
+
+One set bit, chosen by hashing the fact's identity. Distinct facts almost always get distinct bits
+(independent); the SAME fact reaching a conclusion by two routes gets the same bit, and
+`apply_rule`'s union propagation then makes those conclusions correctly dependent.
+"""
+function _seed_correlation_sig(pred::Symbol, args::Vector{String})::BitVector
+    sig = falses(CORRELATION_SIG_WIDTH)
+    sig[mod(hash((pred, args)), CORRELATION_SIG_WIDTH) + 1] = true
+    sig
+end
+
+"""
 Create a ground truth UncertainFact (exact truth value 1.0).
+
+🔴 SEEDS `correlation_sig` — WITHOUT THIS THE WHOLE DEPENDENCE MECHANISM IS INERT. Until
+2026-08-25 this used `pbox_exact(1.0)`, whose signature is `BitVector()`. Every PBox constructor
+defaults to an empty signature, so `are_dependent` short-circuited on
+`isempty(a.correlation_sig) && return false` before testing a single bit, `_union_sig` unioned
+empties forever, and EVERY addition took the independent path.
+
+§2.2 calls the correlation field essential precisely to avoid "the overconfidence that plagues
+naive probabilistic approaches" — and naive independence was exactly what production computed.
+The propagation was correct all along (§4.3 step 4, `conclusion.sig ← premise ∨ rule_strength`);
+only the SEED was missing. Same shape as MORK's `ground_skip`: the field was declared, threaded
+and documented, and nothing ever put a value in it.
 """
 function certain_fact(pred::Symbol, args::Vector{String})::UncertainFact
-    UncertainFact(pred, args, pbox_exact(1.0), 1.0, ProofTree())
+    pb = pbox_interval(1.0, 1.0, 1.0; sig=_seed_correlation_sig(pred, args))
+    UncertainFact(pred, args, pb, 1.0, ProofTree())
 end
 
 # ── §4.2.1 Conjunction (AND) ──────────────────────────────────────────────────
@@ -357,6 +416,6 @@ end
 export ProofTree, UncertainFact, certain_fact
 export conjunction_and, disjunction_or
 export structural_similarity, match_with_uncertainty, NO_MATCH
-export apply_rule, DEPTH_FACTOR_PER_STEP, BASE_VARIANCE
+export apply_rule, DEPTH_FACTOR_PER_STEP, BASE_VARIANCE, CORRELATION_SIG_WIDTH
 export convergence_width_bound
 export InferenceContext, step_deeper, derive_fact

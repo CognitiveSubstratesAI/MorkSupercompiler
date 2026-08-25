@@ -11,7 +11,8 @@
 # All three are one failure: AN INSTRUMENT REPORTING SUCCESS IT DID NOT OBSERVE. So do not read
 # exit codes off wrappers, and do not grep logs for the absence of the word "Fail". Run this.
 #
-#   PASS    -> 0     the suite finished green AND the tree has not changed since
+#   PASS    -> 0     the FULL suite finished green AND the tree has not changed since
+#   PARTIAL -> 5     the last run targeted ONE FILE (a probe) — not a suite verdict
 #   FAIL    -> 1     the suite ran and failed
 #   KILLED  -> 1     died on a signal (SIGTERM/SIGINT) — NOT a green, and not a red either
 #   STALE   -> 4     green, but a source file is newer than the verdict: RE-RUN, do not commit
@@ -30,6 +31,22 @@ VERDICT=$(grep '^VERDICT=' "$RESULT_FILE" | cut -d= -f2)
 RC=$(grep '^RC=' "$RESULT_FILE" | cut -d= -f2)
 LANE=$(grep '^LANE=' "$RESULT_FILE" | cut -d= -f2)
 WHEN=$(grep '^WHEN=' "$RESULT_FILE" | cut -d= -f2-)
+
+TARGET=$(grep '^TARGET=' "$RESULT_FILE" | cut -d= -f2-)
+
+# A verdict from a SINGLE-FILE run is not a suite verdict. Probes go through the same runner and
+# would otherwise leave a PASS that describes two lines of scratch code (measured 2026-08-25).
+if [ -z "$TARGET" ]; then
+  # No TARGET field: the verdict predates the field, so we cannot tell WHAT it ran. An
+  # unattributable green is not evidence — re-run rather than trust it.
+  echo "suite_result: UNKNOWN PROVENANCE — verdict has no TARGET field, so what it ran is" >&2
+  echo "  not recorded. Re-run tools/run_tests.sh with no argument." >&2
+  exit 5
+elif [ "$TARGET" != "test/runtests.jl" ]; then
+  echo "suite_result: PARTIAL — last run targeted '$TARGET', not the full suite." >&2
+  echo "  A single-file run is not a suite verdict. Run tools/run_tests.sh with no argument." >&2
+  exit 5
+fi
 
 case "$VERDICT" in
   RUNNING) echo "suite_result: RUNNING since $WHEN — no verdict yet. Do not commit." >&2; exit 3 ;;

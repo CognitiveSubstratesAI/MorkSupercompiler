@@ -46,8 +46,15 @@ DRIVER="$(mktemp "${TMPDIR:-/tmp}/${PKG}_run_tests_XXXXXX.jl")"
 # `EXIT=143`. Ask tools/suite_result.sh, never a wrapper's code, and never grep a log for the
 # ABSENCE of "Fail" (a still-BUFFERED log looks clean).
 RESULT_FILE="$ROOT/tools/.last_suite_result"
+# 🔴 THE VERDICT RECORDS **WHAT WAS RUN**, NOT JUST THE OUTCOME.
+# MEASURED 2026-08-25, in this very file: two single-file PROBE runs
+# (`run_tests.sh /tmp/probe.jl`) overwrote the full suite's verdict with their own PASS. The
+# checker then reported "PASS, tree unchanged" while the full suite's log was 0 bytes — a green
+# that described a two-line probe. Committing on it would have been exactly the wrapper-exit-0
+# failure this file exists to prevent, in the instrument built to prevent it.
 _write_result() {
-  { echo "VERDICT=$2"; echo "RC=$1"; echo "WHEN=$(date -u +%Y-%m-%dT%H:%M:%SZ)"; } > "$RESULT_FILE" 2>/dev/null || true
+  { echo "VERDICT=$2"; echo "RC=$1"; echo "TARGET=$TARGET"
+    echo "WHEN=$(date -u +%Y-%m-%dT%H:%M:%SZ)"; } > "$RESULT_FILE" 2>/dev/null || true
 }
 _write_result - RUNNING
 _on_exit() {

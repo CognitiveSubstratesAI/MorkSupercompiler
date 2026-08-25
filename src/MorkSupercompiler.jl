@@ -329,7 +329,7 @@ export CostWeights, safety_critical, exploratory, balanced, total_cost
 export EstimateCardinalityPBox, estimate_cardinality_pbox
 export ApproxBranch, ApproximateSplitResult, approximate_split
 export ApproxJoinNode, plan_join_order_approx
-export ProofTree, UncertainFact, certain_fact
+export ProofTree, UncertainFact, certain_fact, CORRELATION_SIG_WIDTH
 export conjunction_and, disjunction_or
 export structural_similarity, match_with_uncertainty, NO_MATCH
 export apply_rule, convergence_width_bound

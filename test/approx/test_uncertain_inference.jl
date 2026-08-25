@@ -219,3 +219,58 @@ end
         @test convergence_width_bound(n, r) ≥ 1.0 / sqrt(n * r) + exp(-n * r) - 1e-12
     end
 end
+
+# ── correlation_sig IS ACTUALLY SEEDED (regression, 2026-08-25) ──────────────────────────────
+#
+# Until 2026-08-25 `certain_fact` used `pbox_exact(1.0)`, whose signature is `BitVector()`. Every
+# PBox constructor defaults to an EMPTY signature, so `are_dependent` short-circuited on
+# `isempty(...) && return false` before testing a bit, and every addition took the independent
+# path. The propagation (§4.3 step 4) was correct and operating on nothing.
+#
+# These assert the MECHANISM IS LIVE, which no prior test did: the existing dependence tests all
+# called `mark_dependent` by hand, so they passed whether or not production ever seeded anything.
+@testset "correlation_sig is seeded at base facts (mechanism is live)" begin
+    f = certain_fact(:parent, ["alice", "bob"])
+    @test !isempty(f.truth_pbox.correlation_sig)          # the bug: this was empty
+    @test any(f.truth_pbox.correlation_sig)               # and a bit is actually set
+
+    # the SAME fact seeds the SAME bit -> recognised as dependent, not independent
+    g = certain_fact(:parent, ["alice", "bob"])
+    @test are_dependent(f.truth_pbox, g.truth_pbox)
+
+    # a DIFFERENT fact almost always seeds a different bit -> independent.
+    # (a hash collision would make this dependent, which is the SAFE direction — wider bounds —
+    #  so this asserts the common case, not an invariant.)
+    h = certain_fact(:sibling, ["carol", "dave"])
+    @test length(h.truth_pbox.correlation_sig) == CORRELATION_SIG_WIDTH
+
+    # and the seed survives propagation through apply_rule (§4.3 step 4 union)
+    conc = apply_rule(f.truth_pbox, pbox_interval(0.9, 1.0, 1.0), 1)
+    @test any(conc.correlation_sig)
+    @test are_dependent(conc, f.truth_pbox)               # conclusion depends on its own premise
+end
+
+# 🔴 THE MECHANISM CHANGES THE ANSWER — assert the NUMBER, not just the wiring.
+# "are_dependent returns true" would pass even if nothing downstream branched on it. Both
+# `add_pbox` (PBoxAlgebra.jl:158) and `mul_pbox` (:244, `use_frechet ? min(px,py) : px*py`)
+# dispatch, so seeding must WIDEN a shared-ancestor combination. MEASURED 2026-08-25:
+#     WITH seeding 0.599545   WITHOUT 0.554459   -> 8.1% wider, the SAFE direction.
+# ⚠️ NO EXISTING TEST BUILT TWO FACTS FROM A SHARED ANCESTOR — every dependence test called
+# `mark_dependent` by hand, which is why the missing seed survived. That is the gap this closes.
+@testset "seeding WIDENS a shared-ancestor combination (the safe direction)" begin
+    strip_sig(pb::PBox) = PBox(pb.intervals, pb.probabilities, pb.confidence, BitVector())
+
+    anc   = certain_fact(:parent, ["alice", "bob"])
+    ruleA = pbox_interval(0.9, 1.0, 1.0)
+    ruleB = pbox_interval(0.8, 0.95, 1.0)
+
+    withsig = conjunction_and(apply_rule(anc.truth_pbox, ruleA, 1),
+                              apply_rule(anc.truth_pbox, ruleB, 1))
+    a0 = strip_sig(anc.truth_pbox)
+    nosig   = conjunction_and(strip_sig(apply_rule(a0, ruleA, 1)),
+                              strip_sig(apply_rule(a0, ruleB, 1)))
+
+    @test width(withsig) > width(nosig)                  # strictly wider — mechanism took effect
+    @test width(withsig) ≈ 0.599545 atol=1e-5            # pinned
+    @test width(nosig)   ≈ 0.554459 atol=1e-5            # pinned (pre-fix behaviour)
+end
