@@ -38,45 +38,36 @@ end
     @test sorted[3].priority == MM2Priority(1, 2)
 end
 
-# ── Space-Operation Batching (v1 §10.6, same-priority variant) ───────────────
-@testset "batch_space_ops — merges identical-priority atoms" begin
-    atoms = [
-        _atom(1, 0, "(, (kb fact1))", "(, result1)"),
-        _atom(1, 0, "(, (kb fact2))", "(, result2)"),
-        _atom(2, 0, "(, foo)", "(, bar)")
+# ── Space-Operation Batching (v1 §10.6) — REMOVED, REFUTATION PINNED HERE ────
+#
+# `batch_space_ops` was deleted 2026-08-25: v1 §10.6's transformation is UNSOUND (see the
+# tombstone in src/codegen/MM2Optimize.jl). The tests that stood here asserted STRING SHAPE
+# — `occursin("(kb fact1)", batched[1].pattern)` — and so structurally could not observe the
+# defect, which is a change in the ANSWER SET. This testset replaces them and pins the
+# refutation EXECUTABLY, by building the merged form by hand.
+#
+# If this ever fails, do not "fix" it: it means `,` in an exec's source position stopped being a
+# conjunction, and that is a substrate change that needs its own conversation.
+@testset "v1 §10.6 batching is UNSOUND — merged execs lose answers (spec defect)" begin
+    unmerged = [
+        _atom(1, 0, "(, (a \$x))", "(, (seen_a \$x))"),
+        _atom(1, 0, "(, (b \$y))", "(, (seen_b \$y))")
     ]
-    batched = batch_space_ops(atoms)
-    @test length(batched) == 2          # 2 same-priority merged + 1 unique
-    @test batched[1].priority == MM2Priority(1, 0)
-    @test occursin("(kb fact1)", batched[1].pattern)
-    @test occursin("(kb fact2)", batched[1].pattern)
-    @test occursin("result1", batched[1].template)
-    @test occursin("result2", batched[1].template)
-    @test batched[2].priority == MM2Priority(2, 0)
-end
+    # what §10.6 tells you to produce: concatenate the source lists into ONE comma-list
+    merged = [_atom(1, 0, "(, (a \$x) (b \$y))", "(, (seen_a \$x) (seen_b \$y))")]
 
-@testset "batch_space_ops — unique priorities pass through unchanged" begin
-    atoms = [
-        _atom(1, 0, "(, a)", "(, x)"),
-        _atom(2, 0, "(, b)", "(, y)"),
-        _atom(3, 0, "(, c)", "(, z)")
-    ]
-    batched = batch_space_ops(atoms)
-    @test length(batched) == 3
-    @test batched[1].pattern == "(, a)"
-    @test batched[2].pattern == "(, b)"
-end
+    up = join([sprint_exec(x) for x in unmerged], "\n")
+    mp = join([sprint_exec(x) for x in merged], "\n")
+    o  = BiSimObligation(:forward_sim, NodeID(0), NodeID(0))
 
-@testset "batch_space_ops — preserves first-occurrence priority order" begin
-    atoms = [
-        _atom(5, 0, "(, p5a)", "(, t5a)"),
-        _atom(2, 0, "(, p2)", "(, t2)"),
-        _atom(5, 0, "(, p5b)", "(, t5b)")
-    ]
-    batched = batch_space_ops(atoms)
-    @test length(batched) == 2
-    @test batched[1].priority == MM2Priority(5, 0)   # first occurrence of pri 5
-    @test batched[2].priority == MM2Priority(2, 0)
+    # BOTH patterns satisfiable — the old fixture. Agreement here is what hid the bug.
+    v_both = verify_bisim(up, mp, [o]; facts="(a 1) (b 2)", max_steps=20)
+    @test v_both.forward_ok
+
+    # ONE FACT REMOVED — the disconfirming case. Unmerged still derives (seen_a 1);
+    # the merged conjunction derives nothing, so forward simulation MUST fail.
+    v_one = verify_bisim(up, mp, [o]; facts="(a 1)", max_steps=20)
+    @test !v_one.forward_ok
 end
 
 # ── Pattern Fusion (v1 §10.6, identical-pattern variant) ─────────────────────
@@ -132,27 +123,6 @@ end
     @test length(obligs) >= 1
 end
 
-@testset "MM2Optimize — batch_space_ops + bisim verifier round-trip" begin
-    # Two same-priority execs that fire on different patterns. Batching
-    # merges them. Verify the merged program is bisim-equivalent to the
-    # unmerged on a small atom space.
-    facts = "(a 1) (b 2)"
-
-    unmerged_atoms = [
-        _atom(1, 0, "(, (a \$x))", "(, (seen_a \$x))"),
-        _atom(1, 0, "(, (b \$y))", "(, (seen_b \$y))")
-    ]
-    merged_atoms = batch_space_ops(unmerged_atoms)
-    @test length(merged_atoms) == 1
-
-    unmerged_prog = join([sprint_exec(a) for a in unmerged_atoms], "\n")
-    merged_prog = join([sprint_exec(a) for a in merged_atoms], "\n")
-
-    # Differential check — both programs derive the same atoms
-    o = BiSimObligation(:forward_sim, NodeID(0), NodeID(0))
-    verdict = verify_bisim(unmerged_prog, merged_prog, [o]; facts=facts, max_steps=20)
-    # The merged exec runs both patterns inside one priority cycle —
-    # forward + backward should hold on the final atom set.
-    @test verdict.forward_ok
-    @test verdict.backward_ok
-end
+# (the batch_space_ops bisim round-trip testset was removed with the function —
+#  its fixture had ALL patterns matching, which is exactly why it passed. The
+#  refutation that replaces it is pinned above.)

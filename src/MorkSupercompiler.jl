@@ -309,7 +309,7 @@ export MM2Priority, MM2ExecAtom, sprint_exec, sprint_priority
 export CompileCtx, BiSimObligation
 export compile_sequential!, compile_conditional!, compile_node!, compile_program
 export VerifyResult, BisimVerdict, verify_bisim   # Boundary #3 — bisim verifier
-export schedule_static, batch_space_ops, fuse_identical_patterns   # v1 §10.6 MM2 optimizations
+export schedule_static, fuse_identical_patterns   # v1 §10.6 MM2 optimizations (batch_space_ops REMOVED — §10.6 batching is unsound, see MM2Optimize.jl)
 export sprint_mcore_to_mm2
 # Integration layer (Phase 4)
 export SCOptions, SC_DEFAULTS, SCResult, run!, execute, timing_report

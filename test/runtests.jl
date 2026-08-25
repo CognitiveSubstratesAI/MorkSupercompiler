@@ -61,7 +61,7 @@ end
     include("codegen/test_mm2_compiler.jl")
     include("codegen/test_space_primitives.jl")
     include("codegen/test_bisim_verifier.jl")    # Boundary #3 — v2 §12.2 differential testing
-    include("codegen/test_mm2_optimize.jl")      # v1 §10.6 — static sched + batching + fusion
+    include("codegen/test_mm2_optimize.jl")      # v1 §10.6 — static sched + fusion (batching REMOVED: unsound, refutation pinned)
 
     # ── Integration ───────────────────────────────────────────────────────────
     include("integration/test_pipeline.jl")

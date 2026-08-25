@@ -10,7 +10,7 @@ MM2Compiler.compile_program):
     sequence. Side-effect: makes priority ordering observable in the
     program text, not just in MORK's runtime scheduler.
 
-  - [`batch_space_ops`](@ref) — v1 §10.6 "Space Operation Batching".
+  - `batch_space_ops` — REMOVED 2026-08-25: v1 §10.6 is UNSOUND, refuted by execution.
     Merge exec atoms with IDENTICAL priority by concatenating their
     pattern and template comma-lists. Safe because same-priority atoms
     are unordered in MM2 already; combining them just reduces the number
@@ -90,73 +90,59 @@ function schedule_static(atoms::Vector{MM2ExecAtom})::Vector{MM2ExecAtom}
     sort(atoms; by=a -> a.priority)
 end
 
-# ── Space Operation Batching (v1 §10.6, same-priority variant) ────────────────
-
-"""
-    batch_space_ops(atoms::Vector{MM2ExecAtom}) -> Vector{MM2ExecAtom}
-
-Merge exec atoms with IDENTICAL priority by concatenating their pattern
-and template comma-lists into a single exec.
-
-Soundness: MM2 treats same-priority atoms as unordered, so merging them
-into one is observably equivalent — the matching engine still applies
-the same set of patterns to derive the same set of templates. The v1
-paper's example shows merging across DIFFERENT priorities, but that
-requires proving order-independence; we restrict to same-priority for
-soundness without verification.
-
-Returns a NEW vector. Atoms with unique priorities pass through unchanged.
-
-# Example
-```
-Before:
-  (exec (1 0) (, (kb fact1)) (, result1))
-  (exec (1 0) (, (kb fact2)) (, result2))
-  (exec (2 0) (, foo) (, bar))
-
-After batch_space_ops:
-  (exec (1 0) (, (kb fact1) (kb fact2)) (, result1 result2))
-  (exec (2 0) (, foo) (, bar))
-```
-"""
-function batch_space_ops(atoms::Vector{MM2ExecAtom})::Vector{MM2ExecAtom}
-    # Group atoms by priority (preserving first-occurrence order)
-    groups = Dict{MM2Priority, Vector{Int}}()
-    order = MM2Priority[]
-    for (i, a) in enumerate(atoms)
-        if !haskey(groups, a.priority)
-            groups[a.priority] = Int[]
-            push!(order, a.priority)
-        end
-        push!(groups[a.priority], i)
-    end
-
-    out = MM2ExecAtom[]
-    for pri in order
-        ixs = groups[pri]
-        if length(ixs) == 1
-            push!(out, atoms[ixs[1]])
-        else
-            merged_pattern = _comma_join([_comma_inner(atoms[i].pattern) for i in ixs])
-            merged_template = _comma_join([_comma_inner(atoms[i].template) for i in ixs])
-            # Inherit source_node + proof_obligs from the FIRST exec in the group;
-            # downstream verification (verify_bisim) checks whole-program equivalence
-            # so per-atom traceability is enough.
-            first = atoms[ixs[1]]
-            push!(
-                out,
-                MM2ExecAtom(
-                    pri,
-                    merged_pattern,
-                    merged_template,
-                    first.source_node,
-                    first.proof_obligs
-                )
-            )
-        end
-    end
-    out
-end
+# ── Space Operation Batching (v1 §10.6) — REMOVED AS UNSOUND ──────────────────
+#
+# 🔴🔴 THE SPEC'S TRANSFORMATION IS UNSOUND. THIS IS A DEFECT IN THE PAPER, NOT IN THE PORT.
+# `batch_space_ops` was a FAITHFUL implementation of v1 §10.6 "Space operation batching", which
+# states, unconditionally:
+#
+#     ; Before                                  ; After
+#     (exec p1 (, (kb fact1)) (, result1))      (exec p_batch
+#     (exec p2 (, (kb fact2)) (, result2))        (, (kb fact1) (kb fact2) (kb fact3))
+#     (exec p3 (, (kb fact3)) (, result3))        (, result1 result2 result3))
+#
+# `,` IN AN EXEC'S SOURCE POSITION IS A CONJUNCTION. Before the merge, `fact1` present derives
+# `result1` regardless of `fact2`. After it, the merged exec fires only when ALL patterns match
+# simultaneously. N independent rules become one N-way join.
+#
+# 🔴 REFUTED BY EXECUTION 2026-08-25, not by reading. Two same-priority execs over disjoint
+# patterns, run through `verify_bisim` on the live substrate:
+#
+#     facts = "(a 1) (b 2)"   ->  forward_ok = true    <- the shipped fixture
+#     facts = "(a 1)"         ->  forward_ok = FALSE   <- one fact removed
+#
+# The merged program was `(exec (1 0) (, (a $x) (b $y)) (, (seen_a $x) (seen_b $y)))` — and note
+# its two conjuncts share NO variable, so the pass also EMITS the disconnected-conjunct Cartesian
+# shape that MORK's own engines are slowest on.
+#
+# ⚠️ THE PAPER'S VERSION IS STRICTLY STRONGER THAN WHAT WAS REFUTED HERE: its example merges
+# p1/p2/p3 — THREE DIFFERENT PRIORITIES — into one `p_batch`, so it additionally reorders across
+# priority classes. The old implementation saw that hazard and restricted itself to same-priority
+# "for soundness without verification". That guard was real but addressed the WEAKER problem, and
+# supplied false confidence about the conjunction underneath it. The refutation holds either way:
+# conjunction breaks it at equal priority, before reordering is even considered.
+#
+# STEELMAN, AND WHY IT DOES NOT RESCUE THE PASS. If `(kb fact1..3)` are all ground and all PROVEN
+# present — a saturated KB — merging is sound and saves two trie descents. §10.7 immediately after
+# is a logic-engine example with a pre-computed index, so a KB-saturated setting is plausibly the
+# implicit context and the paper simply omits the precondition. It does not rescue anything: the
+# precondition is a WHOLE-PROGRAM property this pass has no access to (it sees a Vector of exec
+# atoms), it is undecidable in general, and §10.6 states the rewrite unconditionally.
+#
+# ✅ UPSTREAM MEANS SOMETHING ELSE ENTIRELY BY THE PHRASE. In `dev-zone/mork_ffi` (the bridge PeTTa
+# actually uses), batching space operations is `queue-atom` accumulating atoms + `flush` loading
+# them together — amortising LOAD cost, with the test `queued_atoms_are_loaded_together_on_flush`.
+# Nothing upstream merges exec patterns. The paper reached for "batching" and applied it to an
+# operation that does not support it.
+#
+# 🟢 §10.6's OTHER clause — PATTERN FUSION, directly below — IS SOUND, and `fuse_identical_patterns`
+# implements it correctly: identical patterns match once and drive both templates. The paper is
+# right in one clause and wrong in the next, which is how this survived review. Fusion is the only
+# sound residue of batching, so removing `batch_space_ops` loses no capability.
+#
+# DO NOT REINSTATE without a simultaneous-satisfiability precondition and an oracle that can
+# observe answer-set changes (the old tests asserted STRING SHAPE — `occursin("(kb fact1)", …)` —
+# and structurally could not see a conjunction change).
 
 # ── Pattern Fusion (v1 §10.6, identical-pattern variant) ──────────────────────
 
@@ -215,4 +201,4 @@ function fuse_identical_patterns(atoms::Vector{MM2ExecAtom})::Vector{MM2ExecAtom
     out
 end
 
-export schedule_static, batch_space_ops, fuse_identical_patterns
+export schedule_static, fuse_identical_patterns
