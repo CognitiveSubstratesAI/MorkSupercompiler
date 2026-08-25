@@ -389,6 +389,59 @@ register_prim!(
     (g, args, env) -> Residual(add_prim!(g, Prim(:mm2_exec, args, EffectSet(UInt8(0x05)))))
 )
 
+"""
+    _arith_prim(g, op, args, f) -> StepResult
+
+Shared body for the PURE arithmetic primitives. Evaluates when every argument has already reduced
+to a numeric `Lit`; RESIDUALIZES otherwise.
+
+🔴 BOTH BRANCHES ARE REQUIRED, AND THIS IS DERIVED FROM `_eval_args`, NOT ASSUMED. That helper
+flattens the two outcomes into one list —
+
+    r = rewrite_once(g, aid, env, deps, reg)
+    push!(out, r isa Value ? r.id : (r::Residual).id)
+
+— so a handler receives NodeIDs carrying NO indication whether they reduced to a literal or stayed
+symbolic. It has to look.
+
+🔴 AND IT IS NOT A ROBUSTNESS FLOURISH: THE DEMO HITS THE SYMBOLIC BRANCH ON STEP 2. The MG
+framework's §15.4 demo 2 is "a small PLN CHAINING example", and `stv_mp_reference` computes
+`c_b = min(c_a, c_imp) * 0.9`. In a chain, step 2's `c_a` IS step 1's residualized `c_b`. A
+Lit-only handler would pass a single-step test and FAIL the acceptance criterion it exists to
+satisfy.
+
+The residualize branch is the framework's own idiom, not an invention: `_call_primitive` already
+does exactly this for unregistered ops.
+
+⚠️ EFFECTS ARE `EffectSet()` — EMPTY MASK, i.e. PURE — AND THAT TAG IS LOAD-BEARING.
+`effects_commute` consults it to decide whether the supercompiler may reorder across these nodes.
+A wrong tag here would NOT surface in any value-comparison test: both the STV and trie
+differentials check NUMBERS, while the defect would live in REORDERING PERMISSION and appear later
+as an over-conservative or unsound reorder, far enough away to be hard to trace back. That is the
+same shape as `error_tolerance` (accepted, ignored) and `error_bound` (computed, discarded) — 
+present but semantically inert. `test_stepper.jl` therefore exercises reordering ACROSS these
+prims, not only their arithmetic.
+"""
+function _arith_prim(
+    g::MCoreGraph, op::Symbol, args::Vector{NodeID}, f::Function
+)::StepResult
+    isempty(args) && return Residual(add_prim!(g, Prim(op, args, EffectSet())))
+    vals = Float64[]
+    for a in args
+        n = get_node(g, a)
+        (n isa Lit && n.val isa Real) ||
+            return Residual(add_prim!(g, Prim(op, args, EffectSet())))
+        push!(vals, Float64(n.val))
+    end
+    Value(add_lit!(g, Lit(f(vals), EffectSet())))
+end
+
+# :* and :min — the two the MG framework's STV differential needs
+# (`s_b = s_a * s_imp`, `c_b = min(c_a, c_imp) * 0.9`). Other arithmetic follows the same shape;
+# only these two are registered because only these two have a consumer asking for them.
+register_prim!(DEFAULT_PRIM_REGISTRY, :*,   (g, args, env) -> _arith_prim(g, :*,   args, prod))
+register_prim!(DEFAULT_PRIM_REGISTRY, :min, (g, args, env) -> _arith_prim(g, :min, args, minimum))
+
 # :fitness_eval — Algorithm 8 §6.1: evaluate_fitness(program, data)
 register_prim!(
     DEFAULT_PRIM_REGISTRY,

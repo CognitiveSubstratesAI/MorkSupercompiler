@@ -163,3 +163,50 @@ end
     @test lookup_prim(reg1, :test_only) !== nothing
     @test lookup_prim(reg2, :test_only) === nothing   # reg2 unaffected
 end
+
+# ── PURE ARITHMETIC PRIMS: BOTH BRANCHES, AND THE EFFECT TAG (2026-08-25) ────────────────────
+#
+# `*` and `min` exist because the MG framework's §15.4 demo 2 needs them: `stv_mp_reference`
+# computes `s_b = s_a * s_imp` and `c_b = min(c_a, c_imp) * 0.9`. Registered nowhere before.
+@testset "arith prims — evaluate on Lit, RESIDUALIZE on symbolic" begin
+    g = MCoreGraph()
+    a = add_lit!(g, Lit(0.8, EffectSet()))
+    b = add_lit!(g, Lit(0.5, EffectSet()))
+
+    # both args literal -> evaluates
+    r = rewrite_once(g, add_prim!(g, Prim(:*, [a, b], EffectSet())), Env(), DepSet(),
+                     DEFAULT_PRIM_REGISTRY)
+    @test r isa Value
+    @test get_node(g, r.id).val ≈ 0.4 atol=1e-12
+
+    rm = rewrite_once(g, add_prim!(g, Prim(:min, [a, b], EffectSet())), Env(), DepSet(),
+                      DEFAULT_PRIM_REGISTRY)
+    @test rm isa Value
+    @test get_node(g, rm.id).val ≈ 0.5 atol=1e-12
+
+    # 🔴 THE BRANCH THE CHAINING DEMO ACTUALLY HITS. One operand is a symbolic prim (what a
+    # residualized step-1 conclusion looks like), so `*` must NOT evaluate — it must residualize.
+    # A Lit-only handler passes every assertion above and fails here.
+    sym = add_prim!(g, Prim(:kb_query, [a], EffectSet(UInt8(0x01))))
+    rs = rewrite_once(g, add_prim!(g, Prim(:*, [a, sym], EffectSet())), Env(), DepSet(),
+                      DEFAULT_PRIM_REGISTRY)
+    @test rs isa Residual
+    @test get_node(g, rs.id) isa Prim
+end
+
+# ⚠️ THE EFFECT TAG IS LOAD-BEARING AND INVISIBLE TO VALUE TESTS. `effects_commute` gates the
+# supercompiler's reordering. A wrongly-tagged arithmetic prim would pass every assertion above —
+# they check NUMBERS — while the defect would live in REORDERING PERMISSION and surface later as an
+# over-conservative or unsound reorder, far from this change. Same shape as `error_tolerance`
+# (accepted, ignored) and `error_bound` (computed, discarded): present but semantically inert.
+@testset "arith prims are PURE, so the supercompiler may reorder across them" begin
+    g = MCoreGraph()
+    a = add_lit!(g, Lit(2.0, EffectSet()))
+    b = add_lit!(g, Lit(3.0, EffectSet()))
+    p = add_prim!(g, Prim(:*, [a, b], EffectSet()))
+
+    @test isempty(get_node(g, p).effects)          # empty mask == PURE
+    @test commutes(PURE, PURE)
+    # and a pure node commutes with a reading node, which is what permits reordering
+    @test commutes(PURE, ReadEffect(DEFAULT_SPACE))
+end
