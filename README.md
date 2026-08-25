@@ -29,6 +29,17 @@ derives the expected atoms (`test/integration/test_mm2_roundtrip.jl`). (That val
 the encoding/priority *shape*, not the §9.3 Priority-Control Equivalence theorem
 itself, which is about ordering across multiple priorities.)
 
+🔴 **AND SOME OF IT IS DEFECTIVE, NOT MERELY INERT — audited 2026-08-24/25, filed in
+`docs/AUDIT_DOC1.md` (planner) and `docs/AUDIT_DOC2.md` (approximate).** The headline:
+`estimate_cardinality` returns `total_atoms` for two ground-argument patterns whose true
+cardinalities differ 100x, because `collect_stats` samples a TRIE-ORDER PREFIX and scales it as if
+uniform; `argument_selectivity` was ported from §5.1.1's `Histogram` to a `Float64`, dropping the
+value dimension Algorithm 2's `selectivity.estimate(arg)` requires; `predicate_fanout` is never
+collected, so an Algorithm-2 factor is silently omitted; and `PipelineDecompose`'s own pre-sort
+could group two sources sharing no variable, producing the O(K^n) blowup it exists to prevent
+(90,000-atom intermediate vs 20 — fixed). Read those two audits before trusting a number from this
+package.
+
 **Built and unit-tested, but NOT yet load-bearing** (runs into a throwaway graph, or
 records without discharging):
 - the §6 driving/folding core (`Driver.drive!`) — `drive_results` are recorded for
@@ -96,8 +107,10 @@ src/
   frontend/      SExpr.jl              — s-expression parser
   core/          MCore.jl              — 11 M-Core IR node types + MCoreGraph
                  Effects.jl            — Effect algebra (Algorithm 1)
-  planner/       Selectivity.jl        — static + O(1) dynamic cardinality
-                 Statistics.jl         — MORKStatistics (all 6 spec fields)
+  planner/       Selectivity.jl        — static + dynamic cardinality (dynamic is EXACT
+                                         and O(subtrie) — measured ~1 ms/1k atoms, NOT O(1))
+                 Statistics.jl         — MORKStatistics (§5.1.1 field NAMES; 4 of 8 do not
+                                         behave as named — see the struct docstring)
                  QueryPlanner.jl       — Algorithm 6 EffectAwarePlanning
   rewrite/       Rewrite.jl            — source reorderer (join-order)
   supercompiler/ Stepper.jl            — Algorithm 7+8 (RewriteOnce, CallPrimitive)
