@@ -202,7 +202,13 @@ function _and_lukasiewicz(T_A::PBox, T_B::PBox)::PBox
             lo = max(alo + blo - 1.0, 0.0)
             hi = max(ahi + bhi - 1.0, 0.0)
             push!(new_intervals, (lo, hi))
-            push!(new_probs, min(pa, pb))   # Fréchet probability
+            # ⚠️ NOT "Fréchet probability" — this is the PERFECT-CORRELATION (Łukasiewicz) branch.
+            # That mislabel is how an attribution error propagated on 2026-08-25: a measured
+            # widening was reported as "the Fréchet path" when it came from here.
+            # 🔴 AND `min(pa,pb)` OVER-COUNTS MASS — see the register at `certain_fact`. INVISIBLE on
+            # single-interval inputs (`min(1,1) == 1*1`), which is the only shape production builds
+            # today; measured sum(probs) = 1.8 on multi-interval pairs.
+            push!(new_probs, min(pa, pb))
         end
     end
     sig = _union_sig(T_A.correlation_sig, T_B.correlation_sig)
@@ -353,6 +359,35 @@ Prevents false confidence from deep inference chains.
 function apply_rule(
     premise_pbox::PBox, rule_strength_pbox::PBox, inference_depth::Int=0
 )::PBox
+    # 🔴🔴 READ THIS BEFORE SEEDING RULE P-BOXES WITH CORRELATION BITS.
+    # Algorithm 4 says `MultiplyPBox(premise, rule_strength)`, and `MultiplyPBox` is NEVER DEFINED
+    # in the paper — it appears only as this call site. We use `mul_pbox`, which dispatches TWO
+    # ways (independent product / dependent `min`). But §4.2.1 defines conjunction with THREE
+    # cases, and `conjunction_and` right here in this file implements all three. If `MultiplyPBox`
+    # IS §4.2.1's conjunction — plausible, since modus ponens combines premise truth AND rule
+    # strength — then `mul_pbox` is the deviation and `conjunction_and` is the correct callee.
+    #
+    # MEASURED 2026-08-25, mul_pbox vs conjunction_and on the same inputs:
+    #
+    #   case                                     mul_pbox   conjunction_and
+    #   PRODUCTION TODAY (rule sig EMPTY)          0.28          0.28     <- IDENTICAL
+    #   identical sigs, single-interval            0.28          0.30
+    #   identical sigs, MULTI-interval             0.384         0.72     (~2x)
+    #   overlapping-but-different sigs (partial)   0.384         1.26     (~3.3x)
+    #
+    # ⚠️ DO NOT "JUST SWAP IT BECAUSE IT IS A NO-OP TODAY." It is a no-op ONLY because rule p-boxes
+    # carry empty signatures, so `are_dependent` is false and both take the product branch. Swap it
+    # now and the 3.3x divergence lands LATER, at the moment someone seeds rules, and gets
+    # attributed to the SEEDING rather than to a change made weeks earlier under "it cannot be
+    # observed yet". That is exactly the reasoning that shipped `batch_space_ops` (deleted, 7fd0cd7)
+    # and the leapfrog shape gate (deleted, 712514a): a change justified by a measurement taken in
+    # the regime where the change is invisible.
+    #
+    # TWO SAFE ROUTES, and only these: (a) swap AND seed rules in the SAME commit, so the behaviour
+    # change is visible and measured where it is introduced; or (b) leave this as-is until the
+    # upstream question is answered. (b) is what we chose — swapping on a guess about what
+    # `MultiplyPBox` means is worse than recording the open question beside the numbers.
+    #
     # Step 1: multiply
     conclusion = mul_pbox(premise_pbox, rule_strength_pbox)
 

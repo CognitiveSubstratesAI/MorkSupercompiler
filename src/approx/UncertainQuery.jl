@@ -33,7 +33,22 @@ struct CostWeights
     γ::Float64   # variance
 end
 
-safety_critical()::CostWeights = CostWeights(0.1, 0.6, 0.3)
+"""
+Presets for §3.1's weights. The spec's only guidance is one sentence:
+"A safety-critical system sets high β and γ. A exploratory data analysis might set high α with
+moderate β."
+
+🔴 `safety_critical()` HAD γ = 0.3, WHICH IS BELOW `balanced()`'s 1/3 = 0.333 — so the preset
+named for caring about variance weighted it LESS than the neutral preset. A direct contradiction
+of "sets high β AND γ", caught 2026-08-25. Now 0.4, above balanced on both β and γ as the sentence
+requires. The three still sum to 1.0.
+
+⚠️ The exact magnitudes are OURS — the spec says "high" and "moderate", never numbers. What is NOT
+a judgement call is the ORDERING the sentence fixes: safety_critical must exceed balanced on both
+β and γ, and exploratory must exceed it on α. That ordering is now asserted in the tests; the
+magnitudes are not, because nothing in the paper licenses them.
+"""
+safety_critical()::CostWeights = CostWeights(0.1, 0.5, 0.4)
 exploratory()::CostWeights = CostWeights(0.7, 0.2, 0.1)
 balanced()::CostWeights = CostWeights(1/3, 1/3, 1/3)
 

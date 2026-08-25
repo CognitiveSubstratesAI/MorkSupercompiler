@@ -189,6 +189,22 @@ Register the two new approximate IR primitives from §6.3 into the given registr
 :approx_kb_query — pattern query with tolerance, effects=[Read(kb)],
 error_bound=tolerance
 :sample_fitness  — sample-based fitness eval, error_bound=1/√(rate·|data|)
+
+🔴🔴 **NEITHER error_bound IS ACTUALLY STORED. THE LINES ABOVE DESCRIBE CODE THAT DOES NOT EXIST.**
+Both closures EXTRACT their parameter (`tol`, `rate`) into a local and then never read it — dead
+stores — and the emitted `Prim` carries only an `EffectSet`. `1/√(rate·|data|)` appears NOWHERE in
+this file except the line above; it is never computed. §6.3's whole point is "why separate
+primitives instead of flags? Makes approximation visible in the IR for debugging/analysis" — and
+what reaches the IR is a bare name with no bound attached, so it is not visible at all.
+
+⚠️ THIS IS THE `32/32 pass` PATTERN: prose asserting an implementation that is not there. The
+docstring was written from the spec rather than from the code, and nothing checks the two agree.
+A reader grepping for "error_bound" finds this text and concludes the feature ships.
+
+TO IMPLEMENT: `Prim` needs somewhere to carry a Float64 bound (it currently has `op`, `args`,
+`effects`), and the two closures must compute `tol` and `1/sqrt(rate * length(data))` into it.
+`|data|` is not currently available at registration — args[2] is a NodeID, not a materialised
+collection — so this needs a decision about when the bound is computed, not just where it is put.
 """
 function register_approx_primitives!(registry::PrimRegistry)
     # approx_kb_query: args=[pattern_id, tolerance_id]

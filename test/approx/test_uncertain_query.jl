@@ -133,3 +133,22 @@ end
     lo, hi = r.pbox.intervals[1]
     @test_broken lo <= n <= hi
 end
+
+# ── §3.1 PRESET ORDERING — the one thing the spec actually fixes (regression, 2026-08-25) ─────
+#
+# §3.1's only guidance: "A safety-critical system sets high β and γ. A exploratory data analysis
+# might set high α with moderate β." That fixes an ORDERING, not magnitudes.
+#
+# `safety_critical()` had γ = 0.3 against `balanced()`'s 0.333 — the preset named for caring about
+# variance weighted it BELOW neutral. The pre-existing §3.1 tests could not see it: they assert
+# only `β > α` and `α > β`, and NOTHING about γ except `balanced().γ ≈ 1/3`.
+@testset "§3.1 preset ordering — safety_critical exceeds balanced on BOTH β and γ" begin
+    sc, ex, ba = safety_critical(), exploratory(), balanced()
+    @test sc.β > ba.β                      # "high β"
+    @test sc.γ > ba.γ                      # "and γ"  <- this was FALSE (0.3 < 0.3333)
+    @test ex.α > ba.α                      # "high α"
+    @test ex.β < ba.β                      # "moderate β"
+    for w in (sc, ex, ba)                  # magnitudes are ours; normalisation is not negotiable
+        @test isapprox(w.α + w.β + w.γ, 1.0; atol=1e-12)
+    end
+end

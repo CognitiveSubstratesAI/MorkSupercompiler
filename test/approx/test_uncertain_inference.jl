@@ -250,6 +250,20 @@ end
     @test are_dependent(conc, f.truth_pbox)               # conclusion depends on its own premise
 end
 
+# ⚠️ ATTRIBUTION CORRECTED 2026-08-25: commit 685f16e called the widening below "the Fréchet path".
+# IT IS ŁUKASIEWICZ. Rules built by `pbox_interval` carry EMPTY sigs and `_union_sig` returns a copy
+# when one side is empty, so two conclusions from a shared ancestor end up with IDENTICAL sigs —
+# and `conjunction_and` routes identical sigs to `_and_lukasiewicz` (perfect correlation), never to
+# `_and_frechet`. Verified: `cA.correlation_sig == cB.correlation_sig` is TRUE here. The NUMBER is
+# unchanged and correct; the mechanism named was wrong.
+#
+# 🔴 CONSEQUENCE WORTH MORE THAN THE CORRECTION: §4.2.1 specifies THREE conjunction cases, and under
+# the current seeding PRODUCTION CAN REACH ONLY TWO. Distinct facts -> distinct bits -> PRODUCT.
+# Shared ancestor -> identical sigs -> ŁUKASIEWICZ. FRÉCHET-partial needs sigs that OVERLAP but
+# DIFFER, and nothing constructs that: rule p-boxes have no bits to contribute. `_and_frechet` is
+# exercised only by hand-built fixtures. Seeding rules (or any second bit source) would change
+# which branch real inference takes — do not assume the partial case is live.
+
 # 🔴 THE MECHANISM CHANGES THE ANSWER — assert the NUMBER, not just the wiring.
 # "are_dependent returns true" would pass even if nothing downstream branched on it. Both
 # `add_pbox` (PBoxAlgebra.jl:158) and `mul_pbox` (:244, `use_frechet ? min(px,py) : px*py`)
@@ -264,13 +278,17 @@ end
     ruleA = pbox_interval(0.9, 1.0, 1.0)
     ruleB = pbox_interval(0.8, 0.95, 1.0)
 
-    withsig = conjunction_and(apply_rule(anc.truth_pbox, ruleA, 1),
-                              apply_rule(anc.truth_pbox, ruleB, 1))
+    cA = apply_rule(anc.truth_pbox, ruleA, 1)
+    cB = apply_rule(anc.truth_pbox, ruleB, 1)
+    cA_sig_equals_cB_sig() = cA.correlation_sig == cB.correlation_sig
+    withsig = conjunction_and(cA, cB)
     a0 = strip_sig(anc.truth_pbox)
     nosig   = conjunction_and(strip_sig(apply_rule(a0, ruleA, 1)),
                               strip_sig(apply_rule(a0, ruleB, 1)))
 
     @test width(withsig) > width(nosig)                  # strictly wider — mechanism took effect
+    # pin WHICH branch: identical sigs => Łukasiewicz, not Fréchet (see the note above)
+    @test cA_sig_equals_cB_sig()
     @test width(withsig) ≈ 0.599545 atol=1e-5            # pinned
     @test width(nosig)   ≈ 0.554459 atol=1e-5            # pinned (pre-fix behaviour)
 end
