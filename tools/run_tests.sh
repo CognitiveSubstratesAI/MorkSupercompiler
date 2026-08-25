@@ -52,9 +52,20 @@ RESULT_FILE="$ROOT/tools/.last_suite_result"
 # checker then reported "PASS, tree unchanged" while the full suite's log was 0 bytes — a green
 # that described a two-line probe. Committing on it would have been exactly the wrapper-exit-0
 # failure this file exists to prevent, in the instrument built to prevent it.
+# 🔴 STARTED_AT IS STAMPED ONCE, AT LAUNCH, AND IS WHAT STALENESS MUST BE MEASURED AGAINST.
+# MEASURED 2026-08-25: the checker compared source mtimes against WHEN — stamped at the END of the
+# run — so a file edited DURING a run is OLDER than its own verdict and reads as "tree unchanged".
+# The check caught edits AFTER a run and never DURING one, which is exactly the case that yields a
+# green describing code that no longer exists. Third defect found in this gate today, same shape as
+# the other two: it could not observe the thing it exists to catch.
+_STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 _write_result() {
-  { echo "VERDICT=$2"; echo "RC=$1"; echo "TARGET=$TARGET"
-    echo "WHEN=$(date -u +%Y-%m-%dT%H:%M:%SZ)"; } > "$RESULT_FILE" 2>/dev/null || true
+  { echo "VERDICT=$2"
+    echo "RC=$1"
+    echo "TARGET=$TARGET"
+    echo "STARTED_AT=$_STARTED_AT"
+    echo "WHEN=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  } > "$RESULT_FILE" 2>/dev/null || true
 }
 _write_result - RUNNING
 _on_exit() {

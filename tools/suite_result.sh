@@ -36,6 +36,22 @@ TARGET=$(grep '^TARGET=' "$RESULT_FILE" | cut -d= -f2-)
 
 # A verdict from a SINGLE-FILE run is not a suite verdict. Probes go through the same runner and
 # would otherwise leave a PASS that describes two lines of scratch code (measured 2026-08-25).
+
+case "$VERDICT" in
+  RUNNING) echo "suite_result: RUNNING since $WHEN — no verdict yet. Do not commit." >&2; exit 3 ;;
+  KILLED)  echo "suite_result: KILLED (rc=$RC) at $WHEN — the run did not finish." >&2
+           echo "  A killed run is NOT a pass. Re-run before drawing any conclusion." >&2; exit 1 ;;
+  FAIL)    echo "suite_result: FAIL (rc=$RC) at $WHEN, lane=$LANE" >&2; exit 1 ;;
+  PASS)    : ;;
+  *)       echo "suite_result: UNPARSEABLE verdict '$VERDICT' — treat as no result." >&2; exit 2 ;;
+esac
+
+# ⚠️ PROVENANCE GATES ONLY THE **PASS** PATH, AND THE ORDER IS LOAD-BEARING.
+# A positive claim needs proof; a negative one does not. FAIL / KILLED / RUNNING exit in the case
+# above, BEFORE any provenance check, so a real failure is always reported as a failure even when
+# the verdict cannot say what it ran. These checks were originally placed BEFORE the case, which
+# meant a FAILED run with no TARGET reported "UNKNOWN PROVENANCE" and SWALLOWED the failure —
+# found 2026-08-25 by reading the branch order instead of inferring it from one observed case.
 if [ -z "$TARGET" ]; then
   # No TARGET field: the verdict predates the field, so we cannot tell WHAT it ran. An
   # unattributable green is not evidence — re-run rather than trust it.
@@ -48,20 +64,21 @@ elif [ "$TARGET" != "test/runtests.jl" ]; then
   exit 5
 fi
 
-case "$VERDICT" in
-  RUNNING) echo "suite_result: RUNNING since $WHEN — no verdict yet. Do not commit." >&2; exit 3 ;;
-  KILLED)  echo "suite_result: KILLED (rc=$RC) at $WHEN — the run did not finish." >&2
-           echo "  A killed run is NOT a pass. Re-run before drawing any conclusion." >&2; exit 1 ;;
-  FAIL)    echo "suite_result: FAIL (rc=$RC) at $WHEN, lane=$LANE" >&2; exit 1 ;;
-  PASS)    : ;;
-  *)       echo "suite_result: UNPARSEABLE verdict '$VERDICT' — treat as no result." >&2; exit 2 ;;
-esac
-
 # Green — but green against WHAT? A verdict older than the source it tested is not evidence.
 # ⚠️ `test/` IS INCLUDED DELIBERATELY. The first version watched only `src/`, and a test edited
 # after a green run would have kept reporting PASS — a green that never saw the assertion. Caught
 # 2026-08-25 by editing a test immediately after a green suite.
-NEWER=$(find "$SCRIPT_DIR/../src" "$SCRIPT_DIR/../test" -name '*.jl' -newer "$RESULT_FILE" 2>/dev/null | head -5)
+# Compare against the run's START, not the verdict's mtime. A file edited DURING the run is older
+# than the verdict written at the end, so measuring from the verdict silently passes exactly the
+# case this exists to catch (measured 2026-08-25).
+STARTED_AT=$(grep '^STARTED_AT=' "$RESULT_FILE" | cut -d= -f2-)
+if [ -z "$STARTED_AT" ]; then
+  echo "suite_result: NO STARTED_AT — verdict predates the mid-run-edit fix; re-run." >&2
+  exit 5
+fi
+_STAMP=$(mktemp); touch -d "$STARTED_AT" "$_STAMP" 2>/dev/null || touch "$_STAMP"
+NEWER=$(find "$SCRIPT_DIR/../src" "$SCRIPT_DIR/../test" -name '*.jl' -newer "$_STAMP" 2>/dev/null | head -5)
+rm -f "$_STAMP"
 if [ -n "$NEWER" ]; then
   echo "suite_result: STALE — PASS recorded $WHEN, but these are NEWER than it:" >&2
   echo "$NEWER" | sed 's/^/    /' >&2
