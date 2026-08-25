@@ -193,3 +193,29 @@ end
     @test convergence_width_bound(100, 0.0) == Inf
     @test convergence_width_bound(100, -0.1) == Inf
 end
+
+# ── A.1 RETURNS BOTH TERMS, NOT THE COLLAPSED ASYMPTOTIC (regression, 2026-08-25) ────────────
+#
+# `convergence_width_bound` returned only `1/sqrt(nr)` — the asymptotic form the proof establishes
+# ONLY for `nr > ln(n)` (Step 4) and `nr >= ln(1/delta)` (Step 3). Outside that regime the dropped
+# coverage term `e^(-nr)` is large: at n=10, r=0.1 the function reported 1.0000 where the true
+# bound is 1.3679, a 36.8% UNDER-REPORT. A bound that under-reports is worse than none — it gates
+# whether an approximation is within tolerance.
+#
+# These assert the SEVERITY, not just the formula: an implementation that drops the coverage term
+# again fails the low-nr case while still passing every monotonicity test above it.
+@testset "A.1 convergence bound — coverage term is NOT dropped (low nr)" begin
+    # outside the proof's regime: nr = 1.0 < ln(10) = 2.303
+    w_lo = convergence_width_bound(10, 0.1)
+    @test w_lo ≈ 1.0 + exp(-1.0) atol=1e-9        # 1.3679, not 1.0
+    @test w_lo > 1.0 / sqrt(1.0)                   # strictly above the collapsed form
+
+    # inside the regime: the two forms agree to well under a percent
+    w_hi = convergence_width_bound(100, 0.1)       # nr = 10 > ln(100) = 4.605
+    @test isapprox(w_hi, 1.0 / sqrt(10.0); rtol=1e-3)
+
+    # the bound must never UNDER-report the true Step 4 expression, at any nr
+    for (n, r) in ((10, 0.1), (10, 0.01), (10, 0.5), (100, 0.1), (1000, 0.01))
+        @test convergence_width_bound(n, r) ≥ 1.0 / sqrt(n * r) + exp(-n * r) - 1e-12
+    end
+end

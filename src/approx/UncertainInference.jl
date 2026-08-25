@@ -284,7 +284,35 @@ function convergence_width_bound(n_iterations::Int, sampling_rate::Float64)::Flo
     # Parens fix Julia precedence — `&&` binds tighter than `||`, so the old
     # `cond1 || cond2 && return X` only early-returned for cond2.
     (n_iterations <= 0 || sampling_rate <= 0.0) && return Inf
-    1.0 / sqrt(n_iterations * sampling_rate)
+    nr = n_iterations * sampling_rate
+    # 🔴 BOTH TERMS OF THEOREM A.1 STEP 4, NOT THE COLLAPSED ASYMPTOTIC FORM.
+    # W_total = W_sample + W_coverage = O(1/sqrt(nr)) + e^(-nr).
+    # This returned ONLY `1/sqrt(nr)` until 2026-08-25 — the asymptotic result, which the proof
+    # establishes ONLY inside a regime it states twice and this function never tested:
+    #     Step 3: "For nr >= ln(1/delta), the coverage error becomes negligible (< delta)"
+    #     Step 4: "For nr > ln(n), the second term is o(1/sqrt(nr))"
+    # Outside that regime the dropped `e^(-nr)` is NOT negligible. MEASURED 2026-08-25:
+    #
+    #     n     r     nr    ln(n)  in regime   returned   true bound   UNDER-REPORT
+    #     10   0.1   1.00    2.30      no        1.0000     1.3679        36.8%
+    #     10   0.01  0.10    2.30      no        3.1623     4.0671        28.6%
+    #     10   0.5   5.00    2.30     yes        0.4472     0.4540         1.5%
+    #    100   0.1  10.00    4.61     yes        0.3162     0.3163         0.0%
+    #
+    # So it was materially wrong BELOW nr ~ ln(n) and fine above — exactly the regime split the
+    # proof describes. A "bound" that under-reports by 37% is worse than no bound: it is used to
+    # decide whether an approximation is within tolerance.
+    #
+    # ⚠️ WHY THE FULL FORM RATHER THAN A GUARD. Returning `Inf` outside the regime would be honest
+    # but throws away a usable answer and cliff-edges at the boundary. `1/sqrt(nr) + exp(-nr)` is
+    # valid EVERYWHERE — it is the Step 4 expression before the asymptotic collapse — and degrades
+    # gracefully. Same lesson as A.3, whose headline O(T*log(1/eps)) holds only "for typical values
+    # where log N ~ b": implement the FULL form, not the collapsed one, and let the docstring carry
+    # the regime note instead of a control-flow branch.
+    #
+    # Monotonicity in both arguments is preserved (both terms decrease in nr), so the existing
+    # §4.4 assertions still hold.
+    1.0 / sqrt(nr) + exp(-nr)
 end
 
 # ── Inference engine (combining the above) ────────────────────────────────────
