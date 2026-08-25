@@ -186,53 +186,53 @@ end
         @test occursin("(ponged a)", space_dump_all_sexpr(sc))   # mechanism REACHED
     end
 
-    t = GLOBAL_REGISTRY.templates[:PLN_STV_HeuristicModusPonens]
-    rules = get_lowering(:PLN_STV_HeuristicModusPonens)(t, "")
+    tpl   = GLOBAL_REGISTRY.templates[:PLN_STV_HeuristicModusPonens]
+    rules = get_lowering(:PLN_STV_HeuristicModusPonens)(tpl, "")
     run_lowering =
         () -> begin
             s = new_space()
-            space_add_all_sexpr!(s, "(apply-mp (A (stv 0.8 0.9)) (AimpB (stv 0.7 0.85)))")
+            # input shape follows the rewritten lowering's sources
+            space_add_all_sexpr!(s, "(stv A 0.8 0.9)\n(imp A B 0.7 0.85)")
             space_add_all_sexpr!(s, rules)
             space_metta_calculus!(s, 100)
             space_dump_all_sexpr(s)
         end
 
-    # ── BARE MORK: inert. The (=/:where) rules sit as literals, the trigger is untouched,
-    #    and NO computed B_TV (0.765 = min(0.9,0.85)·0.9, 0.56 = 0.8·0.7) is produced. ──
-    let bare = run_lowering()
-        @test !occursin("0.765", bare)                      # no executed confidence
-        @test !occursin("(B (stv 0.5", bare)                # no executed B atom
-        @test occursin("(apply-mp (A (stv 0.8 0.9))", bare) # trigger untouched ⇒ rule never fired
-    end
+    # ── THE INVERSION THIS TESTSET PRESCRIBED FOR ITSELF, PERFORMED 2026-08-25 ──
+    # The FINDING below (PLN 3a, 2026-06-15) diagnosed the lowering as UNEXECUTABLE, named the
+    # cause as SYNTAX/FORM, prescribed the fix, and left instructions: "WHEN the rewrite computes
+    # 0.765, flip the two `!occursin("0.765", …)` asserts to `== 0.765` … this testset then
+    # becomes the real reference-interpreter gate." The rewrite is done; this is that flip.
+    out = run_lowering()
+    ref_s, ref_c = stv_mp_reference(0.8, 0.9, 0.7, 0.85)          # (0.56, 0.765)
+    @test occursin("0.765", out)                                   # was !occursin
+    @test occursin("(stv B ", out)                                 # was !occursin("(B (stv 0.5")
+    got = [l for l in split(strip(out), "\n") if startswith(strip(l), "(stv B ")]
+    @test length(got) == 1
+    parts = split(strip(strip(got[1]), ['(', ')']), " ")
+    @test parse(Float64, parts[3]) ≈ ref_s atol=1e-12
+    @test parse(Float64, parts[4]) ≈ ref_c atol=1e-12
 
-    # ── CORE-LOADED (grounded * / min): STILL inert ⇒ the defect is the FORM, not siting.
-    #    (NB: global GROUNDED_REGISTRY mutation — these are correct arithmetic, benign.) ──
-    for (n, o) in (("*", *), ("min", min))
-        register_grounded!(
-            n,
-            a -> begin
-                length(a) < 2 && return nothing
-                x = tryparse(Float64, a[1])
-                y = tryparse(Float64, a[2])
-                (x === nothing || y === nothing) && return nothing
-                r = o(x, y)
-                isinteger(r) ? string(Int(r)) : string(r)
-            end
-        )
-    end
-    @test !occursin("0.765", run_lowering())   # grounding doesn't rescue it ⇒ SYNTAX/FORM branch
+    # ── STRUCTURAL: the FORM defect is gone. The lowering now emits `(exec … (O (pure …)))`,
+    #    not `(=`/`:where`. This is the inverse of the old assertion and pins the fix. ──
+    @test occursin("(exec", rules)
+    @test !occursin(":where", rules)
+    @test occursin("(pure", rules)
 
-    # ── STRUCTURAL proof of the FORM defect: the lowering emits `(=` / `:where`, NOT the
-    #    `(exec source product)` triple the calculus actually fires (cf. the positive control). ──
-    @test occursin("(=", rules) && occursin(":where", rules) && !occursin("(exec", rules)
-
-    # FINDING (PLN 3a, 2026-06-15): the §15.4 "reference interpreter" MVP was claimed on an
-    # UNEXECUTABLE lowering. Cause = SYNTAX/FORM (`(=`/`:where`, not `(exec …)`); grounding is
-    # moot (the rule never engages the rewrite engine to reach arithmetic). FIX = rewrite
-    # `pln_stv_lowering` into the `(exec source product)` grounded form (like
-    # `motif_miner_lowering`). ⚠ the `(I (* …))` grounded-arith path did NOT reduce in a bare
-    # MORK space either — the rewrite must settle the correct GroundedSource invocation /
-    # Core wiring. WHEN the rewrite computes 0.765, flip the two `!occursin("0.765", …)`
-    # asserts to `== 0.765` (pinned to the APPROX `stv_mp_reference` contract) — this testset
-    # then becomes the real reference-interpreter gate.
+    # FINDING (PLN 3a, 2026-06-15) — RESOLVED 2026-08-25. The §15.4 "reference interpreter" MVP had
+    # been claimed on an UNEXECUTABLE lowering. The June diagnosis was exactly right: cause =
+    # SYNTAX/FORM (`(=`/`:where`, not `(exec …)`), and grounding was moot — this testset PROVED that
+    # by registering `*`/`min` into GROUNDED_REGISTRY and finding it still inert.
+    #
+    # ⚠️ THE RESOLUTION CORRECTS ONE DETAIL OF THE PRESCRIPTION. The fix is NOT the
+    # "(exec source product) GROUNDED form": `GROUNDED_REGISTRY` is consulted only by
+    # `asource_new`, i.e. for exec SOURCE conjuncts. MM2 arithmetic lives in `PURE_OPS` reached
+    # through a `(pure …)` SINK — 297 of them, including product_f64 / min_f64 / f64_from_string —
+    # and needed no wiring at all. The exemplar is `decision_tree_learning_without_min_sink.mm2`,
+    # already green in our corpus differential at 71 steps.
+    #
+    # ⚠️ AND A COMMENT ELSEWHERE POINTED THE WRONG WAY: test_mgfw.jl claimed the blocker was
+    # "arithmetic primitive wiring (`*`, `min`) through the supercompiler's prim registry". That is
+    # a THIRD mechanism (M-Core `Prim` evaluation) which this path never touches. Following it
+    # produced 21d5e03 — real and tested, but not this unblock.
 end

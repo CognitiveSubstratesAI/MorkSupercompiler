@@ -508,9 +508,14 @@ end
     fn = get_lowering(:PLN_STV_HeuristicModusPonens)
     @test fn !== nothing
     residual = fn(t, "")   # region is unused by this template
-    @test occursin("stv-mp", residual)
-    @test occursin("apply-mp", residual)
+    # ⚠️ THESE WERE `occursin("stv-mp")` / `occursin("apply-mp")` — names from the OLD
+    # `(=`/`:where` lowering, which MORK could not execute (it stored the rule and computed
+    # nothing). String-shape assertions on an emitted form cannot tell a working lowering from an
+    # inert one, which is why they stayed green for months. Behaviour is now covered by the
+    # differential in test_pln_reference.jl; these check only IDENTITY and the executable form.
     @test occursin("PLN_STV_HeuristicModusPonens", residual)   # metadata tag
+    @test occursin("(exec", residual)                          # emits execs, not (= …) rules
+    @test occursin("(pure", residual)                          # arithmetic via PURE_OPS sink
 end
 
 @testset "MVP demo 2: Trie motif-miner template registered + lowering wired" begin
@@ -575,8 +580,13 @@ end
     t = GLOBAL_REGISTRY.templates[:PLN_STV_HeuristicModusPonens]
     fn = get_lowering(:PLN_STV_HeuristicModusPonens)
     residual = fn(t, "")
-    @test occursin("(* \$As \$Is)", residual)    # strength: As * Is
-    @test occursin("(* (min \$Ac \$Ic) 0.9)", residual)    # confidence: min * 0.9
+    # ⚠️ WAS `occursin("(* \$As \$Is)")` and `occursin("(* (min \$Ac \$Ic) 0.9)")` — the old
+    # lowering's syntax. `*` and `min` are NOT PURE_OPS names and `:where` is not an MM2 form, so
+    # those assertions passed on a lowering MORK could not run. The real ops are below; the
+    # NUMERICAL equivalence is asserted by the differential in test_pln_reference.jl.
+    @test occursin("product_f64", residual)    # strength: As * Is
+    @test occursin("min_f64", residual)        # confidence: min(Ac, Ic) …
+    @test occursin("0.9", residual)            #             … * 0.9
 end
 
 @testset "MVP §15.4 demo 3: motif miner reference top-k vs lowering structure" begin
@@ -639,17 +649,46 @@ end
     @test length(ref) == 4
 end
 
-@testset "MVP §15.4 demo 2 (smoke): PLN STV lowering loads into MORK" begin
-    # Smoke test: the lowering's (= ...) MeTTa-style rules parse into MORK
-    # without raising. Full numerical equivalence (executing the rule
-    # via MORK against stv_mp_reference) requires arithmetic primitive
-    # wiring (`*`, `min`) through the supercompiler's prim registry —
-    # queued for the PLN session.
-    t = GLOBAL_REGISTRY.templates[:PLN_STV_HeuristicModusPonens]
-    fn = get_lowering(:PLN_STV_HeuristicModusPonens)
-    rules = fn(t, "")
-    s = new_space()
-    @test_nowarn space_add_all_sexpr!(s, rules)
+# ── §15.5 ACCEPTANCE: "STV factor path returns the same result as the reference interpreter" ──
+#
+# This REPLACES a smoke test that only checked the lowering parsed. Its comment said full numerical
+# equivalence "requires arithmetic primitive wiring (`*`, `min`) through the supercompiler's prim
+# registry — queued for the PLN session". THAT COMMENT WAS WRONG THREE WAYS, and following it
+# literally produced a supercompiler-side arithmetic feature that does not touch this path:
+#   1. WRONG REGISTRY — this lowering executes in MORK, not in the supercompiler's PrimRegistry.
+#   2. WRONG MECHANISM — MORK arithmetic is `PURE_OPS` reached through a `(pure …)` SINK, not
+#      `GROUNDED_REGISTRY` (which `asource_new` consults, and only for exec SOURCE conjuncts).
+#   3. NO GAP AT ALL — MORK already ships 297 PURE_OPS including product_f64 / min_f64 / sum_f64 /
+#      sub_f64 / signum_f64 / f64_from_string / ifnz. Nothing needed wiring.
+#
+# The lowering emitted `(= … :where ($Bs = (* $As $Is)))`. `:where` is not an MM2 form and `*`/`min`
+# are not PURE_OPS names, so MORK stored the rule and computed nothing — measured: 1 atom, 0
+# reductions. The exemplar is `decision_tree_learning_without_min_sink.mm2`, already green in our
+# corpus differential at 71 steps, which does this exact computation in the `(pure …)` idiom.
+#
+# ⚠️ TRAP, worth carrying: in MM2 `(+ …)` and `(- …)` are ADD/REMOVE SINKS, not arithmetic.
+@testset "§15.5 acceptance: STV factor path == stv_mp_reference (differential)" begin
+    tpl   = GLOBAL_REGISTRY.templates[:PLN_STV_HeuristicModusPonens]
+    rules = get_lowering(:PLN_STV_HeuristicModusPonens)(tpl, "")
+
+    # several points, not one — a single case cannot distinguish min from max, or * from +
+    for (as, ac, is, ic) in ((0.8, 0.9, 0.7, 0.6),
+                             (1.0, 1.0, 1.0, 1.0),
+                             (0.5, 0.2, 0.5, 0.8),   # min picks the FIRST arg here
+                             (0.3, 0.95, 0.9, 0.4))  # and the SECOND here
+        s = new_space()
+        space_add_all_sexpr!(s, "(stv A $as $ac)\n(imp A B $is $ic)")
+        space_add_all_sexpr!(s, rules)
+        space_metta_calculus!(s, 200)
+        got = [l for l in split(strip(space_dump_all_sexpr(s)), "\n")
+               if startswith(strip(l), "(stv B ")]
+        @test length(got) == 1
+        parts = split(strip(strip(got[1]), ['(', ')']), " ")
+        bs, bc = parse(Float64, parts[3]), parse(Float64, parts[4])
+        ref_s, ref_c = stv_mp_reference(as, ac, is, ic)
+        @test bs ≈ ref_s atol=1e-12
+        @test bc ≈ ref_c atol=1e-12
+    end
 end
 
 @testset "GeodesicBGC priority — toy graph-reachability domain (workload #2)" begin
