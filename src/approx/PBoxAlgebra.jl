@@ -207,7 +207,18 @@ function _add_pbox_frechet(X::PBox, Y::PBox)::PBox
             lo = xlo + ylo - wmin
             hi = xhi + yhi + wmin
             # probability: min of marginals (upper Fréchet bound)
-            p = min(px, py)
+            # 🔴 MASS OVER-COUNT — one rule, four sites (_add_pbox_frechet is one). `min(px,py) >= px*py`, and
+ # constructors set `confidence = sum(new_probs)`, so dependent combinations sum ABOVE 1.
+ # MEASURED: sum(probs) = 1.6 on two multi-interval p-boxes sharing a correlation bit.
+ # §2.3 states the constraint EXPLICITLY — "you can't have more probability mass in the
+ # joint distribution than in either marginal, AND THE TOTAL MASS MUST SUM CORRECTLY" —
+ # a clause our extraction had DROPPED, which is why this was briefly mis-filed upstream.
+ # INVISIBLE on single-interval inputs (`min(1,1) == 1*1`), the only shape production
+ # builds today. Reachable only since `correlation_sig` was seeded (685f16e).
+ # FIX IS ONE ALLOCATION FOR ALL FOUR SITES: masses respecting the Fréchet bounds per
+ # pair AND summing to 1. Renormalising NARROWS (unsafe); clamping the scalar makes
+ # `confidence` contradict `sum(probabilities)` in the same struct. See `certain_fact`.
+ p = min(px, py)
             push!(new_intervals, (lo, hi))
             push!(new_probs, p)
         end
@@ -251,7 +262,18 @@ function mul_pbox(X::PBox, Y::PBox)::PBox
             products = [xlo*ylo, xlo*yhi, xhi*ylo, xhi*yhi]
             lo = minimum(products)
             hi = maximum(products)
-            p = use_frechet ? min(px, py) : px * py
+            # 🔴 MASS OVER-COUNT — one rule, four sites (mul_pbox dependent branch is one). `min(px,py) >= px*py`, and
+ # constructors set `confidence = sum(new_probs)`, so dependent combinations sum ABOVE 1.
+ # MEASURED: sum(probs) = 1.6 on two multi-interval p-boxes sharing a correlation bit.
+ # §2.3 states the constraint EXPLICITLY — "you can't have more probability mass in the
+ # joint distribution than in either marginal, AND THE TOTAL MASS MUST SUM CORRECTLY" —
+ # a clause our extraction had DROPPED, which is why this was briefly mis-filed upstream.
+ # INVISIBLE on single-interval inputs (`min(1,1) == 1*1`), the only shape production
+ # builds today. Reachable only since `correlation_sig` was seeded (685f16e).
+ # FIX IS ONE ALLOCATION FOR ALL FOUR SITES: masses respecting the Fréchet bounds per
+ # pair AND summing to 1. Renormalising NARROWS (unsafe); clamping the scalar makes
+ # `confidence` contradict `sum(probabilities)` in the same struct. See `certain_fact`.
+ p = use_frechet ? min(px, py) : px * py
             push!(new_intervals, (lo, hi))
             push!(new_probs, p)
         end

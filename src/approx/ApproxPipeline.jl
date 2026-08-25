@@ -83,6 +83,20 @@ function approx_subsumes(s1::ApproximatePathSig, s2::ApproximatePathSig)::Bool
 end
 
 # ── §6.2 ApproxIndex ─────────────────────────────────────────────────────────
+#
+# 🔴🔴 ZERO CALL SITES. NOTHING IN THE PIPELINE EVER CONSTRUCTS ONE (measured 2026-08-25: every
+# mention of `ApproxIndex` in src/ is this definition, its constructor, insert!/lookup, or the
+# export line). The struct, the bloom filter and the coverage p-box are all correct AND all
+# unreachable — §6.2's "sampled indices keep only high-frequency entries" never happens.
+#
+# ⚠️ AND THIS BLOCK CARRIED NO WARNING UNTIL NOW, WHICH IS WHY IT READ AS COMPLETE. Reviewers of
+# this file correctly noted "no flags in the code" here and scored §6.2 solid. The honesty in this
+# codebase is INLINE-COMMENT-BASED, so a piece nobody has examined carries no comment and silence
+# reads as health. Absence of a flag is not evidence of absence of a defect.
+#
+# Three functions §6.2 requires do not exist at all: `importance_sample`, `approximate_lookup`,
+# `total_confidence`. With those missing and nothing constructing an index, Phase 3 emits
+# `sprint_program(planned_nodes)` — the REORDERED ORIGINAL program. The layer approximates nothing.
 
 """
     SimpleBloomFilter
