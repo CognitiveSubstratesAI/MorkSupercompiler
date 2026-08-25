@@ -52,6 +52,39 @@ struct UncertainFact
     derivation::ProofTree
 end
 
+"""
+    UncertainFact(pred, args, pb) -> UncertainFact
+
+⚠️⚠️ **THIS LINE CARRIES A MASS INTO A META-UNCERTAINTY SLOT, AND THE PAPER IS WHY.**
+The spec defines `confidence` TWICE, as DIFFERENT quantities, and never reconciles them:
+
+    §2.2  PBox.confidence          "Total probability mass tracked"
+    §4.1  UncertainFact.confidence "Meta-uncertainty: how sure about the p-box"
+                                   ("uncertainty about uncertainty")
+
+`pb.confidence` below is the §2.2 quantity; the field it lands in is the §4.1 one. There is no
+type error to stop it, because both are `Float64` and the paper gave them the same name. Filed
+upstream: `docs/upstream-issues/Approximate-MeTTa-Supercompilation-confidence-two-definitions.md`
+
+🔴 AND THE §2.2 QUANTITY CAN NOW EXCEED 1.0, which "total probability mass" cannot. `mul_pbox`'s
+dependent branch uses `min(px,py) >= px*py`, and constructors set `confidence = sum(new_probs)`.
+MEASURED on two multi-interval p-boxes sharing a correlation bit: dependent 1.6, independent 1.0.
+(Single-interval p-boxes hide it — `min(1,1) == 1*1`.) Reachable only since `correlation_sig` was
+seeded on 2026-08-25; before that nothing was ever dependent.
+
+TWO OF THE THREE CANDIDATE FIXES ARE WRONG:
+  · RENORMALISE — divides the probabilities down, NARROWING the mass. The unsafe direction; it
+    undoes exactly what Fréchet is for. Out.
+  · CLAMP THE SCALAR to 1.0 while leaving `probabilities` alone — `confidence` then disagrees with
+    `sum(probabilities)` INSIDE THE SAME STRUCT. Two fields silently contradicting each other is
+    worse than one field being unusual. Out.
+  · THE LIVE OPTION: under Fréchet this IS an over-countable MASS BOUND, not a probability, so the
+    things to fix are the CONSUMERS that treat it as one — `ApproxMOSES.jl:109` multiplies by it
+    (`avg_fitness.confidence * h`), and this constructor inherits it wholesale.
+
+Deliberately left as-is: the correct local change depends on which quantity the field is meant to
+be, which is the upstream naming question.
+"""
 function UncertainFact(pred::Symbol, args::Vector{String}, pb::PBox)::UncertainFact
     UncertainFact(pred, args, pb, pb.confidence, ProofTree())
 end
