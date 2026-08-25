@@ -25,7 +25,8 @@ Full explanation of what the supercompiler does to `program`:
 """
 function explain(s::Space, program::AbstractString)::String
     io = IOBuffer()
-    stats = collect_stats(s)
+    # (no `collect_stats` — the join nodes below come from `s.btm` directly. Calling it here would
+    # walk the trie to build statistics nothing reads.)
     nodes = parse_program(program)
 
     println(io, "═══════════════════════════════════════════════════════")
@@ -52,7 +53,12 @@ function explain(s::Space, program::AbstractString)::String
         println(io, "\n[$atom_idx] $(head_str)")
         println(io, "  Sources ($(length(sources)) — Rule-of-64 risk if ≥ 5):")
 
-        jnodes = build_join_nodes(sources, stats)
+        # 🔴 DYNAMIC, not stats (2026-08-24). `explain` HAS the Space, so `s.btm` gives EXACT
+        # per-source subtrie counts. The stats estimator cannot be used honestly here — see N3 in
+        # docs/AUDIT_DOC1.md: `collect_stats` samples a TRIE-ORDER PREFIX and scales it as if
+        # uniform, so on a 4020-atom space it reported ("a",3) => 4020 (truth 2020) and never saw
+        # predicate "b" at all. An explanation printing "card≈" from that is confidently wrong.
+        jnodes = build_join_nodes_dynamic(sources, s.btm)
         perm = plan_join_order(jnodes)
         scores = static_score.(sources)
         already_sorted = issorted([jnodes[i].cardinality for i in perm])
@@ -61,7 +67,7 @@ function explain(s::Space, program::AbstractString)::String
             marker = k in perm[1:1] ? "→ first (most selective)" : ""
             println(
                 io,
-                "    [orig $k] card≈$(jn.cardinality)  static=$(round(scores[k]; digits=2))  $(sprint_sexpr(src))  $marker"
+                "    [orig $k] card=$(jn.cardinality) (exact)  static=$(round(scores[k]; digits=2))  $(sprint_sexpr(src))  $marker"
             )
         end
 
@@ -118,6 +124,12 @@ sources in the planned order.  Node color encodes estimated cardinality
 
 Paste the output into https://dreampuf.github.io/GraphvizOnline/ to visualize.
 """
+# ⚠️ `to_dot` takes NO Space, so unlike `explain` it CANNOT use the exact trie counts and is stuck
+# with the stats estimator. Its cardinalities inherit N3 (docs/AUDIT_DOC1.md): `collect_stats`
+# samples a trie-order prefix and scales it as if uniform, so a predicate sorting late in the trie
+# is invisible and one sorting early is credited with the whole space. Read the numbers it draws as
+# SHAPE-LEVEL and possibly wrong, not as measurements. Routing it would mean adding a Space
+# parameter — an API change, deliberately not made here.
 function to_dot(
     program::AbstractString; stats::Union{MORKStatistics, Nothing}=nothing
 )::String
