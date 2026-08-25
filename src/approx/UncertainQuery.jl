@@ -233,12 +233,23 @@ Cost = α·Time + β·Error + γ·Variance
 For each candidate next source, estimates the cost contribution and picks
 the lowest-cost option (greedy, like Doc 1, but with uncertainty tracking).
 """
+# 🔴 `error_tolerance` REMOVED FROM THIS SIGNATURE 2026-08-25. It was declared, documented, passed
+# by the pipeline — and NEVER READ in the body. MEASURED: 0.0 and 0.99 both returned order [2,3,1].
+# The pipeline believed it was applying an error budget during planning; it was not.
+#
+# It is NOT restored with an implementation, because the paper never gives one: `error_tolerance`
+# appears in §3 for `ApproximateSplit(expr, stats, budget, error_tolerance)` ALONE — pruning
+# branches whose cumulative probability passes `1 - error_tolerance`. Join ORDERING has no such
+# parameter anywhere in the document. Ours took it by analogy. Inventing semantics for it would be
+# the same second-hand-from-a-spec move that produced this layer's other gaps.
+#
+# A parameter that silently does nothing is worse than an absent one: it reads as a knob, and any
+# caller tuning it gets no signal that nothing changed.
 function plan_join_order_approx(
     sources::Vector{SNode},
     stats::MORKStatistics,
     btm=nothing;
-    weights::CostWeights=balanced(),
-    error_tolerance::Float64=0.05
+    weights::CostWeights=balanced()
 )::Vector{Int}
     n = length(sources)
     n <= 1 && return collect(1:n)

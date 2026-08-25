@@ -289,6 +289,14 @@ struct ApproxPipelineResult
 end
 
 """
+    APPROX_PASSTHROUGH_WARNED
+
+One-shot latch so the Phase 3 passthrough warning fires once per session rather than per call.
+Process-lifetime and deliberately not reset: the condition it reports is structural, not per-run.
+"""
+const APPROX_PASSTHROUGH_WARNED = Ref(false)
+
+"""
     run_approx_pipeline(s::Space, program::AbstractString;
                         error_tolerance=0.05, weights=balanced()) -> ApproxPipelineResult
 
@@ -328,7 +336,7 @@ function run_approx_pipeline(
                 conj = items[ci]::SList
                 sources = conj.items[2:end]
                 order = plan_join_order_approx(
-                    sources, stats, s.btm; weights=weights, error_tolerance=error_tolerance
+                    sources, stats, s.btm; weights=weights
                 )
                 new_conj = SList([conj.items[1]; sources[order]])
                 push!(
@@ -344,6 +352,29 @@ function run_approx_pipeline(
 
     # ── Phase 3: Specialization ────────────────────────────────────────────
     t3 = @elapsed begin
+        # 🔴🔴 PHASE 3 IS A PASSTHROUGH. THIS LINE EMITS THE REORDERED **ORIGINAL** PROGRAM.
+        # §6.2 requires sampled indices, importance sampling, approximate joins and early
+        # termination. NONE of that happens: `importance_sample`, `approximate_lookup` and
+        # `total_confidence` DO NOT EXIST, and nothing ever constructs an `ApproxIndex`. So the
+        # "Specialization" phase specializes nothing and Phase 4 then verifies error bounds that
+        # Phase 3 wrote down as constants — the only numbers in the system.
+        #
+        # NOT FIXED HERE BECAUSE IT IS NOT A FIX: making this emit approximate code means BUILDING
+        # §6.2 (three absent functions plus index construction), and doing that against the spec
+        # with no workload pulling on it reproduces exactly how this layer got 89% written and 19%
+        # working. It needs a demand-driven consumer, not more paper coverage.
+        #
+        # What IS fixed is the silence. A caller flipping `use_approx=true` previously got a
+        # confident-looking ApproxPipelineResult with error bounds and no indication that no
+        # approximation occurred. It now warns once per session.
+        if !APPROX_PASSTHROUGH_WARNED[]
+            APPROX_PASSTHROUGH_WARNED[] = true
+            @warn "ApproxPipeline Phase 3 is a PASSTHROUGH — it emits the reordered ORIGINAL " *
+                  "program. No approximation is applied: §6.2's importance_sample / " *
+                  "approximate_lookup / total_confidence are absent and no ApproxIndex is ever " *
+                  "built. The error bounds in the result are constants Phase 3 assigned, not " *
+                  "measured approximation error. Treat `use_approx=true` as a reordering pass."
+        end
         program_approx = sprint_program(planned_nodes)
 
         # For approximable operations: build ApproximatePathSig
