@@ -279,3 +279,50 @@ end
     @test answers(prog) == answers(plan_program(s, prog))
     @test length(answers(prog)) == 5
 end
+
+# ── REFLECTIVE EXECS MUST NOT BE DECOMPOSED (regression, 2026-08-25) ─────────
+#
+# Found by RUNNING counter_machine_5 through `run!`, not by reading: the default pipeline hit the
+# 20,000-step ceiling where plain MORK halts at 241. Cause: decomposition split the REFLECTIVE
+# driver — an exec whose own source pattern matches `(exec …)` atoms — into two atoms BOTH of shape
+# `(exec (clocked Z) <pattern> <template>)`, so stage 1's source `(exec (clocked $ts) $p1 $t1)`
+# then matched stage 2. The rewrite changed its own match set.
+#
+#   decompose ON, pre-fix : 20,000 steps (CEILING), 546 atoms, 96 `_sc_tmp` residual
+#   decompose OFF         :    241 steps,           325 atoms,  0 residual
+#   plain MORK            :    241 steps,           325 atoms
+#
+# ⚠️ ASSERT THE MATCH SET, NOT THE STRING. The pre-fix tests here checked stage SHAPE and passed
+# throughout — the defect is a change in which atoms the pattern matches, which no shape assertion
+# can observe. That is the same failure that let v1 §10.6 batching ship (see MM2Optimize.jl).
+@testset "reflective exec is NOT decomposed (would change its own match set)" begin
+    # the counter_machine_5 driver, reduced: 3 sources, one of them an (exec …) pattern
+    reflective = """(exec (clocked Z) (, (exec (clocked \$ts) \$p1 \$t1) (state \$ts (IC \$_)) ((step \$k \$ts) \$p0 \$t0)) (, (exec (\$k \$ts) \$p0 \$t0) (exec (clocked (S \$ts)) \$p1 \$t1)))"""
+    out = decompose_program(reflective)
+    @test !occursin("_sc_tmp", out)              # left intact
+    @test length(parse_program(out)) == 1        # still ONE atom, not a chain
+
+    # control: same source count, NO unsafe pattern among the sources -> DOES decompose
+    plain3 = """(exec 0 (, (a \$x \$y) (b \$y \$z) (c \$z \$w)) (, (r \$x \$w)))"""
+    out2 = decompose_program(plain3)
+    @test occursin("_sc_tmp", out2)              # the guard is not just disabling everything
+    @test length(parse_program(out2)) > 1
+end
+
+# ⚠️ THE FIRST VERSION OF THE GUARD TESTED ONLY FOR A LITERAL `exec` HEAD AND WAS TOO NARROW.
+# counter_machine_5's driver carries a SECOND reflective source, `((step \$k \$ts) \$p0 \$t0)`, whose
+# head is a LIST — it matches any 3-element atom, the emitted stages included, and it sailed past
+# the narrow test. A variable head has the same hazard. The rule is: head is `exec`, OR head is not
+# a ground symbol. These cases exist so a future narrowing has to argue with each shape separately.
+@testset "guard covers NON-GROUND heads, not just a literal `exec` head" begin
+    unsafe = [
+        ("literal exec head", """(exec 0 (, (exec (clocked \$t) \$p \$q) (a \$x) (b \$x)) (, (r \$x)))"""),
+        ("compound head",     """(exec 0 (, ((step \$k \$t) \$p \$q) (a \$x) (b \$x)) (, (r \$x)))"""),
+        ("variable head",     """(exec 0 (, (\$f \$x \$y) (a \$x) (b \$x)) (, (r \$x)))"""),
+    ]
+    for (name, src) in unsafe
+        out = decompose_program(src)
+        @test !occursin("_sc_tmp", out)          # guarded — name kept for failure output
+        @test length(parse_program(out)) == 1
+    end
+end

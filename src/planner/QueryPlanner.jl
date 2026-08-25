@@ -133,10 +133,22 @@ end
 # ── Algorithm 6 — EffectAwarePlanning (§5.3.1) ────────────────────────────────
 
 # Semi-join penalty per unbound dependency: cost *= UNBOUND_DEP_PENALTY ^ n_unbound.
-# This is a concretization of the spec's abstract `cost_based_join_order` (§5.3.1) —
-# the 4× figure reflects empirical observation that one unbound join variable typically
-# multiplies required I/O by ~4× (similar to the standard 4× rule-of-thumb in
-# relational cost models). Tune here if profiling shows a different breakeven.
+#
+# 🔴 THE PAPER LEAVES THIS HOLE — the constant is NOT a local shortcut. §5.3.1 Algorithm 6
+# (EffectAwarePlanning) calls `cost_based_join_order(region, stats)` and NEVER DEFINES IT, in
+# either v1 or v2. Someone implementing Algorithm 6 has to supply a cost model; this is ours.
+# Say so rather than letting the constant read as a guess against a fully-specified spec.
+#
+# ⚠️ THE VALUE 4 IS AN UNMEASURED DEFAULT. An earlier version of this comment justified it as
+# "empirical observation that one unbound join variable typically multiplies required I/O by ~4×
+# (similar to the standard 4× rule-of-thumb in relational cost models)". NEITHER claim was ever
+# checked here: no measurement on this substrate produced 4, and no source was consulted for the
+# supposed rule-of-thumb. It was a citation written to corroborate a choice already made, which is
+# the kind that survives review precisely because it flatters the choice. Removed 2026-08-25.
+#
+# What IS true: the exponent form is deliberate (each unbound dependency compounds), and 4 is a
+# placeholder awaiting a measurement. If you profile a breakeven, replace this with the number AND
+# the workload it came from.
 const UNBOUND_DEP_PENALTY = 4
 
 """

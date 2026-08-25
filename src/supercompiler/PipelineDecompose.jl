@@ -169,6 +169,31 @@ struct DecomposedProgram
 end
 
 """
+    _is_unsafe_decompose_source(node::SNode) -> Bool
+
+True when a source pattern can match atoms that decomposition ITSELF creates — in which case the
+enclosing exec must not be decomposed. Two shapes qualify:
+
+1. **head is literally `exec`** — e.g. `(exec (clocked \$ts) \$p1 \$t1)`. Decomposition emits new
+   `(exec …)` atoms, so such a source matches the very stages just produced.
+2. **head is NOT a ground symbol** — a variable head (`(\$f a b)`) or a compound head
+   (`((step \$k \$ts) \$p0 \$t0)`). These match ANYTHING of the right arity, the emitted stages
+   included. counter_machine_5's driver uses exactly this shape, and it does NOT trip test 1 —
+   its head is the list `(step \$k \$ts)`, not the symbol `exec`.
+
+Conservative by construction: a source that would in fact be safe costs the Rule-of-64 win on that
+atom and costs no correctness. Narrow it only with a measurement.
+"""
+function _is_unsafe_decompose_source(node::SNode)::Bool
+    node isa SList || return false
+    its = (node::SList).items
+    isempty(its) && return false
+    h = its[1]
+    h isa SAtom || return true                    # variable or compound head — matches anything
+    (h::SAtom).name == "exec"
+end
+
+"""
     decompose_exec(atom::SNode; counter=Ref(0)) -> DecomposedProgram
 
 Decompose one exec/rule atom with a multi-source conjunction into a chain
@@ -198,6 +223,42 @@ function decompose_exec(atom::SNode; counter::Base.RefValue{Int}=Ref(0))::Decomp
     sources = conj.items[2:end]   # skip the leading ","
     n_src = length(sources)
     n_src <= STAGE_MAX_SOURCES && return DecomposedProgram([atom], 0, n_src)
+
+    # 🔴🔴 REFLECTIVE EXECS ARE NOT DECOMPOSABLE — MEASURED 2026-08-25, and this is a CORRECTNESS
+    # guard, not a heuristic. If any SOURCE pattern can match atoms decomposition ITSELF creates,
+    # the rewrite is unsound, because IT CHANGES ITS OWN MATCH SET. That covers a literal `exec`
+    # head AND a non-ground head (variable or compound), which matches anything of the right arity
+    # — see `_is_unsafe_decompose_source`. ⚠️ The first version of this guard tested ONLY for a
+    # literal `exec` head and MISSED the driver's other reflective source `((step \$k \$ts) \$p0 \$t0)`,
+    # whose head is a LIST.
+    #
+    # counter_machine_5's driver is the case that found it (the .mm2 comments it "(reflective!)"):
+    #
+    #   (exec (clocked Z) (, (exec (clocked $ts) $p1 $t1) (state $ts (IC $_)) ((step $k $ts) $p0 $t0))
+    #                     (, (exec ($k $ts) $p0 $t0) (exec (clocked (S $ts)) $p1 $t1)))
+    #
+    # decomposes to TWO atoms, BOTH of shape `(exec (clocked Z) <pattern> <template>)` — and stage
+    # 1's source `(exec (clocked $ts) $p1 $t1)` then MATCHES STAGE 2. The rewrite changed the match
+    # set. Combined with `_sc_tmp*` living until `_cleanup_sc_tmp!` (which runs ONCE, after
+    # execution — SCPipeline.jl:498), stale partials from tick 1 keep firing at tick 30.
+    #
+    # MEASURED on counter_machine_5, ceiling 20,000 steps:
+    #     decompose ON  : 20,000 steps (CEILING, never halts), 546 atoms, 96 `_sc_tmp` residual
+    #     decompose OFF :    241 steps,                        325 atoms,  0 `_sc_tmp`
+    #     plain MORK    :    241 steps,                        325 atoms
+    # i.e. with this guard the pipeline agrees with plain MORK; without it, it does not terminate.
+    #
+    # ⚠️ THE MODULE DOCSTRING'S SOUNDNESS ARGUMENT DOES NOT COVER THIS. It reasons entirely about
+    # VARIABLE FLOW ("No variable is lost between stages"), which is the right analysis for a
+    # one-shot evaluation and says nothing about (a) the LIFETIME of intermediates across steps or
+    # (b) a source pattern that can match the stages themselves. Both are needed.
+    #
+    # Conservative on purpose: ANY `(exec …)` source disables decomposition for that atom. A
+    # reflective exec that would in fact be safe is left un-decomposed, which costs the Rule-of-64
+    # win on that atom and costs no correctness. Narrow it only with a measurement.
+    if any(_is_unsafe_decompose_source, sources)
+        return DecomposedProgram([atom], 0, n_src)
+    end
 
     # Prefix: all items before the conjunction (e.g. ["exec", "0"] or ["(phase $p)"])
     prefix = collect(items[1:(conj_idx - 1)])
