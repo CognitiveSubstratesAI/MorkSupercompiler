@@ -212,6 +212,8 @@ function _and_lukasiewicz(T_A::PBox, T_B::PBox)::PBox
         end
     end
     sig = _union_sig(T_A.correlation_sig, T_B.correlation_sig)
+    # dependent branch: rescale so the masses form a distribution (see `dependent_masses`)
+    new_probs = dependent_masses(new_probs)
     merge_overlapping(PBox(new_intervals, new_probs, sum(new_probs), sig))
 end
 
@@ -235,6 +237,8 @@ function _and_frechet(T_A::PBox, T_B::PBox)::PBox
         end
     end
     sig = _union_sig(T_A.correlation_sig, T_B.correlation_sig)
+    # dependent branch: rescale so the masses form a distribution (see `dependent_masses`)
+    new_probs = dependent_masses(new_probs)
     merge_overlapping(PBox(new_intervals, new_probs, sum(new_probs), sig))
 end
 

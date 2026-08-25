@@ -140,3 +140,36 @@ end
     @test ε2 < ε1            # more samples → smaller epsilon
     @test ε2 ≈ ε1 / 2 atol=0.01   # ε ∝ 1/√n: 4× samples → ε/2
 end
+
+# ── MASS CONSERVATION ON DEPENDENT COMBINATIONS (regression, 2026-08-25) ─────────────────────
+#
+# The dependent branches assign each pair its pointwise Fréchet upper bound `min(px,py)`, which is
+# attainable pointwise but NOT simultaneously — so the masses summed ABOVE 1. Measured 1.6 on two
+# multi-interval p-boxes sharing a correlation bit. §2.3 requires "the total mass must sum
+# correctly". INVISIBLE on single-interval inputs (`min(1,1) == 1*1`), which is why it survived.
+@testset "dependent combinations conserve mass (was summing to 1.6)" begin
+    sig = falses(64); sig[7] = true
+    X  = PBox([(0.1,0.3),(0.5,0.7)], [0.4,0.6], 1.0, copy(sig))
+    Y  = PBox([(0.2,0.4),(0.6,0.8)], [0.3,0.7], 1.0, copy(sig))
+    Xi = PBox(X.intervals, X.probabilities, X.confidence, BitVector())
+    Yi = PBox(Y.intervals, Y.probabilities, Y.confidence, BitVector())
+
+    @test are_dependent(X, Y)
+    for (label, r) in (("mul dependent", mul_pbox(X, Y)), ("add dependent", add_pbox(X, Y)))
+        @test sum(r.probabilities) ≈ 1.0 atol=1e-9      # label kept for failure output
+        @test r.confidence ≈ 1.0 atol=1e-9
+    end
+
+    # the INDEPENDENT branch must be untouched, and must NOT be rescaled:
+    @test sum(mul_pbox(Xi, Yi).probabilities) ≈ 1.0 atol=1e-9
+
+    # 🔴 PARTIAL MASS MUST SURVIVE. Rescaling the independent branch would inflate a p-box with
+    # confidence 0.8 up to 1.0 — manufacturing mass. This asserts we did not do that.
+    Xp = PBox([(0.1,0.3)], [0.8], 0.8, BitVector())
+    Yp = PBox([(0.2,0.4)], [1.0], 1.0, BitVector())
+    @test sum(mul_pbox(Xp, Yp).probabilities) ≈ 0.8 atol=1e-9
+
+    # dependent_masses is a no-op when already normalised
+    @test dependent_masses([0.4, 0.6]) == [0.4, 0.6]
+    @test sum(dependent_masses([0.8, 0.8])) ≈ 1.0 atol=1e-12
+end

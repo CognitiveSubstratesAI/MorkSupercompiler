@@ -143,6 +143,39 @@ end
 # ── Algorithm 1 — AddPBox (§2.3) ─────────────────────────────────────────────
 
 """
+    dependent_masses(raw::Vector{Float64}) -> Vector{Float64}
+
+Normalise the pairwise masses produced by a DEPENDENT combination so they sum to 1.
+
+🔴 WHY THIS EXISTS. The dependent branches assign each interval pair its pointwise Fréchet upper
+bound `min(px,py)`. That bound is attainable POINTWISE but NOT SIMULTANEOUSLY, so the collection is
+not a distribution: MEASURED `sum(probs) = 1.6` on two multi-interval p-boxes sharing a correlation
+bit, against 1.0 for the independent branch. §2.3 states the constraint in as many words — "you
+can't have more probability mass in the joint distribution than in either marginal, AND THE TOTAL
+MASS MUST SUM CORRECTLY".
+
+⚠️ THIS IS OUR CHOICE, NOT A PORT. The paper gives the Fréchet result as a bound on the joint CDF
+and never prescribes an interval-PROBABILITY rule, so there is nothing to conform to. Rescaling the
+min-masses keeps the relative weighting that `min` encodes (which is what distinguishes the
+dependent case from the independent one) while restoring `sum = 1`. It does NOT touch intervals, so
+no bound is narrowed — the Fréchet widening that carries the dependence is untouched.
+
+Alternatives considered and rejected:
+  · PRODUCT masses `px*py` — sums to 1 and is a valid coupling, but discards the dependence
+    weighting entirely, making the dependent branch differ from the independent one only in its
+    intervals.
+  · CLAMP the `confidence` scalar alone — leaves `confidence` contradicting `sum(probabilities)`
+    inside one struct. Two fields silently disagreeing is worse than one field being unusual.
+  · The fully correct treatment is a transportation problem: masses respecting the Fréchet bounds
+    per pair AND both marginals. The paper provides no algorithm and we have no oracle for one.
+"""
+function dependent_masses(raw::Vector{Float64})::Vector{Float64}
+    t = sum(raw)
+    (t <= 0.0 || isapprox(t, 1.0; atol=1e-12)) && return raw
+    raw ./ t
+end
+
+"""
     add_pbox(X::PBox, Y::PBox) -> PBox
 
 Algorithm 1 (AddPBox) from §2.3. Dispatches on dependency:
@@ -225,6 +258,8 @@ function _add_pbox_frechet(X::PBox, Y::PBox)::PBox
     end
 
     sig = _union_sig(X.correlation_sig, Y.correlation_sig)
+    # dependent branch: rescale so the masses form a distribution (see `dependent_masses`)
+    new_probs = dependent_masses(new_probs)
     merge_overlapping(PBox(new_intervals, new_probs, sum(new_probs), sig))
 end
 
@@ -280,6 +315,9 @@ function mul_pbox(X::PBox, Y::PBox)::PBox
     end
 
     sig = _union_sig(X.correlation_sig, Y.correlation_sig)
+    # DEPENDENT branch only. Never rescale the product branch: a p-box with confidence 0.8
+    # combined with one at 1.0 must stay at 0.8, and rescaling would MANUFACTURE mass.
+    use_frechet && (new_probs = dependent_masses(new_probs))
     merge_overlapping(PBox(new_intervals, new_probs, sum(new_probs), sig))
 end
 
@@ -443,7 +481,7 @@ function _union_sig(a::BitVector, b::BitVector)::BitVector
     out
 end
 
-export pbox_exact, pbox_point, pbox_interval, pbox_empty
+export pbox_exact, pbox_point, pbox_interval, pbox_empty, dependent_masses
 export width, max_width, overlap, are_dependent, mark_dependent
 export add_pbox, mul_pbox, widen_pbox, merge_overlapping
 export sample_from_pbox
