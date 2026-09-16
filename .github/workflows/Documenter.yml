@@ -29,7 +29,7 @@ jobs:
           git clone --depth 1 https://github.com/sivaji1012/HPC.git ../HPC
       - uses: julia-actions/setup-julia@v2
         with:
-          version: '1.12'
+          version: '1.13'
       - uses: julia-actions/cache@v2
       - name: Install dependencies
         run: julia --project=docs -e 'using Pkg; Pkg.develop(PackageSpec(path=pwd())); Pkg.instantiate()'
