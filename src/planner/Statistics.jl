@@ -179,8 +179,8 @@ end
 
 function _merge_mork_stats(a::MORKStatistics, b::MORKStatistics)::MORKStatistics
     MORKStatistics(
-        merge(+, a.node_type_counts, b.node_type_counts),
-        merge(+, a.pattern_shape_histogram, b.pattern_shape_histogram),
+        mergewith(+, a.node_type_counts, b.node_type_counts),   # merge(f, …) is deprecated in Julia 1.13
+        mergewith(+, a.pattern_shape_histogram, b.pattern_shape_histogram),
         merge(a.predicate_fanout, b.predicate_fanout),
         merge(a.argument_selectivity, b.argument_selectivity),
         merge(a.pattern_match_cache, b.pattern_match_cache),
