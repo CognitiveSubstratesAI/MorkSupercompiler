@@ -265,8 +265,12 @@ function collect_stats(btm, total_atoms::Int, sample_size::Int)::MORKStatistics
         # argument_selectivity: for each arg position, estimate constrained fraction
         for pos in 1:min(arity - 1, 4)
             byte_pos = 2 + sym_len + pos
-            if byte_pos <= length(path)
-                ab = path[byte_pos]
+            # ⚠️ `p`, NOT `path`: since the 0.4.0 zipper API `path` is a GENERIC FUNCTION
+            # (PathMaps.path), so a bare `path` here resolves to the function and blows up with
+            # `MethodError: no method matching length(::typeof(PathMaps.path))`. The local was
+            # renamed to `p` at :222 during that port; these two uses were missed.
+            if byte_pos <= length(p)
+                ab = p[byte_pos]
                 atag = try
                     byte_item(ab)
                 catch
