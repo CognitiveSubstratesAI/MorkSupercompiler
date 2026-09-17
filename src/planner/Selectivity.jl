@@ -14,7 +14,7 @@ Two strategies:
                             Returns an Int; lower = more selective.
 """
 
-using PathMaps: read_zipper_at_path, zipper_val_count
+using PathMaps: read_zipper_at_path, val_count
 using MORK: ExprArity, ExprSymbol, item_byte
 
 # ── Static ────────────────────────────────────────────────────────────────────
@@ -50,10 +50,10 @@ Returns `typemax(Int)` if the head cannot be encoded (too long, nested head, etc
 so that unencodable sources sort last (least selective).
 
 🔴 COST: **O(subtrie), NOT O(1)** — MEASURED 2026-08-25, and this docstring said "O(1) PathMap
-lookup" until then. `zipper_val_count` has two paths and NEITHER is constant time:
+lookup" until then. `val_count` has two paths and NEITHER is constant time:
 `val_count_below_root` -> `node_val_count` SUMS RECURSIVELY over all children (memoised only
 within one call, by a freshly allocated `Dict`), and when the prefix ends mid-edge it falls back to
-`deepcopy(z)` plus a full `zipper_to_next_val!` iteration (`Zipper.jl:658-678`).
+`deepcopy(z)` plus a full `to_next_val!` iteration (`Zipper.jl:658-678`).
 
     n atoms       1_000    4_000    16_000    64_000
     dynamic_count  1.03 ms  2.26 ms  17.19 ms  57.33 ms       (~1 ms per 1k atoms, flat)
@@ -98,7 +98,7 @@ function dynamic_count(btm, src::SNode)::Int
     # draws `min(sample_size, sqrt(space.size))` samples and scales, so a deeper prefix means FEWER
     # samples and worse variance. Depth 2 is a SAMPLING BUDGET.
     #
-    # PathMap removes the reason for it. `read_zipper_at_path` + `zipper_val_count` is an EXACT
+    # PathMap removes the reason for it. `read_zipper_at_path` + `val_count` is an EXACT
     # subtrie count at ANY depth — this function already relies on that (no bootstrap_variance, no
     # scaling). The depth bound was a consequence of sampling, so it goes with the sampling.
     #
@@ -123,7 +123,7 @@ function dynamic_count(btm, src::SNode)::Int
     end
 
     rz = read_zipper_at_path(btm, prefix)
-    zipper_val_count(rz)
+    val_count(rz)
 end
 
 """

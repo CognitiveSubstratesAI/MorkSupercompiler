@@ -15,8 +15,8 @@ Implements MM2 Supercompiler §5.1.1–§5.3.2:
 """
 
 using PathMaps:
-    read_zipper_at_path, zipper_val_count, zipper_to_next_val!, zipper_path, zipper_is_val,
-    zipper_child_count
+    read_zipper_at_path, val_count, to_next_val!, path, is_val,
+    child_count
 using MORK: ExprArity, ExprSymbol, item_byte, byte_item, Space, space_val_count
 
 # ── EffectStats (§5.3.2) ─────────────────────────────────────────────────────
@@ -218,12 +218,12 @@ function collect_stats(btm, total_atoms::Int, sample_size::Int)::MORKStatistics
     n_visited = 0
     last_pred = ""
 
-    while zipper_to_next_val!(rz) && n_visited < sample_size
-        path = collect(zipper_path(rz))
-        isempty(path) && continue
+    while to_next_val!(rz) && n_visited < sample_size
+        p = collect(path(rz))
+        isempty(p) && continue
         n_visited += 1
 
-        b0 = path[1]
+        b0 = p[1]
         tag0 = try
             byte_item(b0)
         catch
@@ -235,8 +235,8 @@ function collect_stats(btm, total_atoms::Int, sample_size::Int)::MORKStatistics
         arity < 2 && continue
 
         # Decode head symbol
-        length(path) < 3 && continue
-        b1 = path[2]
+        length(p) < 3 && continue
+        b1 = p[2]
         tag1 = try
             byte_item(b1)
         catch
@@ -245,8 +245,8 @@ function collect_stats(btm, total_atoms::Int, sample_size::Int)::MORKStatistics
         end
         tag1 isa ExprSymbol || continue
         sym_len = Int(tag1.size)
-        2 + sym_len > length(path) && continue
-        pred = String(path[3:(2 + sym_len)])
+        2 + sym_len > length(p) && continue
+        pred = String(p[3:(2 + sym_len)])
 
         # node_type_counts: classify by arity
         kind = if arity <= 2
