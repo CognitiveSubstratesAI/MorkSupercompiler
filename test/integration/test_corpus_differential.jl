@@ -21,8 +21,20 @@
 @testset "corpus differential — run! agrees with plain MORK" begin
     # Resolved, not hardcoded: dev-zone is a sibling checkout whose location varies per machine.
     # Override with MORK_CORPUS_DIR when it lives elsewhere.
+    # ⚠️ THE DEFAULT WENT STALE AND THE SUITE STAYED GREEN. It pointed at `~/JuliaAGI/dev-zone/…`,
+    # the pre-2026-07-16 root; after the move to `~/code/CognitiveSubstratesAI` that directory no
+    # longer exists, so `isdir(CORPUS)` was false and this whole differential `@test_skip`ped for
+    # ~2 months while the suite reported "All tests passed ✓". Found 2026-09-17 by READING the
+    # suite's warnings instead of its total. The corpus is at `~/dev-zone/…` (a symlink); both
+    # candidates are tried so a machine that still has the old layout keeps working.
+    _CORPUS_CANDIDATES = [
+        joinpath(homedir(), "dev-zone", "MORK", "kernel", "resources"),
+        joinpath(homedir(), "JuliaAGI", "dev-zone", "MORK", "kernel", "resources"),
+    ]
+    _corpus_idx = findfirst(isdir, _CORPUS_CANDIDATES)
     CORPUS = get(ENV, "MORK_CORPUS_DIR",
-                 joinpath(homedir(), "JuliaAGI", "dev-zone", "MORK", "kernel", "resources"))
+                 _corpus_idx === nothing ? first(_CORPUS_CANDIDATES) :
+                 _CORPUS_CANDIDATES[_corpus_idx])
     # (file, plain steps from the .mm2's own @expect-steps header, run! steps MEASURED 2026-08-25)
     #
     # 🔴 run! LEGITIMATELY TAKES MORE STEPS THAN PLAIN, and an earlier version of this file asserted
