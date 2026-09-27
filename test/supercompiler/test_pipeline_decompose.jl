@@ -263,19 +263,26 @@ end
     # A reordering may change cost, never results.
     s = new_space()
     space_add_all_sexpr!(
-        s, join([["(a K $i)" for i in 1:30]; ["(b K $j)" for j in 1:30];
-                 ["(c $i $i)" for i in 1:5]], " ")
+        s,
+        join(
+            [["(a K $i)" for i in 1:30]; ["(b K $j)" for j in 1:30];
+                ["(c $i $i)" for i in 1:5]], " ")
     )
     prog = raw"(exec 0 (, (c $i $j) (a K $i) (b K $j)) (O (+ (out $i $j))))"
-    answers = p -> begin
-        sp = new_space()
-        space_add_all_sexpr!(
-            sp, join([["(a K $i)" for i in 1:30]; ["(b K $j)" for j in 1:30];
-                      ["(c $i $i)" for i in 1:5]], " ")
-        )
-        execute!(sp, p; opts=SCOptions(plan=false, decompose=true, max_steps=50))
-        sort([ln for ln in split(space_dump_all_sexpr(sp), "\n") if occursin("(out ", ln)])
-    end
+    answers =
+        p -> begin
+            sp = new_space()
+            space_add_all_sexpr!(
+                sp,
+                join(
+                    [["(a K $i)" for i in 1:30]; ["(b K $j)" for j in 1:30];
+                        ["(c $i $i)" for i in 1:5]], " ")
+            )
+            execute!(sp, p; opts=SCOptions(plan=false, decompose=true, max_steps=50))
+            sort([
+                ln for ln in split(space_dump_all_sexpr(sp), "\n") if occursin("(out ", ln)
+            ])
+        end
     @test answers(prog) == answers(plan_program(s, prog))
     @test length(answers(prog)) == 5
 end
@@ -316,9 +323,15 @@ end
 # a ground symbol. These cases exist so a future narrowing has to argue with each shape separately.
 @testset "guard covers NON-GROUND heads, not just a literal `exec` head" begin
     unsafe = [
-        ("literal exec head", """(exec 0 (, (exec (clocked \$t) \$p \$q) (a \$x) (b \$x)) (, (r \$x)))"""),
-        ("compound head",     """(exec 0 (, ((step \$k \$t) \$p \$q) (a \$x) (b \$x)) (, (r \$x)))"""),
-        ("variable head",     """(exec 0 (, (\$f \$x \$y) (a \$x) (b \$x)) (, (r \$x)))"""),
+        (
+            "literal exec head",
+            """(exec 0 (, (exec (clocked \$t) \$p \$q) (a \$x) (b \$x)) (, (r \$x)))"""
+        ),
+        (
+            "compound head",
+            """(exec 0 (, ((step \$k \$t) \$p \$q) (a \$x) (b \$x)) (, (r \$x)))"""
+        ),
+        ("variable head", """(exec 0 (, (\$f \$x \$y) (a \$x) (b \$x)) (, (r \$x)))""")
     ]
     for (name, src) in unsafe
         out = decompose_program(src)

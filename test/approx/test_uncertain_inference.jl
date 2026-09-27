@@ -274,7 +274,7 @@ end
 @testset "seeding WIDENS a shared-ancestor combination (the safe direction)" begin
     strip_sig(pb::PBox) = PBox(pb.intervals, pb.probabilities, pb.confidence, BitVector())
 
-    anc   = certain_fact(:parent, ["alice", "bob"])
+    anc = certain_fact(:parent, ["alice", "bob"])
     ruleA = pbox_interval(0.9, 1.0, 1.0)
     ruleB = pbox_interval(0.8, 0.95, 1.0)
 
@@ -283,12 +283,12 @@ end
     cA_sig_equals_cB_sig() = cA.correlation_sig == cB.correlation_sig
     withsig = conjunction_and(cA, cB)
     a0 = strip_sig(anc.truth_pbox)
-    nosig   = conjunction_and(strip_sig(apply_rule(a0, ruleA, 1)),
-                              strip_sig(apply_rule(a0, ruleB, 1)))
+    nosig = conjunction_and(strip_sig(apply_rule(a0, ruleA, 1)),
+        strip_sig(apply_rule(a0, ruleB, 1)))
 
     @test width(withsig) > width(nosig)                  # strictly wider — mechanism took effect
     # pin WHICH branch: identical sigs => Łukasiewicz, not Fréchet (see the note above)
     @test cA_sig_equals_cB_sig()
     @test width(withsig) ≈ 0.599545 atol=1e-5            # pinned
-    @test width(nosig)   ≈ 0.554459 atol=1e-5            # pinned (pre-fix behaviour)
+    @test width(nosig) ≈ 0.554459 atol=1e-5            # pinned (pre-fix behaviour)
 end

@@ -186,7 +186,7 @@ end
         @test occursin("(ponged a)", space_dump_all_sexpr(sc))   # mechanism REACHED
     end
 
-    tpl   = GLOBAL_REGISTRY.templates[:PLN_STV_HeuristicModusPonens]
+    tpl = GLOBAL_REGISTRY.templates[:PLN_STV_HeuristicModusPonens]
     rules = get_lowering(:PLN_STV_HeuristicModusPonens)(tpl, "")
     run_lowering =
         () -> begin

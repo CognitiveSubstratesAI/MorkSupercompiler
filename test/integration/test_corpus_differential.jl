@@ -29,12 +29,15 @@
     # candidates are tried so a machine that still has the old layout keeps working.
     _CORPUS_CANDIDATES = [
         joinpath(homedir(), "dev-zone", "MORK", "kernel", "resources"),
-        joinpath(homedir(), "JuliaAGI", "dev-zone", "MORK", "kernel", "resources"),
+        joinpath(homedir(), "JuliaAGI", "dev-zone", "MORK", "kernel", "resources")
     ]
     _corpus_idx = findfirst(isdir, _CORPUS_CANDIDATES)
     CORPUS = get(ENV, "MORK_CORPUS_DIR",
-                 _corpus_idx === nothing ? first(_CORPUS_CANDIDATES) :
-                 _CORPUS_CANDIDATES[_corpus_idx])
+        if _corpus_idx === nothing
+            first(_CORPUS_CANDIDATES)
+        else
+            _CORPUS_CANDIDATES[_corpus_idx]
+        end)
     # (file, plain steps from the .mm2's own @expect-steps header, run! steps MEASURED 2026-08-25)
     #
     # 🔴 run! LEGITIMATELY TAKES MORE STEPS THAN PLAIN, and an earlier version of this file asserted
@@ -47,14 +50,14 @@
     # tolerance (`<= 2x plain`) would be the same unmeasured-constant mistake as UNBOUND_DEP_PENALTY.
     # If a pin moves, decomposition changed — say why in the commit, then move it.
     PROGRAMS = [
-        ("transitive.mm2",                              3,   4),
-        ("ancestor.mm2",                                6,   9),
-        ("grounding.mm2",                               7,   7),
-        ("string_convert.mm2",                          1,   1),
-        ("odd_even_sort.mm2",                          11,  11),
-        ("ip_sudoku.mm2",                              34,  35),
-        ("decision_tree_learning_without_min_sink.mm2", 71,  75),
-        ("counter_machine_5.mm2",                     241, 241),
+        ("transitive.mm2", 3, 4),
+        ("ancestor.mm2", 6, 9),
+        ("grounding.mm2", 7, 7),
+        ("string_convert.mm2", 1, 1),
+        ("odd_even_sort.mm2", 11, 11),
+        ("ip_sudoku.mm2", 34, 35),
+        ("decision_tree_learning_without_min_sink.mm2", 71, 75),
+        ("counter_machine_5.mm2", 241, 241)
     ]
 
     if !isdir(CORPUS)
@@ -68,25 +71,30 @@
         function split_mm2(path)
             raw = read(path, String)
             nocmt = join([replace(l, r";.*$" => "") for l in split(raw, "\n")], "\n")
-            forms = String[]; depth = 0; buf = IOBuffer()
+            forms = String[]
+            depth = 0
+            buf = IOBuffer()
             for c in nocmt
                 c == '(' && (depth += 1)
                 depth > 0 && print(buf, c)
                 if c == ')'
                     depth -= 1
                     if depth == 0
-                        f = strip(String(take!(buf))); !isempty(f) && push!(forms, f)
+                        f = strip(String(take!(buf)))
+                        !isempty(f) && push!(forms, f)
                     end
                 end
             end
             isprog(f) = startswith(f, "(exec")
             (join([f for f in forms if !isprog(f)], "\n"),
-             join([f for f in forms if  isprog(f)], "\n"))
+                join([f for f in forms if isprog(f)], "\n"))
         end
         # a DERIVED atom is anything that is not a program/rule form
         isderived(l) = !startswith(l, "(exec") && !startswith(l, "((")
-        derived(dump) = Set(l for l in map(strip, split(strip(dump), "\n"))
-                            if !isempty(l) && isderived(l))
+        derived(dump) = Set(
+            l for l in map(strip, split(strip(dump), "\n"))
+            if !isempty(l) && isderived(l)
+        )
 
         for (name, expected_steps, expected_run_steps) in PROGRAMS
             path = joinpath(CORPUS, name)
@@ -96,7 +104,8 @@
                 isempty(prog) && continue
 
                 sA = new_space()
-                space_add_all_sexpr!(sA, facts); space_add_all_sexpr!(sA, prog)
+                space_add_all_sexpr!(sA, facts)
+                space_add_all_sexpr!(sA, prog)
                 stepsA = space_metta_calculus!(sA, 20_000)
                 dA = derived(space_dump_all_sexpr(sA))
 

@@ -439,8 +439,10 @@ end
 # :* and :min — the two the MG framework's STV differential needs
 # (`s_b = s_a * s_imp`, `c_b = min(c_a, c_imp) * 0.9`). Other arithmetic follows the same shape;
 # only these two are registered because only these two have a consumer asking for them.
-register_prim!(DEFAULT_PRIM_REGISTRY, :*,   (g, args, env) -> _arith_prim(g, :*,   args, prod))
-register_prim!(DEFAULT_PRIM_REGISTRY, :min, (g, args, env) -> _arith_prim(g, :min, args, minimum))
+register_prim!(DEFAULT_PRIM_REGISTRY, :*, (g, args, env) -> _arith_prim(g, :*, args, prod))
+register_prim!(
+    DEFAULT_PRIM_REGISTRY, :min, (g, args, env) -> _arith_prim(g, :min, args, minimum)
+)
 
 # :fitness_eval — Algorithm 8 §6.1: evaluate_fitness(program, data)
 register_prim!(

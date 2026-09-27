@@ -148,9 +148,10 @@ end
 # multi-interval p-boxes sharing a correlation bit. §2.3 requires "the total mass must sum
 # correctly". INVISIBLE on single-interval inputs (`min(1,1) == 1*1`), which is why it survived.
 @testset "dependent combinations conserve mass (was summing to 1.6)" begin
-    sig = falses(64); sig[7] = true
-    X  = PBox([(0.1,0.3),(0.5,0.7)], [0.4,0.6], 1.0, copy(sig))
-    Y  = PBox([(0.2,0.4),(0.6,0.8)], [0.3,0.7], 1.0, copy(sig))
+    sig = falses(64)
+    sig[7] = true
+    X = PBox([(0.1, 0.3), (0.5, 0.7)], [0.4, 0.6], 1.0, copy(sig))
+    Y = PBox([(0.2, 0.4), (0.6, 0.8)], [0.3, 0.7], 1.0, copy(sig))
     Xi = PBox(X.intervals, X.probabilities, X.confidence, BitVector())
     Yi = PBox(Y.intervals, Y.probabilities, Y.confidence, BitVector())
 
@@ -165,8 +166,8 @@ end
 
     # 🔴 PARTIAL MASS MUST SURVIVE. Rescaling the independent branch would inflate a p-box with
     # confidence 0.8 up to 1.0 — manufacturing mass. This asserts we did not do that.
-    Xp = PBox([(0.1,0.3)], [0.8], 0.8, BitVector())
-    Yp = PBox([(0.2,0.4)], [1.0], 1.0, BitVector())
+    Xp = PBox([(0.1, 0.3)], [0.8], 0.8, BitVector())
+    Yp = PBox([(0.2, 0.4)], [1.0], 1.0, BitVector())
     @test sum(mul_pbox(Xp, Yp).probabilities) ≈ 0.8 atol=1e-9
 
     # dependent_masses is a no-op when already normalised

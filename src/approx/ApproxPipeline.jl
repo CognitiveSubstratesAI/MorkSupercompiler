@@ -370,10 +370,10 @@ function run_approx_pipeline(
         if !APPROX_PASSTHROUGH_WARNED[]
             APPROX_PASSTHROUGH_WARNED[] = true
             @warn "ApproxPipeline Phase 3 is a PASSTHROUGH — it emits the reordered ORIGINAL " *
-                  "program. No approximation is applied: §6.2's importance_sample / " *
-                  "approximate_lookup / total_confidence are absent and no ApproxIndex is ever " *
-                  "built. The error bounds in the result are constants Phase 3 assigned, not " *
-                  "measured approximation error. Treat `use_approx=true` as a reordering pass."
+                "program. No approximation is applied: §6.2's importance_sample / " *
+                "approximate_lookup / total_confidence are absent and no ApproxIndex is ever " *
+                "built. The error bounds in the result are constants Phase 3 assigned, not " *
+                "measured approximation error. Treat `use_approx=true` as a reordering pass."
         end
         program_approx = sprint_program(planned_nodes)
 

@@ -58,7 +58,7 @@ end
 
     up = join([sprint_exec(x) for x in unmerged], "\n")
     mp = join([sprint_exec(x) for x in merged], "\n")
-    o  = BiSimObligation(:forward_sim, NodeID(0), NodeID(0))
+    o = BiSimObligation(:forward_sim, NodeID(0), NodeID(0))
 
     # BOTH patterns satisfiable — the old fixture. Agreement here is what hid the bug.
     v_both = verify_bisim(up, mp, [o]; facts="(a 1) (b 2)", max_steps=20)

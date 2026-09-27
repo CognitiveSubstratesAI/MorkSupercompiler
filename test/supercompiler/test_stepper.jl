@@ -175,12 +175,12 @@ end
 
     # both args literal -> evaluates
     r = rewrite_once(g, add_prim!(g, Prim(:*, [a, b], EffectSet())), Env(), DepSet(),
-                     DEFAULT_PRIM_REGISTRY)
+        DEFAULT_PRIM_REGISTRY)
     @test r isa Value
     @test get_node(g, r.id).val ≈ 0.4 atol=1e-12
 
     rm = rewrite_once(g, add_prim!(g, Prim(:min, [a, b], EffectSet())), Env(), DepSet(),
-                      DEFAULT_PRIM_REGISTRY)
+        DEFAULT_PRIM_REGISTRY)
     @test rm isa Value
     @test get_node(g, rm.id).val ≈ 0.5 atol=1e-12
 
@@ -189,7 +189,7 @@ end
     # A Lit-only handler passes every assertion above and fails here.
     sym = add_prim!(g, Prim(:kb_query, [a], EffectSet(UInt8(0x01))))
     rs = rewrite_once(g, add_prim!(g, Prim(:*, [a, sym], EffectSet())), Env(), DepSet(),
-                      DEFAULT_PRIM_REGISTRY)
+        DEFAULT_PRIM_REGISTRY)
     @test rs isa Residual
     @test get_node(g, rs.id) isa Prim
 end

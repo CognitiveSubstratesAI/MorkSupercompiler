@@ -668,20 +668,22 @@ end
 #
 # ⚠️ TRAP, worth carrying: in MM2 `(+ …)` and `(- …)` are ADD/REMOVE SINKS, not arithmetic.
 @testset "§15.5 acceptance: STV factor path == stv_mp_reference (differential)" begin
-    tpl   = GLOBAL_REGISTRY.templates[:PLN_STV_HeuristicModusPonens]
+    tpl = GLOBAL_REGISTRY.templates[:PLN_STV_HeuristicModusPonens]
     rules = get_lowering(:PLN_STV_HeuristicModusPonens)(tpl, "")
 
     # several points, not one — a single case cannot distinguish min from max, or * from +
     for (as, ac, is, ic) in ((0.8, 0.9, 0.7, 0.6),
-                             (1.0, 1.0, 1.0, 1.0),
-                             (0.5, 0.2, 0.5, 0.8),   # min picks the FIRST arg here
-                             (0.3, 0.95, 0.9, 0.4))  # and the SECOND here
+        (1.0, 1.0, 1.0, 1.0),
+        (0.5, 0.2, 0.5, 0.8),   # min picks the FIRST arg here
+        (0.3, 0.95, 0.9, 0.4))  # and the SECOND here
         s = new_space()
         space_add_all_sexpr!(s, "(stv A $as $ac)\n(imp A B $is $ic)")
         space_add_all_sexpr!(s, rules)
         space_metta_calculus!(s, 200)
-        got = [l for l in split(strip(space_dump_all_sexpr(s)), "\n")
-               if startswith(strip(l), "(stv B ")]
+        got = [
+            l for l in split(strip(space_dump_all_sexpr(s)), "\n")
+            if startswith(strip(l), "(stv B ")
+        ]
         @test length(got) == 1
         parts = split(strip(strip(got[1]), ['(', ')']), " ")
         bs, bc = parse(Float64, parts[3]), parse(Float64, parts[4])
