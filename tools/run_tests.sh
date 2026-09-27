@@ -67,13 +67,29 @@ _write_result() {
     echo "WHEN=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   } > "$RESULT_FILE" 2>/dev/null || true
 }
+# ── THE RUNNER WRITES THE EVIDENCE, NOT THE AGENT ────────────────────────────────────────────────
+# 🔴 UNTIL 2026-09-27 ONLY CORE'S RUNNERS DID THIS, so `require-tests-before-commit.sh` could never
+# be satisfied for this package by any legitimate means: the suite passed, no marker was written,
+# and the commit was refused. MEASURED today while committing a one-line CI fix — the suite went
+# green (1434 pass) and the commit was still blocked. A gate nothing can pass is not a gate; it
+# trains you to work around it. The marker is written ONLY on a real exit 0 and REMOVED on failure,
+# so a red suite cannot be followed by a green commit.
+# ⚠️ ONLY A FULL, UNFILTERED SUITE IS EVIDENCE — `run_tests.sh <one-file>` must NOT mark, or a
+# single passing probe would authorise a commit (the same loophole `warm_suite.sh file` avoids).
+# shellcheck source=../../workflows/test_marker.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/workflows/test_marker.sh" 2>/dev/null || true
+_mark_evidence() {   # $1 = real exit code
+  if [ "$TARGET" = "test/runtests.jl" ] && command -v write_marker >/dev/null 2>&1; then
+    write_marker "$ROOT" "$1" "run_tests.sh full suite"
+  fi
+}
 _write_result - RUNNING
 _on_exit() {
   rc=$?
   rm -f "$DRIVER" "$DRIVER.smoke"
-  if [ "${_SUITE_SIGNALLED:-0}" = "1" ]; then _write_result "$rc" KILLED
-  elif [ "$rc" -eq 0 ]; then                  _write_result 0 PASS
-  else                                        _write_result "$rc" FAIL
+  if [ "${_SUITE_SIGNALLED:-0}" = "1" ]; then _write_result "$rc" KILLED; _mark_evidence "$rc"
+  elif [ "$rc" -eq 0 ]; then                  _write_result 0 PASS;      _mark_evidence 0
+  else                                        _write_result "$rc" FAIL;  _mark_evidence "$rc"
   fi
 }
 # Trap signals explicitly or the shell dies WITHOUT running the EXIT trap, leaving the previous

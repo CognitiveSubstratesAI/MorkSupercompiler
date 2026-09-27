@@ -27,14 +27,20 @@ jobs:
       # MorkSupercompiler dev-links HPC + MORKTensorNetworks + MORK + PathMap via [sources]
       # (../HPC, ../MORKTensorNetworks, ../MORK, ../PathMap); MORKTensorNetworks + MORK in turn
       # dev-link ../MORK / ../PathMap. Clone all four siblings before instantiation.
-      # TODO: clone HPC from CognitiveSubstratesAI once HPC is migrated to the org (currently
-      # only on sivaji1012/HPC — the last unmigrated [sources] dep).
+      # 🔴 HPC MIGRATED TO THE ORG AND MADE PUBLIC 2026-09-27 — this clone now works anonymously.
+      # The TODO that used to sit here ("once HPC is migrated") was the whole problem: the URL kept
+      # pointing at sivaji1012/HPC, which is not anonymously clonable, so the step died with
+      # "fatal: could not read Username for 'https://github.com'" (exit 128) and EVERY LATER STEP
+      # WAS SKIPPED — buildpkg, runtest, processcoverage, codecov. MEASURED on Core: 30 of the last
+      # 30 CI runs failed this way, back to at least 2026-09-17, so nothing had been CI-verified for
+      # ten days and Codecov had never received a single upload. A TODO is not a gate; it recorded
+      # the defect and changed nothing.
       - name: Clone path [sources] dependencies (siblings)
         run: |
           git clone --depth 1 https://github.com/CognitiveSubstratesAI/PathMap.git ../PathMap
           git clone --depth 1 https://github.com/CognitiveSubstratesAI/MORK.git ../MORK
           git clone --depth 1 https://github.com/CognitiveSubstratesAI/MORKTensorNetworks.git ../MORKTensorNetworks
-          git clone --depth 1 https://github.com/sivaji1012/HPC.git ../HPC
+          git clone --depth 1 https://github.com/CognitiveSubstratesAI/HPC.git ../HPC
       - uses: julia-actions/setup-julia@v2
         with:
           version: ${{ matrix.version }}
@@ -64,7 +70,7 @@ jobs:
       # JuliaFormatter than the pinned version, causing local/CI drift.
       - name: Check formatting
         run: |
-          julia -e 'using Pkg; Pkg.add(PackageSpec(name="JuliaFormatter", version="2.12.6"))'
+          julia -e 'using Pkg; Pkg.add(PackageSpec(name="JuliaFormatter", version="2.14.0"))'
           julia -e 'using JuliaFormatter; println("JuliaFormatter ", pkgversion(JuliaFormatter))'
           julia -e 'using JuliaFormatter; format(".")'
           if ! git diff --quiet; then
