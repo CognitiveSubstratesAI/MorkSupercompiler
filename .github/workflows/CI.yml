@@ -16,6 +16,13 @@ jobs:
     name: Julia ${{ matrix.version }} - ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
+    # A job-level `permissions:` block REPLACES the default token scopes, so every scope a step
+    # needs is listed: `id-token: write` lets codecov-action authenticate with GitHub OIDC (see the
+    # upload step); `actions: write` lets julia-actions/cache delete old caches (its README).
+    permissions:
+      contents: read
+      actions: write
+      id-token: write
     strategy:
       fail-fast: false
       matrix:
@@ -55,8 +62,14 @@ jobs:
       - uses: codecov/codecov-action@v5
         with:
           files: lcov.info
+          # 🔴 THIS STEP HAD NEVER UPLOADED ANYTHING (fixed 2026-10-02). Its log read "Upload queued
+          # for processing failed: Token required because branch is protected": the CODECOV_TOKEN
+          # secret does not reach this repo, the token input was EMPTY, and `fail_ci_if_error: false`
+          # showed green. Now: the secret when it exists, GitHub OIDC (`id-token: write`) when not —
+          # OIDC proven first on LogicKernel (upload landed, a668c1c). A failed upload now fails CI.
           token: ${{ secrets.CODECOV_TOKEN }}
-          fail_ci_if_error: false
+          use_oidc: ${{ secrets.CODECOV_TOKEN == '' }}
+          fail_ci_if_error: true
 
   format:
     name: Format (Blue)
